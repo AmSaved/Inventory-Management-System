@@ -1,0 +1,146 @@
+{
+  "name": "airms-backend",
+  "version": "1.0.0",
+  "description": "Asset & Inventory Request Management System Backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:debug": "nodemon --inspect server.js",
+    "prod": "NODE_ENV=production node server.js",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:ci": "jest --ci --coverage --maxWorkers=2",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\"",
+    "migrate": "sequelize-cli db:migrate",
+    "migrate:undo": "sequelize-cli db:migrate:undo",
+    "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
+    "seed": "sequelize-cli db:seed:all",
+    "seed:undo": "sequelize-cli db:seed:undo",
+    "seed:undo:all": "sequelize-cli db:seed:undo:all",
+    "db:create": "sequelize-cli db:create",
+    "db:drop": "sequelize-cli db:drop",
+    "db:reset": "npm run db:drop && npm run db:create && npm run migrate && npm run seed",
+    "db:setup": "npm run db:create && npm run migrate && npm run seed",
+    "create-admin": "node scripts/createAdmin.js",
+    "generate-barcodes": "node scripts/generateBarcodes.js",
+    "backup": "node scripts/backupDatabase.js",
+    "restore": "node scripts/restoreDatabase.js",
+    "clean": "rimraf dist coverage logs/*.log",
+    "prepare": "husky install",
+    "docker:build": "docker build -t airms-backend .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "postinstall": "npm run db:setup || echo 'Database setup skipped'"
+  },
+  "dependencies": {
+    "@breejs/later": "^4.2.0",
+    "@headlessui/react": "^2.2.9",
+    "@heroicons/react": "^2.2.0",
+    "@hookform/resolvers": "^5.2.2",
+    "@tanstack/react-query": "^5.95.0",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.2",
+    "bree": "^9.2.9",
+    "bwip-js": "^3.4.5",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.6.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.22.1",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^6.7.0",
+    "express-validator": "^7.3.1",
+    "helmet": "^7.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "memory-cache": "^0.2.0",
+    "morgan": "^1.10.1",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "node-mailjet": "^6.0.11",
+    "nodemailer": "^6.10.1",
+    "pdfkit": "^0.14.0",
+    "pg": "^8.20.0",
+    "pg-hstore": "^2.3.4",
+    "qrcode": "^1.5.4",
+    "react-hook-form": "^7.72.0",
+    "react-hot-toast": "^2.6.0",
+    "react-qr-code": "^2.0.18",
+    "recharts": "^3.8.0",
+    "sanitize-html": "^2.17.2",
+    "sequelize": "^6.37.8",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "uuid": "^9.0.1",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "yup": "^1.7.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.1",
+    "@types/node": "^20.1.0",
+    "eslint": "^8.57.1",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jest": "^27.9.0",
+    "eslint-plugin-prettier": "^4.2.5",
+    "husky": "^8.0.3",
+    "jest": "^29.7.0",
+    "lint-staged": "^13.3.0",
+    "nodemon": "^2.0.22",
+    "prettier": "^2.8.8",
+    "rimraf": "^5.0.10",
+    "sequelize-cli": "^6.6.5",
+    "supertest": "^6.3.4"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/airms-backend.git"
+  },
+  "keywords": [
+    "asset-management",
+    "inventory",
+    "nodejs",
+    "express",
+    "postgresql",
+    "sequelize"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourusername/airms-backend/issues"
+  },
+  "homepage": "https://github.com/yourusername/airms-backend#readme",
+  "jest": {
+    "testEnvironment": "node",
+    "coveragePathIgnorePatterns": [
+      "/node_modules/"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/migrations/**",
+      "!src/seeders/**",
+      "!src/config/**"
+    ]
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  }
+}

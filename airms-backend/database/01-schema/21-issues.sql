@@ -1,0 +1,20 @@
+CREATE TABLE issues (
+    id SERIAL PRIMARY KEY,
+    issue_number VARCHAR(50) UNIQUE NOT NULL,
+    assignment_id INTEGER REFERENCES assignments(id),
+    product_id INTEGER REFERENCES products(id),
+    user_id INTEGER REFERENCES users(id),
+    branch_id INTEGER REFERENCES branches(id),
+    issue_type VARCHAR(50) NOT NULL,
+    severity VARCHAR(20) DEFAULT 'medium',
+    description TEXT NOT NULL,
+    reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reported_by INTEGER REFERENCES users(id),
+    assigned_to INTEGER REFERENCES users(id),
+    status VARCHAR(20) DEFAULT 'open',
+    resolution_notes TEXT,
+    resolved_at TIMESTAMP,
+    resolved_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

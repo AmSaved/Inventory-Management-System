@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIRMS - Asset & Inventory Management System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        document.body.innerHTML = '<div style="color:red; background:white; padding: 20px; z-index:9999; position:absolute; top:0; left:0; width:100%; font-family:monospace;"><h3>Runtime Error:</h3>' + msg + '<br><br>' + (error && error.stack ? error.stack.replace(/\n/g, '<br>') : '') + '</div>';
+      };
+      window.onunhandledrejection = function(event) {
+        document.body.innerHTML = '<div style="color:red; background:white; padding: 20px; z-index:9999; position:absolute; top:0; left:0; width:100%; font-family:monospace;"><h3>Unhandled Promise Rejection:</h3>' + event.reason + '</div>';
+      };
+    </script>
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>
