@@ -39,37 +39,36 @@ const organizationController = {
                 order: [['path', 'ASC']]
             });
 
-            const buildTree = (parentId) => {
-                const pid = parentId ? String(parentId) : null;
-                return nodes
-                    .filter(u => {
-                        const nodePid = u.parent_id ? String(u.parent_id) : null;
-                        return nodePid === pid;
-                    })
-                    .map(u => ({
-                        ...u.toJSON(),
-                        id: String(u.id), // Ensure ID is a string for frontend consistency
-                        parent_id: u.parent_id ? String(u.parent_id) : null,
-                        children: buildTree(u.id) || []
-                    }));
-            };
+            // ─── OPTIMIZED TREE BUILDER (O(N)) ───
+            // Use a Map for O(1) lookup during construction
+            const nodeMap = {};
+            nodes.forEach(node => {
+                nodeMap[node.id] = {
+                    ...node.get({ plain: true }),
+                    id: String(node.id),
+                    parent_id: node.parent_id ? String(node.parent_id) : null,
+                    children: []
+                };
+            });
 
-            let treeData = [];
-            if (permissions.includes('hierarchy:all:view') || permissions.includes('system:manage')) {
-                // Super Admin only: get all top-level roots
-                treeData = buildTree(null);
-            } else {
-                // Isolated Admin Logic:
-                // Find all nodes in our allowed set whose parent is NOT in our allowed set.
-                // These are the "entry points" for this specific user.
-                const allowedIds = new Set(nodes.map(n => n.id));
-                const topNodes = nodes.filter(n => !n.parent_id || !allowedIds.has(n.parent_id));
-                
-                treeData = topNodes.map(node => ({
-                    ...node.toJSON(),
-                    children: buildTree(node.id)
-                }));
-            }
+            const treeData = [];
+            const isGlobalAdmin = permissions.includes('hierarchy:all:view') || permissions.includes('system:manage');
+
+            nodes.forEach(node => {
+                const nodeItem = nodeMap[node.id];
+                const parentId = node.parent_id;
+
+                // Logic for root identification:
+                // 1. If parent_id is null, it's a global root.
+                // 2. If parent_id exists but IS NOT in our authorized map, it's an "entry point" root for this user.
+                const isRoot = !parentId || !nodeMap[parentId];
+
+                if (isRoot) {
+                    treeData.push(nodeItem);
+                } else {
+                    nodeMap[parentId].children.push(nodeItem);
+                }
+            });
 
             res.json({ success: true, data: treeData });
         } catch (error) {

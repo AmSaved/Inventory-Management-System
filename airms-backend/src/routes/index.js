@@ -21,7 +21,7 @@ const workflowRoutes = require('./workflowRoutes');
 const workflowStatusRoutes = require('./workflowStatusRoutes');
 const reportRoutes = require('./reportRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
-
+const activityRoutes = require('./activityRoutes');
 // Health check endpoint
 router.get('/health', (req, res) => {
     res.json({
@@ -62,5 +62,6 @@ router.use('/workflows', workflowRoutes);
 router.use('/workflow-statuses', workflowStatusRoutes);
 router.use('/reports', reportRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/activity', activityRoutes);
 
 module.exports = router;

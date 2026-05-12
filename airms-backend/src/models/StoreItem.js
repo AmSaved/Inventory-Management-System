@@ -28,6 +28,10 @@ const StoreItem = sequelize.define('StoreItem', {
             min: 1
         }
     },
+    is_serialized: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
     unit_price: {
         type: DataTypes.DECIMAL(10, 2)
     },

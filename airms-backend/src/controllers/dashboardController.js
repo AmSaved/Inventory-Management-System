@@ -83,7 +83,7 @@ const dashboardController = {
                 };
 
                 // Fetch global pending approvals for Super Admin view
-                pendingApprovalListRaw = await approvalService.getPendingApprovals(null, req.user);
+                pendingApprovalListRaw = await approvalService.getPendingApprovals(company_id, req.user);
             } else {
                 // OPERATIONAL VIEW (Scoped)
                 const results = await Promise.all([
@@ -130,32 +130,60 @@ const dashboardController = {
             });
 
             // 4. Inventory by Level (Top Level Nodes)
-            // Robust Approach: Fetch nodes first, then aggregate inventory in a separate, clean pass
+            // Optimized Approach: Fetch all stock in the company first, then aggregate in memory
             const nodes = await OrganizationNode.findAll({
                 where: { 
                     company_id, 
-                    parent_id: activeOrgId, // null shows roots, otherwise shows children of the focused node
+                    parent_id: activeOrgId,
                     status: { [Op.ne]: 'archived' }
                 },
                 attributes: ['id', 'name', 'code', 'path']
             });
 
-            const levelStats = await Promise.all(nodes.map(async (node) => {
-                // Get all descendants for this node (very fast with path index)
-                const descendantIds = await hierarchyService.getDescendants(node.id);
+            // Get all inventory sums grouped by org_node_id for the whole target scope
+            const inventoryStats = await Inventory.findAll({
+                where: {
+                    company_id,
+                    org_node_id: { [Op.in]: targetNodeIds }
+                },
+                attributes: [
+                    'org_node_id',
+                    [sequelize.fn('SUM', sequelize.col('quantity')), 'total_stock']
+                ],
+                group: ['org_node_id'],
+                raw: true
+            });
+
+            // Create a map for fast lookup
+            const stockMap = {};
+            inventoryStats.forEach(stat => {
+                stockMap[stat.org_node_id] = Number(stat.total_stock) || 0;
+            });
+
+            // Get ALL nodes in this company once to build a path-based aggregation map
+            // This is much faster than N+1 getDescendants calls
+            const allNodes = await OrganizationNode.findAll({
+                where: { company_id, status: { [Op.ne]: 'archived' } },
+                attributes: ['id', 'path'],
+                raw: true
+            });
+
+            const levelStats = nodes.map(node => {
+                const nodePath = node.path;
+                let totalStockForBranch = 0;
                 
-                const stockSum = await Inventory.sum('quantity', {
-                    where: {
-                        company_id,
-                        org_node_id: { [Op.in]: descendantIds }
+                // Sum stock for all nodes that are descendants of this node (including itself)
+                allNodes.forEach(candidate => {
+                    if (candidate.path.startsWith(nodePath)) {
+                        totalStockForBranch += stockMap[candidate.id] || 0;
                     }
-                }) || 0;
+                });
 
                 return {
                     ...node.toJSON(),
-                    stock_count: stockSum
+                    stock_count: totalStockForBranch
                 };
-            }));
+            });
 
             // Sort by stock count descending
             levelStats.sort((a, b) => b.stock_count - a.stock_count);

@@ -30,6 +30,7 @@ const AssetsPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [returnModalOpen, setReturnModalOpen] = useState(false);
@@ -193,12 +194,18 @@ const AssetsPage = () => {
       {/* Filters */}
       <Card>
         <CardContent className="flex gap-4">
-          <div className="flex-1">
+          <div className="w-full max-w-md">
             <Input
-              placeholder="Search by asset name or serial number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by ID or Name..."
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setSearch(searchValue);
+                }
+              }}
             />
+            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2 ml-2">Press Enter to Filter Portfolio</p>
           </div>
           <select
             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"

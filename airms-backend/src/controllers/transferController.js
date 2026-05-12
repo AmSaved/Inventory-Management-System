@@ -1,4 +1,4 @@
-const { Transfer, TransferItem, User, OrganizationNode, Product, Inventory, Assignment, ActivityLog, sequelize, WorkflowStep, Role } = require('../models');
+const { Transfer, TransferItem, User, OrganizationNode, Product, Inventory, Assignment, ActivityLog, sequelize, WorkflowStep, Role, Workflow } = require('../models');
 const { validationResult } = require('express-validator');
 const inventoryService = require('../services/inventoryService');
 const hierarchyService = require('../services/hierarchyService');
@@ -75,7 +75,10 @@ const transferController = {
                     {
                         model: WorkflowStep,
                         as: 'currentStep',
-                        include: [{ model: Role, as: 'requiredRole' }]
+                        include: [
+                            { model: Role, as: 'requiredRole' },
+                            { model: Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                        ]
                     }
                 ],
                 limit: parseInt(limit),
@@ -83,8 +86,8 @@ const transferController = {
                 order: [['created_at', 'DESC']]
             });
 
-            // ─── DYNAMIC AUTHORITY MAPPING ───
-            // Attach 'can_action' flag based on real-time workflow state and user identity
+            // ─── DYNAMIC AUTHORITY MAPPING (OPTIMIZED) ───
+            // Reuse 'allowedNodes' and 'permissions' to avoid N+1 database queries
             const resultsWithAuth = await Promise.all(rows.map(async (row) => {
                 const plain = row.get({ plain: true });
                 const status = (plain.status || '').toLowerCase();
@@ -92,7 +95,8 @@ const transferController = {
                 
                 plain.can_action = false;
                 if (isActionable && plain.currentStep) {
-                    plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions);
+                    // Pass pre-calculated 'permissions' and 'allowedNodes' to eliminate extra DB hits
+                    plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions, allowedNodes);
                 }
                 
                 return plain;

@@ -62,7 +62,7 @@ const PermissionSidebar = () => {
 
       <div className="mt-8 pt-6 border-t border-gray-100">
         <div className="bg-gray-50 p-4 rounded-xl border border-dashed border-gray-200">
-          <p className="text-[11px] text-gray-500 leading-relaxed italic">
+          <p className="text-xs text-gray-500 leading-relaxed">
             "These permissions define what actions roles can perform across the entire AIRMS ecosystem."
           </p>
         </div>

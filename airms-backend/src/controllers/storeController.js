@@ -169,51 +169,58 @@ const storeController = {
                 }
             }
 
-            // Check for dynamic workflow
+            // ---------------------------------------------------------
+            // USER OVERRIDE: Intake Workflow Bypassed
+            // Intakes now automatically register to the live ledger without approval
+            // ---------------------------------------------------------
+            /*
             const workflow = await workflowService.getActiveWorkflow(company_id, storeData.org_node_id, 'inventory_store');
             
-            if (workflow && workflow.steps.length > 0) {
-                storeForm.status = `pending_${workflow.steps[0].action_name}`;
-                await storeForm.save({ transaction });
+            if (workflow && workflow.steps.length > 0) { ... }
+            */
 
-                if (finalItems.length > 0) {
-                    await StoreItem.bulkCreate(finalItems, { transaction });
-                }
-                
-                await ActivityLog.create({
-                    company_id,
-                    user_id: req.user.id,
-                    action: 'CREATE_PENDING',
-                    resource: 'store_forms',
-                    resource_id: storeForm.id,
-                    details: { store_number: storeForm.store_number, workflow_id: workflow.id }
-                }, { transaction });
-
-                await transaction.commit();
-                return res.status(201).json({ 
-                    success: true, 
-                    message: `Store intake initialized: Pending ${workflow.steps[0].action_name}`, 
-                    data: storeForm 
-                });
-            }
-
+            const inventoryResults = [];
             // Legacy/Direct path (No Workflow)
             if (finalItems.length > 0) {
                 await StoreItem.bulkCreate(finalItems, { transaction });
 
                 for (const item of finalItems) {
-                    await inventoryService.addToInventory(
-                        company_id,
-                        storeData.org_node_id,
-                        item.product_id,
-                        item.quantity,
-                        {
-                            userId: req.user.id,
-                            reference: `STORE-${storeForm.store_number}`,
-                            notes: `Store form #${storeForm.store_number}`,
-                            transaction
+                    if (item.is_serialized && item.quantity > 1) {
+                        for (let i = 0; i < item.quantity; i++) {
+                            const serializedSN = item.serial_number ? `${item.serial_number}-${String(i + 1).padStart(3, '0')}` : `SN-${Date.now()}-${i}`;
+                            const newInv = await inventoryService.addToInventory(
+                                company_id,
+                                storeData.org_node_id,
+                                item.product_id,
+                                1, // Force quantity of 1 for serialized
+                                {
+                                    userId: req.user.id,
+                                    reference: `STORE-${storeForm.store_number}`,
+                                    notes: `Store form #${storeForm.store_number}`,
+                                    serialNumber: serializedSN,
+                                    transaction
+                                }
+                            );
+                            if (item.product_id) newInv.product = { name: 'Item', sku: item.product_id }; 
+                            inventoryResults.push(newInv);
                         }
-                    );
+                    } else {
+                        const newInv = await inventoryService.addToInventory(
+                            company_id,
+                            storeData.org_node_id,
+                            item.product_id,
+                            item.quantity,
+                            {
+                                userId: req.user.id,
+                                reference: `STORE-${storeForm.store_number}`,
+                                notes: `Store form #${storeForm.store_number}`,
+                                serialNumber: item.serial_number, // PASS SERIAL NUMBER HERE
+                                transaction
+                            }
+                        );
+                        if (item.product_id) newInv.product = { name: 'Item', sku: item.product_id };
+                        inventoryResults.push(newInv);
+                    }
                 }
             }
 
@@ -229,7 +236,14 @@ const storeController = {
             await transaction.commit();
 
             const result = await StoreForm.findByPk(storeForm.id, { include: ['items'] });
-            res.status(201).json({ success: true, message: 'Store form created and inventory updated', data: result });
+            
+            // To support the auto-print modal on the frontend, we send back the items
+            res.status(201).json({ 
+                success: true, 
+                message: 'Store form created and inventory instantly updated', 
+                data: result,
+                inventoryItems: inventoryResults 
+            });
         } catch (error) {
             if (transaction) await transaction.rollback();
             next(error);
@@ -263,18 +277,38 @@ const storeController = {
             if (result && result.isFinalStep) {
                 // IMPORTANT: The process is now "Approved/Final". Realize the inventory.
                 for (const item of storeForm.items) {
-                    await inventoryService.addToInventory(
-                        company_id,
-                        storeForm.org_node_id,
-                        item.product_id,
-                        item.quantity,
-                        {
-                            userId: req.user.id,
-                            reference: `STORE-${storeForm.store_number}`,
-                            notes: `Finalized via workflow approval`,
-                            transaction
+                    if (item.is_serialized && item.quantity > 1) {
+                        for (let i = 0; i < item.quantity; i++) {
+                            const serializedSN = item.serial_number ? `${item.serial_number}-${String(i + 1).padStart(3, '0')}` : `SN-${Date.now()}-${i}`;
+                            await inventoryService.addToInventory(
+                                company_id,
+                                storeForm.org_node_id,
+                                item.product_id,
+                                1, // Force quantity of 1
+                                {
+                                    userId: req.user.id,
+                                    reference: `STORE-${storeForm.store_number}`,
+                                    notes: `Finalized via workflow approval`,
+                                    serialNumber: serializedSN,
+                                    transaction
+                                }
+                            );
                         }
-                    );
+                    } else {
+                        await inventoryService.addToInventory(
+                            company_id,
+                            storeForm.org_node_id,
+                            item.product_id,
+                            item.quantity,
+                            {
+                                userId: req.user.id,
+                                reference: `STORE-${storeForm.store_number}`,
+                                notes: `Finalized via workflow approval`,
+                                serialNumber: item.serial_number, // PASS SERIAL NUMBER
+                                transaction
+                            }
+                        );
+                    }
                 }
                 await storeForm.update({ status: 'completed' }, { transaction });
             }

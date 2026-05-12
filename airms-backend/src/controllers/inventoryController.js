@@ -1,4 +1,4 @@
-﻿const { Inventory, Product, OrganizationNode, ActivityLog, sequelize } = require('../models');
+const { Inventory, Product, OrganizationNode, User, ActivityLog, sequelize } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const logger = require('../config/logger');
@@ -27,11 +27,28 @@ const inventoryController = {
             const allowedNodes = await req.getAuthorizedNodes();
             
             if (req.query.org_node_id) {
-                const targetNode = Number(req.query.org_node_id);
-                if (!allowedNodes.includes(targetNode)) {
+                const targetNodeId = Number(req.query.org_node_id);
+                if (!allowedNodes.includes(targetNodeId)) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
-                where.org_node_id = targetNode;
+                
+                // HIERARCHICAL SEARCH: Find all descendant nodes using the materialized path
+                const targetNode = await OrganizationNode.findByPk(targetNodeId);
+                if (targetNode && targetNode.path) {
+                    const descendantNodes = await OrganizationNode.findAll({
+                        where: {
+                            company_id,
+                            path: { [Op.like]: `${targetNode.path}%` }
+                        },
+                        attributes: ['id']
+                    });
+                    const nodeIds = descendantNodes.map(n => n.id);
+                    // Filter by these nodes, but ensure they are still within the user's allowed scope
+                    const scopedNodeIds = nodeIds.filter(id => allowedNodes.includes(id));
+                    where.org_node_id = { [Op.in]: scopedNodeIds };
+                } else {
+                    where.org_node_id = targetNodeId;
+                }
             } else {
                 where.org_node_id = { [Op.in]: allowedNodes };
             }
@@ -39,6 +56,9 @@ const inventoryController = {
             if (product_id) where.product_id = product_id;
             if (low_stock === 'true') {
                 where.quantity = { [Op.lte]: sequelize.col('minimum_quantity') };
+            }
+            if (req.query.quantity_gt) {
+                where.quantity = { [Op.gt]: parseInt(req.query.quantity_gt) };
             }
             if (serial_number) where.serial_number = serial_number;
             if (batch_number) where.batch_number = batch_number;
@@ -109,7 +129,17 @@ const inventoryController = {
                 return res.status(403).json({ success: false, message: 'Access denied: Inventory item is outside your visibility scope' });
             }
 
-            res.json({ success: true, data: inventory });
+            // Fetch Lifecycle History
+            const logs = await ActivityLog.findAll({
+                where: { company_id, resource: 'inventory', resource_id: id },
+                include: [{ model: User, as: 'user', attributes: ['first_name', 'last_name'] }],
+                order: [['created_at', 'DESC']]
+            });
+
+            const responseData = inventory.toJSON();
+            responseData.activity_logs = logs;
+
+            res.json({ success: true, data: responseData });
         } catch (error) {
             next(error);
         }
@@ -277,7 +307,7 @@ const inventoryController = {
                 inventory.product_id,
                 type === 'set' ? adjustment : (type === 'add' ? inventory.quantity + adjustment : inventory.quantity - adjustment),
                 reason,
-                { userId: req.user.id }
+                { userId: req.user.id, id: inventory.id }
             );
 
             res.json({
@@ -423,20 +453,25 @@ const inventoryController = {
     async split(req, res, next) {
         try {
             const { id } = req.params;
-            const { quantity, serial_number, batch_number, location_details, status } = req.body;
+            const { quantity, serial_number, batch_number, location_details, status, org_node_id } = req.body;
             const company_id = req.user.company_id;
 
             const inventory = await Inventory.findOne({ where: { id, company_id } });
             if (!inventory) return res.status(404).json({ success: false, message: 'Source inventory not found' });
 
-            // Scope check
+            // Scope check: Source node must be authorized
             const allowedNodes = await req.getAuthorizedNodes();
             if (!allowedNodes.includes(inventory.org_node_id)) {
-                return res.status(403).json({ success: false, message: 'Access denied' });
+                return res.status(403).json({ success: false, message: 'Access denied: Source node is outside visibility' });
+            }
+
+            // Scope check: Target node (if provided) must be authorized
+            if (org_node_id && !allowedNodes.includes(Number(org_node_id))) {
+                return res.status(403).json({ success: false, message: 'Access denied: Destination node is outside visibility' });
             }
 
             const result = await inventoryService.splitInventory(company_id, id, quantity, {
-                serial_number, batch_number, location_details, status
+                serial_number, batch_number, location_details, status, org_node_id
             }, { userId: req.user.id });
 
             res.json({ success: true, message: 'Inventory split successfully', data: result });
@@ -491,6 +526,50 @@ const inventoryController = {
 
             res.json({ success: true, message: 'Inventory record decommissioned / retired successfully', data: result });
         } catch (error) {
+            next(error);
+        }
+    },
+
+    /**
+     * Bulk deletes all inventory for a specific product and node.
+     */
+    async bulkDelete(req, res, next) {
+        const transaction = await Inventory.sequelize.transaction();
+        try {
+            const { product_id, org_node_id } = req.body;
+            const company_id = req.user.company_id;
+
+            if (!product_id || !org_node_id) {
+                return res.status(400).json({ success: false, message: 'Missing product_id or org_node_id' });
+            }
+
+            // Scope check: User must have access to the node
+            const allowedNodes = await req.getAuthorizedNodes();
+            if (!allowedNodes.includes(Number(org_node_id))) {
+                return res.status(403).json({ success: false, message: 'Access denied: Targeted node is outside your visibility' });
+            }
+
+            const deletedCount = await Inventory.destroy({
+                where: {
+                    company_id,
+                    product_id,
+                    org_node_id
+                },
+                transaction
+            });
+
+            await ActivityLog.create({
+                company_id,
+                user_id: req.user.id,
+                action: 'INVENTORY_BULK_DELETE',
+                resource: 'inventory',
+                details: { product_id, org_node_id, count: deletedCount }
+            }, { transaction });
+
+            await transaction.commit();
+            res.json({ success: true, message: `Successfully deleted ${deletedCount} inventory records` });
+        } catch (error) {
+            if (transaction) await transaction.rollback();
             next(error);
         }
     }

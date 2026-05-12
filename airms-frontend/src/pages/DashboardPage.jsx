@@ -44,41 +44,20 @@ const KPITile = memo(({ label, value, icon, gradient, onClick, subLabel }) => (
     <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg shadow-blue-500/10 mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500`}>
       {React.cloneElement(icon, { size: 24 })}
     </div>
-    <div className="text-5xl font-black text-slate-900 tracking-tighter italic mb-1">{value}</div>
-    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{label}</div>
-    {subLabel && <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-2 opacity-60">{subLabel}</div>}
+    <div className="text-4xl font-bold text-slate-900 mb-1">{value}</div>
+    <div className="text-xs font-semibold text-slate-500">{label}</div>
+    {subLabel && <div className="text-xs font-black text-blue-600 mt-1 opacity-80">{subLabel}</div>}
   </motion.div>
 ));
 
-const DecisionDeck = memo(({ approvals, onAction }) => (
-  <div className="space-y-6">
-    <div className="flex items-center justify-between px-2">
-       <div className="flex items-center gap-4">
-          <div className="w-2 h-8 bg-rose-600 rounded-full" />
-          <div>
-            <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tight">Authorization Command</h3>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Pending Operational Approvals</p>
-          </div>
-       </div>
-       <Link to="/requests" className="text-[10px] font-black text-blue-600 hover:text-blue-800 uppercase tracking-widest bg-blue-50 px-6 py-2 rounded-full transition-all">
-          View All
-       </Link>
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-       {approvals.slice(0, 4).map(task => (
-          <ApprovalTaskCard key={task.id} task={task} onAction={onAction} />
-       ))}
-    </div>
-  </div>
-));
 
 const AssetInsight = memo(({ inventory = [] }) => (
   <div className="space-y-8">
     <div className="flex items-center gap-4 px-2">
        <div className="w-2 h-8 bg-blue-600 rounded-full" />
        <div>
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Resource Analytics</h3>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Institutional Inventory Distribution</p>
+          <h3 className="text-xl font-bold text-slate-900">Resource Analytics</h3>
+          <p className="text-xs font-medium text-slate-500 mt-1">Institutional Inventory Distribution</p>
        </div>
     </div>
     <div className="grid grid-cols-1 gap-4">
@@ -90,13 +69,13 @@ const AssetInsight = memo(({ inventory = [] }) => (
                 <Box size={20} className="text-slate-400 group-hover:text-white" />
               </div>
               <div>
-                <div className="font-black text-slate-900 text-sm italic uppercase">{item.name}</div>
-                <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-1 opacity-70">{item.code || 'ASSET-NODE'}</div>
+                <div className="font-semibold text-slate-900 text-sm">{item.name}</div>
+                <div className="text-[10px] font-medium text-blue-500 mt-1 opacity-70">{item.code || 'ASSET-NODE'}</div>
               </div>
             </div>
             <div className="text-right">
-               <div className="text-2xl font-black text-slate-900 tracking-tighter italic">{item.stock_count || 0}</div>
-               <div className="text-[8px] text-slate-400 uppercase font-black tracking-widest">Units</div>
+               <div className="text-2xl font-bold text-slate-900">{item.stock_count || 0}</div>
+                <div className="text-xs text-slate-500 font-black uppercase tracking-widest mt-1">Units</div>
             </div>
           </div>
           <div className="mt-4 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -271,13 +250,13 @@ const DashboardPage = () => {
   // ── TAB RENDERING ──
   if (tabParam) {
     if (tabParam === 'structure') return <OrganizationManagement />;
-    const tabTitles = { users: 'Personnel Registry', roles: 'Authority Matrix', products: 'Asset Lexicon' };
+    const tabTitles = { users: 'Personnel Registry', roles: 'Authority Matrix', products: 'Product Catalog' };
     return (
       <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
         <div className="flex justify-between items-end pb-8 border-b-2 border-slate-100 px-4">
           <div>
             <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">{tabTitles[tabParam] || tabParam}</h1>
-            <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.4em] mt-3 ml-1 italic">Command & Control Layer</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] mt-3 ml-1 italic">Command & Control Layer</p>
           </div>
         </div>
         <div className="bg-white/40 backdrop-blur-xl rounded-[3.5rem] p-4 ring-1 ring-white shadow-[0_32px_64px_rgba(0,0,0,0.04)]">
@@ -302,7 +281,7 @@ const DashboardPage = () => {
 
       <div className="relative z-10 max-w-[1700px] mx-auto space-y-12 py-12 px-8">
         {/* UNIVERSAL COMMAND HEADER */}
-        <div className="bg-slate-900 rounded-[3rem] p-10 shadow-xl relative overflow-hidden group">
+        <div className="bg-slate-900 rounded-[3rem] p-10 shadow-xl relative overflow-visible group">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-transparent to-transparent"></div>
           <div className="relative z-10 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-10">
             <div className="flex items-center gap-8">
@@ -310,13 +289,13 @@ const DashboardPage = () => {
                   <Fingerprint size={40} className="text-blue-400" />
                </div>
                <div>
-                  <div className="text-[11px] font-black text-blue-400 uppercase tracking-[0.4em] mb-2 ml-1 italic">
+                  <div className="text-xs font-black text-blue-400 uppercase tracking-[0.4em] mb-2 ml-1 italic">
                     {capabilities.isRoot ? 'Institutional Authority' : 'Operational Scope'}
                   </div>
-                  <h1 className="text-5xl font-black text-white tracking-tighter uppercase italic leading-none">
+                  <h1 className="text-4xl font-bold text-white leading-none">
                     {capabilities.isRoot ? 'Institutional Governance Core' : (user?.organization_node?.name || 'Central Governance')}
                   </h1>
-                  <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mt-3 ml-1 italic opacity-80">
+                  <p className="text-xs font-medium text-slate-400 mt-3 ml-1 opacity-80">
                     {capabilities.isRoot ? 'System Architect' : (user?.organization_node?.type?.name || 'System Core')} Access
                   </p>
                </div>
@@ -324,7 +303,12 @@ const DashboardPage = () => {
             <div className="flex items-center gap-6 bg-white/5 backdrop-blur-xl p-5 rounded-[40px] border border-white/10">
                {(!capabilities.isStaff && !capabilities.isRoot) && (
                   <div className="flex items-center gap-4 px-6 border-r border-white/10">
-                    <CascadingUnitSelector value={selectedUnit} onChange={setSelectedUnit} className="bg-transparent text-white min-w-[280px] h-14 rounded-2xl border-none font-black text-xs uppercase" />
+                    <CascadingUnitSelector 
+                      value={selectedUnit} 
+                      onChange={setSelectedUnit} 
+                      variant="dropdown"
+                      className="min-w-[320px] h-16" 
+                    />
                   </div>
                )}
                <div className={`flex items-center gap-4 px-8 h-16 rounded-[28px] shadow-xl ${capabilities.isRoot ? 'bg-indigo-600' : 'bg-blue-600'}`}>
@@ -416,7 +400,7 @@ const DashboardPage = () => {
 
            <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
               <div className="xl:col-span-2 space-y-16">
-                 {(!capabilities.isRoot && capabilities.canApprove && pendingApprovals.length > 0) && <DecisionDeck approvals={pendingApprovals} onAction={handleWorkflowAction} />}
+
 
                  {/* PERSONAL VAULT */}
                  <div className="space-y-8">
@@ -424,8 +408,8 @@ const DashboardPage = () => {
                        <div className="flex items-center gap-4">
                           <div className="w-2 h-8 bg-blue-600 rounded-full" />
                           <div>
-                            <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tight">Personnel Vault</h3>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Resources Under Active Custody</p>
+                            <h3 className="text-xl font-bold text-slate-900">Personnel Vault</h3>
+                            <p className="text-xs font-medium text-slate-500 mt-1">Resources Under Active Custody</p>
                           </div>
                        </div>
                     </div>
@@ -433,11 +417,11 @@ const DashboardPage = () => {
                        <table className="w-full text-left border-collapse">
                           <thead>
                              <tr className="bg-slate-50/50 border-b border-slate-100">
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Asset Detail</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serial / SKU</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">State</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Custody Date</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">Asset Detail</th>
+                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">Serial / SKU</th>
+                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">State</th>
+                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">Custody Date</th>
+                                <th className="px-8 py-4 text-xs font-semibold text-slate-500 text-right">Actions</th>
                              </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
@@ -498,7 +482,7 @@ const DashboardPage = () => {
                           </tbody>
                        </table>
                        {myAssignments.length === 0 && (
-                          <div className="p-20 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest">No assets currently assigned to your account.</div>
+                          <div className="p-20 text-center text-slate-400 text-sm font-medium">No assets currently assigned to your account.</div>
                        )}
                     </div>
                  </div>
@@ -519,7 +503,13 @@ const DashboardPage = () => {
                                 <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all"><ActivityIcon size={20} /></div>
                                 <div>
                                    <div className="font-black text-slate-900 text-sm uppercase italic">{req.items?.[0]?.product?.name || 'PROTOCOL'}</div>
-                                   <div className="text-[9px] font-black text-slate-400 uppercase mt-1">{req.request_type.toUpperCase()} • {req.request_number}</div>
+                                   <div className="text-[9px] font-black text-slate-400 uppercase mt-1">
+                                      {req.request_type === 'transfer' ? (
+                                        req.status === 'approved' ? `Completed Transfer to ${req.target_user?.first_name || 'Personnel'}` : `Initiating Transfer to ${req.target_user?.first_name || 'Personnel'}`
+                                      ) : req.request_type === 'return' ? (
+                                        req.status === 'approved' ? 'Successfully Returned to Storage' : 'Initiating Return to Storage'
+                                      ) : req.request_type.toUpperCase()} • {req.request_number}
+                                   </div>
                                 </div>
                              </div>
                              <div className="flex items-center gap-6">
@@ -534,12 +524,7 @@ const DashboardPage = () => {
 
               <div className="space-y-16">
                  {(!capabilities.isRoot && capabilities.canViewInventory) && <AssetInsight inventory={nodeDistribution} />}
-                 <div className="bg-slate-900 rounded-[3rem] p-10 shadow-xl space-y-8">
-                    <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-[0.4em] italic">Command Palette</h4>
-                    <div className="space-y-4">
-                       <button onClick={() => navigate('/requests/new')} className="w-full flex items-center justify-between p-5 bg-white/5 hover:bg-white group rounded-3xl transition-all border border-white/10"><span className="font-black text-[10px] text-white group-hover:text-slate-900 uppercase italic ml-2">Initiate Request</span><div className="w-10 h-10 bg-white/10 group-hover:bg-blue-600 rounded-xl flex items-center justify-center text-white"><Send size={18} /></div></button>
-                    </div>
-                 </div>
+
               </div>
            </div>
         </div>

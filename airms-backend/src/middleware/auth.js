@@ -4,7 +4,9 @@ const logger = require('../config/logger');
 
 const authMiddleware = async (req, res, next) => {
     try {
-        
+        // 1. Check if user is already attached (from previous middleware in same request)
+        if (req.user) return next();
+
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
@@ -15,25 +17,23 @@ const authMiddleware = async (req, res, next) => {
 
         const token = authHeader.split(' ')[1];
 
-        
+        // 2. Fast JWT verification
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        
+        // 3. Optimized User Fetch (Only essential data for middleware)
         const user = await User.findByPk(decoded.id, {
-            attributes: { exclude: ['password_hash', 'refresh_token'] },
+            attributes: ['id', 'email', 'role_id', 'company_id', 'org_node_id', 'is_active'],
             include: [
                 {
                     model: Role,
                     as: 'role',
-                    include: [{
-                        model: Permission,
-                        as: 'permissions',
-                        through: { attributes: [] }
-                    }]
+                    attributes: ['id', 'name', 'level', 'visibility_scope']
+                    // Permissions will be loaded lazily only when checkPermission is called
                 },
                 {
                     model: OrganizationNode,
-                    as: 'organizationNode'
+                    as: 'organizationNode',
+                    attributes: ['id', 'name', 'code', 'path']
                 }
             ]
         });

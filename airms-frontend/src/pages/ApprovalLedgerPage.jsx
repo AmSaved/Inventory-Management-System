@@ -27,12 +27,15 @@ const ApprovalLedgerPage = () => {
   const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
   
+  const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [approvalAction, setApprovalAction] = useState(null);
   const [comments, setComments] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [viewingRequest, setViewingRequest] = useState(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
 
   // Dynamic Title and Icon based on type
   const typeConfig = {
@@ -134,27 +137,24 @@ const ApprovalLedgerPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center px-4 md:px-0">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
-            {config.icon}
-          </div>
-          <h1 className="text-3xl font-black text-gray-900 tracking-tight italic uppercase">
-            {config.title}
-          </h1>
-        </div>
-      </div>
+
 
       <Card className="border-none shadow-xl bg-white/50 backdrop-blur-sm">
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row gap-4 mb-8">
-            <div className="flex-1">
+            <div className="w-full max-w-md">
               <Input
-                placeholder="Search ledger by ID, originator, or purpose..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by ID or Name..."
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setSearch(searchValue);
+                  }
+                }}
                 className="bg-gray-50 border-none shadow-inner"
               />
+              <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2 ml-2">Press Enter to execute search command</p>
             </div>
           </div>
 
@@ -224,7 +224,15 @@ const ApprovalLedgerPage = () => {
                       <td className="px-6 py-5 align-middle">
                         <div className="flex justify-end gap-2 pr-2">
                           <button
-                            onClick={() => navigate(`/requests/${item.id}`)}
+                            onClick={async () => {
+                              try {
+                                const response = await api.get(`/requests/${item.id}`);
+                                setViewingRequest(response.data.data);
+                                setViewModalOpen(true);
+                              } catch (e) {
+                                toast.error('Could not retrieve protocol details');
+                              }
+                            }}
                             className="p-2 text-gray-300 hover:text-primary-600 hover:bg-white rounded-xl transition-all shadow-none hover:shadow-md"
                           >
                             <Eye size={18} />
@@ -318,6 +326,58 @@ const ApprovalLedgerPage = () => {
               {processing ? 'Processing...' : `Execute ${approvalAction?.toUpperCase()}`}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={viewModalOpen}
+        onClose={() => setViewModalOpen(false)}
+        title={`Asset Intelligence: ${viewingRequest?.request_number || viewingRequest?.transfer_number || viewingRequest?.discharge_number}`}
+      >
+        <div className="space-y-6 p-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
+           <div className="space-y-4">
+              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] border-b border-gray-100 pb-2">
+                 Manifested Resources
+              </h3>
+              <div className="space-y-3">
+                 {viewingRequest?.items?.map((item, idx) => (
+                    <div key={idx} className="p-6 bg-gray-50 border border-gray-100 rounded-[30px] shadow-sm group">
+                       <div className="flex justify-between items-start mb-6">
+                          <div>
+                             <p className="font-black text-gray-900 text-lg uppercase italic leading-none">{item.product?.name}</p>
+                             <p className="text-[9px] text-primary-600 font-black uppercase tracking-widest mt-2">{item.product?.sku} • {item.product?.category}</p>
+                          </div>
+                          <div className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-tighter shadow-lg">
+                             QTY: {item.quantity_requested || item.quantity}
+                          </div>
+                       </div>
+                       
+                       <div className="grid grid-cols-1 gap-4">
+                          <div className="space-y-2">
+                             <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest ml-1">Digital Barcode / UUID</p>
+                             <div className="p-4 bg-white rounded-2xl border border-gray-100 font-mono text-xs font-black text-slate-800 flex items-center justify-between group-hover:border-blue-200 transition-all">
+                                <span>{item.barcode || 'UNASSIGNED_PROTOCOL'}</span>
+                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                             </div>
+                          </div>
+                          <div className="space-y-2">
+                             <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest ml-1">Hardware Serial Number</p>
+                             <div className="p-4 bg-white rounded-2xl border border-gray-100 font-mono text-xs font-black text-slate-500 flex items-center justify-between italic">
+                                <span>{item.serial_number || 'PENDING_PHYSICAL_HANDOVER'}</span>
+                             </div>
+                          </div>
+                       </div>
+
+                       {item.specifications && (
+                         <div className="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                            <p className="text-[8px] text-blue-400 font-black uppercase tracking-widest mb-1">Custom Specifications</p>
+                            <p className="text-[10px] text-blue-900 font-bold italic">"{item.specifications}"</p>
+                         </div>
+                       )}
+                    </div>
+                 ))}
+              </div>
+           </div>
         </div>
       </Modal>
     </div>

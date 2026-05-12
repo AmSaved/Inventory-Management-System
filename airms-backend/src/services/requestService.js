@@ -107,16 +107,21 @@ class RequestService {
                 const targetNodeId = request.org_node_id || targetUser?.org_node_id;
 
                 for (const item of request.items) {
+                    const specs = typeof item.specifications === 'string' ? JSON.parse(item.specifications || '{}') : (item.specifications || {});
+                    const sourceNodeId = specs.source_node_id || targetNodeId;
+                    const serialNumber = specs.serial_number || `AUTO-${request.request_number}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+
                     // Subtract from inventory
                     await inventoryService.removeFromInventory(
                         companyId,
-                        targetNodeId,
+                        sourceNodeId,
                         item.product_id,
                         item.quantity_requested || 1,
                         { 
                             userId: effectorUser?.id, 
                             reference: `REQ-${request.request_number}`,
-                            transaction: t 
+                            transaction: t,
+                            serialNumber: specs.serial_number // Use specific serial if provided
                         }
                     );
 
@@ -126,7 +131,7 @@ class RequestService {
                         product_id: item.product_id,
                         user_id: targetUserId,
                         org_node_id: targetNodeId,
-                        serial_number: `AUTO-${request.request_number}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+                        serial_number: serialNumber,
                         assigned_at: new Date(),
                         status: 'active',
                         condition_at_assignment: 'good',

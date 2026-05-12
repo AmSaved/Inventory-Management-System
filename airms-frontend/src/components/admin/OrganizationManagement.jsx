@@ -191,13 +191,9 @@ const OrganizationManagement = () => {
               <Network className="text-blue-400 group-hover:scale-110 transition-transform" size={32} />
            </div>
            <div>
-             <div className="text-[11px] font-black text-blue-600 uppercase tracking-[0.4em] mb-2 ml-1 italic">Structural Blueprint</div>
-             <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">
-               {isSuperAdmin ? 'Institutional Tree' : 'Node Architecture'}
-             </h1>
-             <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] mt-3 ml-1 italic opacity-80">
-               {isSuperAdmin ? 'Root Layer Hierarchy Orchestration' : 'Localized Sub-Unit Command'}
-             </p>
+              <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">
+                Hierarchy
+              </h1>
            </div>
         </div>
         <div className="flex flex-wrap gap-4">
@@ -217,7 +213,7 @@ const OrganizationManagement = () => {
                className="bg-slate-950 text-white h-16 px-10 rounded-3xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 transition-all shadow-2xl shadow-blue-500/20"
              >
                <Plus size={18} className="mr-3" /> 
-               {navigationStack.length > 0 ? 'Deploy Child Node' : 'Deploy Root Org'}
+               {navigationStack.length > 0 ? 'Deploy Child Node' : (isSuperAdmin ? 'Deploy Root Org' : 'Deploy Sub-Unit')}
              </Button>
            )}
         </div>
@@ -229,7 +225,7 @@ const OrganizationManagement = () => {
           onClick={() => handleBreadcrumbClick(-1)}
           className={`flex items-center px-6 py-4 rounded-2xl transition-all font-black text-[10px] uppercase tracking-widest ${navigationStack.length === 0 ? 'bg-slate-950 text-white shadow-2xl' : 'text-slate-400 hover:bg-white/60'}`}
         >
-          <LayoutGrid size={16} className="mr-3" /> System Roots
+          <LayoutGrid size={16} className="mr-3" /> {isSuperAdmin ? 'Institutional Root' : 'Main Level'}
         </button>
         {navigationStack.map((node, i) => (
           <React.Fragment key={node.id}>
@@ -403,7 +399,7 @@ const OrganizationManagement = () => {
                      <div key={t.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group hover:bg-slate-950 hover:text-white transition-all">
                         <div>
                            <div className="font-black uppercase italic text-xs">{t.name}</div>
-                           <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest opacity-60">PREFIX: {t.code_prefix}</div>
+                           <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest opacity-60">ID CODE: {t.code_prefix}</div>
                         </div>
                         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                            <button onClick={() => { setEditingType(t); setFormData(t); setTypeModalView('form'); }} className="p-2 bg-white/10 rounded-lg hover:bg-blue-600 transition-colors"><Edit3 size={14} /></button>
@@ -416,7 +412,7 @@ const OrganizationManagement = () => {
                <div className="space-y-6 animate-in slide-in-from-right-4">
                   <div className="grid grid-cols-2 gap-4">
                      <Input label="Blueprint Name" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="bg-slate-50 border-none rounded-xl font-black" />
-                     <Input label="Prefix" value={formData.code_prefix || ''} onChange={e => setFormData({...formData, code_prefix: e.target.value.toUpperCase()})} className="bg-slate-50 border-none rounded-xl font-black" />
+                     <Input label="ID Prefix" value={formData.code_prefix || ''} onChange={e => setFormData({...formData, code_prefix: e.target.value.toUpperCase()})} className="bg-slate-50 border-none rounded-xl font-black" />
                   </div>
                   
                   <div className="space-y-3 pt-2">

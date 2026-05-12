@@ -109,16 +109,31 @@ class WorkflowService {
      * Checks if a user has the authority to approve a specific step for a given resource.
      * Respects branch scoping and hierarchical node authority.
      */
-    async userCanApproveStep(user, resource, step, providedPermissions = null) {
+    async userCanApproveStep(user, resource, step, providedPermissions = null, providedAllowedNodes = null) {
         if (!user || !resource || !step) {
-            console.log('[AuthTrace] Missing user, resource, or step.');
+            return false;
+        }
+
+        // ─── PRIORITY 0: ALREADY ACTED CHECK ───
+        // If the user has already approved any part of this request, they shouldn't action it again
+        // in a multi-step workflow (enforces 4-eyes principle)
+        const hasAlreadyActed = await Approval.findOne({
+            where: {
+                [Op.or]: [
+                    { request_id: resource.id },
+                    { discharge_form_id: resource.id },
+                    { store_form_id: resource.id }
+                ],
+                approver_id: user.id
+            }
+        });
+
+        if (hasAlreadyActed) {
             return false;
         }
         
         const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
-        const workflow = await Workflow.findByPk(step.workflow_id);
-        const resourceTag = workflow ? workflow.resource_type.replace('inventory_', '') : 'request';
-
+        
         // ─── PRIORITY 1: GLOBAL OVERRIDES ───
         const isGlobalAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
         if (isGlobalAdmin) return true;
@@ -128,62 +143,50 @@ class WorkflowService {
                              (resource.to_user_id && Number(resource.to_user_id) === Number(user.id));
         
         if (isTargetUser) {
-            console.log(`[AuthTrace] GRANTED: User ${user.id} is the Target User/Receiver.`);
             return true;
         }
 
         // ─── PRIORITY 3: PERMISSION & ROLE VALIDATION ───
+        const userRoleId = Number(user.role?.id || user.role_id);
+        const isAssignedRole = step.required_role_id && userRoleId === Number(step.required_role_id);
+
+        // If the user is specifically assigned to this step by role, GRANT immediately
+        if (isAssignedRole) {
+            return true;
+        }
+
+        // Branch-scoped check for general approval permissions
+        const resourceTag = (step.workflow?.resource_type || 'request').replace('inventory_', '');
         const hasApprovePower = permissions.some(p => 
             p === step.required_permission || 
             p === `${resourceTag}:approve` || 
             p === `${resourceTag}:execute` ||
             p === 'request:approve' || 
             p === 'transfer:approve' ||
-            p === 'assignment:return' ||
             p === 'inventory:manage'
         );
 
-        const userRoleId = Number(user.role?.id || user.role_id);
-        const isAssignedRole = step.required_role_id && userRoleId === Number(step.required_role_id);
-
-        try {
-            // If the user is specifically assigned to this step by role, GRANT immediately
-            if (isAssignedRole) {
-                console.log(`[AuthTrace] GRANTED: User ${user.id} matches the Assigned Role (${userRoleId}) for this step.`);
-                return true;
-            }
-
-            // If the user has general approve power, we still perform a loose branch check 
-            // to prevent them from seeing requests from completely unrelated organizations.
-            if (hasApprovePower) {
-                try {
-                    const hierarchyService = require('./hierarchyService');
-                    const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
-                    
-                    const nodeIds = [
-                        resource.from_node_id,
-                        resource.to_node_id,
-                        resource.org_node_id,
-                        resource.target_node_id
-                    ].filter(id => id !== null && id !== undefined).map(Number);
-                    
-                    const hasBranchAuthority = nodeIds.some(nodeId => allowedNodes.includes(nodeId));
-
-                    if (hasBranchAuthority) {
-                        console.log(`[AuthTrace] GRANTED: User ${user.id} has general permission and branch authority.`);
-                        return true;
-                    }
-                } catch (error) {
-                    console.error('[AuthTrace] Branch check error:', error);
+        if (hasApprovePower) {
+            try {
+                // Optimization: Use provided allowedNodes to avoid N+1 queries
+                const allowedNodes = providedAllowedNodes || await require('./hierarchyService').getAllowedNodes(user, permissions);
+                
+                const nodeIds = [
+                    resource.from_node_id,
+                    resource.to_node_id,
+                    resource.org_node_id,
+                    resource.target_node_id
+                ].filter(id => id !== null && id !== undefined).map(Number);
+                
+                if (nodeIds.some(nodeId => allowedNodes.includes(nodeId))) {
+                    return true;
                 }
+            } catch (error) {
+                logger.error('[AuthTrace] Branch check error:', error);
             }
-
-            console.log(`[AuthTrace] DENIED: User ${user.id} failed role match and branch scope for ${resourceTag}.`);
-            return false;
-        } catch (error) {
-            console.error('[AuthTrace] Authority check failed:', error);
-            return false;
         }
+
+        return false;
     }
 
     /**
@@ -230,12 +233,8 @@ class WorkflowService {
                 approvalData.discharge_form_id = resource.id;
             } else if (modelName === 'StoreForm') {
                 approvalData.store_form_id = resource.id;
-            } else if (modelName === 'Transfer') {
-                approvalData.transfer_id = resource.id;
-            } else if (modelName === 'Return') {
-                approvalData.return_id = resource.id;
             } else {
-                // Fallback for generic request-like objects passed as plain data
+                // For all other models (Transfers, Returns etc) that share the Request schema
                 approvalData.request_id = resource.id;
             }
 

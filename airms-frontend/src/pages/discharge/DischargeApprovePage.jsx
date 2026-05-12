@@ -29,6 +29,7 @@ const DischargeApprovePage = () => {
   const { user, hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState('inbox'); // 'inbox' (mine) or 'all'
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // We fetch from our new dynamic endpoint
   const { data: dischargeData, loading, refetch } = useFetch(
@@ -38,8 +39,8 @@ const DischargeApprovePage = () => {
   const discharges = Array.isArray(dischargeData) ? dischargeData : (dischargeData?.data || []);
 
   const filteredDischarges = discharges.filter(d => 
-    d.discharge_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    d.fromNode?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    d.discharge_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    d.fromNode?.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleAction = async (id, action) => {
@@ -99,15 +100,21 @@ const DischargeApprovePage = () => {
 
       {/* Filter Bar */}
       <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-xl flex flex-col md:flex-row items-center gap-4">
-          <div className="relative flex-1 w-full">
+          <div className="relative w-full max-w-md">
              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
              <input 
                type="text"
-               placeholder="Search by ID or Branch..." 
+               placeholder="Search by ID or Name..." 
                className="w-full pl-16 h-14 bg-slate-50 border-none rounded-2xl font-bold text-xs uppercase tracking-widest text-slate-900 focus:ring-2 focus:ring-blue-100 outline-none"
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
+               onKeyDown={(e) => {
+                 if (e.key === 'Enter') {
+                   setSearchQuery(searchTerm);
+                 }
+               }}
              />
+             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-2 ml-2">Press Enter to Filter Ledger</p>
           </div>
           <Button onClick={() => refetch()} className="h-14 px-8 rounded-2xl bg-slate-950 text-white font-black uppercase text-[10px] tracking-widest hover:bg-black w-full md:w-auto">
              Refresh Ledger

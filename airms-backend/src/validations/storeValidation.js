@@ -26,19 +26,27 @@ const createStoreValidation = [
         .notEmpty().withMessage('At least one item is required'),
     
     body('items.*.product_id')
-        .optional()
+        .optional({ nullable: true })
         .isInt().withMessage('Product ID must be an integer'),
         
     body('items.*.new_product')
-        .optional()
+        .optional({ nullable: true })
         .isObject().withMessage('new_product must be an object'),
     
     body('items.*.new_product.name')
-        .if(body('items.*.new_product').exists())
+        .if((value, { req, path }) => {
+            const index = path.match(/items\[(\d+)\]/)[1];
+            const item = req.body.items[index];
+            return item && item.new_product && typeof item.new_product === 'object';
+        })
         .notEmpty().withMessage('Asset Name is required when generating a new product blueprint'),
         
     body('items.*.new_product.sku')
-        .if(body('items.*.new_product').exists())
+        .if((value, { req, path }) => {
+            const index = path.match(/items\[(\d+)\]/)[1];
+            const item = req.body.items[index];
+            return item && item.new_product && typeof item.new_product === 'object';
+        })
         .notEmpty().withMessage('SKU is required when generating a new product blueprint'),
     
     body('items.*.quantity')

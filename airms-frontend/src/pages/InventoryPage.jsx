@@ -26,18 +26,24 @@ import {
   Building2,
   Box,
   AlertTriangle,
-  Fingerprint
+  Fingerprint,
+  QrCode,
+  Printer
 } from 'lucide-react';
+import QRLabel from '../components/inventory/QRLabel';
+import ActivityLogPanel from '../components/inventory/ActivityLogPanel';
 
 const InventoryPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { canAdjustInventory } = usePermissions();
   
+  const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
   const [adjusting, setAdjusting] = useState(false);
+  const [activityPanelOpen, setActivityPanelOpen] = useState(false);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [adjustmentData, setAdjustmentData] = useState({
     adjustment: 0,
@@ -45,10 +51,17 @@ const InventoryPage = () => {
     reason: ''
   });
 
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [itemForQr, setItemForQr] = useState(null);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   // Auto-set the user's unit for filtering if not already set
   useEffect(() => {
-    if (user?.org_unit_id && !selectedUnit) {
-      // setSelectedUnit(user.org_unit_id); 
+    if (user?.org_node_id && !selectedUnit) {
+      // setSelectedUnit(user.org_node_id); 
       // Note: We might want "All" by default for admins, but for others, auto-select is better.
     }
   }, [user, selectedUnit]);
@@ -56,7 +69,7 @@ const InventoryPage = () => {
   const { data: inventoryData, loading, refetch } = useFetch('/inventory', {
     params: {
       search,
-      org_unit_id: selectedUnit,
+      org_node_id: selectedUnit,
       limit: 100
     }
   });
@@ -93,7 +106,7 @@ const InventoryPage = () => {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-10 py-10 px-6">
+    <div className="max-w-[1600px] mx-auto space-y-10 py-10 px-6 print:hidden">
       {/* Dynamic Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-2">
         <div className="space-y-1">
@@ -112,13 +125,13 @@ const InventoryPage = () => {
            <Button 
             variant="outline"
             className="border-2 border-slate-200 rounded-2xl px-6 h-14 font-black text-slate-600 hover:bg-slate-50 uppercase text-[10px] tracking-widest"
-            onClick={() => navigate('/reports')}
+            onClick={() => setActivityPanelOpen(true)}
            >
              <History size={16} className="mr-2" /> View Logs
            </Button>
             {canAdjustInventory && (
               <Button 
-                onClick={() => navigate('/inventory/store')}
+                onClick={() => navigate('/store')}
                 className="bg-blue-600 border-b-4 border-blue-800 hover:bg-blue-700 text-white font-black px-8 h-14 rounded-2xl transition-all shadow-xl shadow-blue-100 flex items-center gap-2 uppercase text-[10px] tracking-[0.15em]"
               >
                 <Plus size={18} /> Add New Stock
@@ -153,15 +166,21 @@ const InventoryPage = () => {
 
               <div className="space-y-4">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Universal Search</label>
-                 <div className="relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 transition-colors" size={16} />
-                    <Input
-                      placeholder="SKU, Name, Model..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-12 h-14 rounded-2xl border-2 border-slate-50 font-bold text-sm bg-slate-50/30"
-                    />
-                 </div>
+                  <div className="relative group">
+                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 transition-colors" size={16} />
+                     <Input
+                       placeholder="Search by ID or Name..."
+                       value={searchValue}
+                       onChange={(e) => setSearchValue(e.target.value)}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter') {
+                           setSearch(searchValue);
+                         }
+                       }}
+                       className="pl-12 h-14 rounded-2xl border-2 border-slate-50 font-bold text-sm bg-slate-50/30"
+                     />
+                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-2 ml-1">Enter to Search</p>
+                  </div>
               </div>
 
               <div className="bg-slate-900 rounded-3xl p-6 relative overflow-hidden">
@@ -171,12 +190,12 @@ const InventoryPage = () => {
                  <div className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-4">Quick Stats</div>
                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                       <div className="text-2xl font-black text-white italic tracking-tighter">{inventoryData?.data?.length || 0}</div>
+                       <div className="text-2xl font-black text-white italic tracking-tighter">{inventoryData?.length || 0}</div>
                        <div className="text-[8px] font-bold text-slate-500 uppercase">Records</div>
                     </div>
                     <div>
                        <div className="text-2xl font-black text-white italic tracking-tighter">
-                          {inventoryData?.data?.reduce((acc, curr) => acc + (curr.quantity <= curr.minimum_quantity ? 1 : 0), 0)}
+                          {inventoryData?.reduce((acc, curr) => acc + (curr.quantity <= curr.minimum_quantity ? 1 : 0), 0)}
                        </div>
                        <div className="text-[8px] font-bold text-slate-500 uppercase">Critical</div>
                     </div>
@@ -199,7 +218,7 @@ const InventoryPage = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {inventoryData?.data?.map((item) => {
+                  {inventoryData?.map((item) => {
                     const stockStatus = getStockStatus(item.quantity, item.minimum_quantity);
                     return (
                       <TableRow key={item.id} className="hover:bg-slate-50/30 transition-colors group">
@@ -224,8 +243,8 @@ const InventoryPage = () => {
                                <Building2 size={12} className="text-slate-400" />
                              </div>
                              <div>
-                               <div className="text-xs font-black text-slate-700">{item.organizationUnit?.name}</div>
-                               <div className="text-[9px] font-bold text-slate-400 uppercase">{item.organizationUnit?.organizationLevel?.name}</div>
+                               <div className="text-xs font-black text-slate-700">{item.organizationNode?.name}</div>
+                               <div className="text-[9px] font-bold text-slate-400 uppercase">{item.organizationNode?.code}</div>
                              </div>
                            </div>
                         </TableCell>
@@ -242,7 +261,7 @@ const InventoryPage = () => {
                            </div>
                         </TableCell>
                         <TableCell className="px-8 text-right">
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
+                          <div className="flex items-center justify-end gap-2 transition-all">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -251,7 +270,19 @@ const InventoryPage = () => {
                             >
                               <Search size={14} />
                             </Button>
-                            {canAdjustInventory && (
+                             <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setItemForQr(item);
+                                  setQrModalOpen(true);
+                                }}
+                                className="w-10 h-10 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-indigo-600 shadow-sm"
+                                title="Print Asset Label"
+                              >
+                                <QrCode size={14} />
+                              </Button>
+                              {canAdjustInventory && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -272,7 +303,7 @@ const InventoryPage = () => {
                   })}
                 </TableBody>
               </Table>
-              {inventoryData?.data?.length === 0 && (
+              {inventoryData?.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-32 text-slate-400 space-y-4">
                    <div className="w-20 h-20 bg-slate-50 rounded-[30px] flex items-center justify-center">
                       <Box size={40} className="text-slate-100" />
@@ -306,7 +337,7 @@ const InventoryPage = () => {
                 <h4 className="text-lg font-black text-slate-900 tracking-tight leading-none mb-1">{selectedItem?.product?.name}</h4>
                 <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{selectedItem?.product?.sku}</div>
                 <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase mt-1">
-                  <Building2 size={10} /> {selectedItem?.organizationUnit?.name}
+                  <Building2 size={10} /> {selectedItem?.organizationNode?.name}
                 </div>
              </div>
           </div>
@@ -361,6 +392,33 @@ const InventoryPage = () => {
           </div>
         </div>
       </Modal>
+
+      {/* QR Label Modal */}
+      <Modal
+        isOpen={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        title="Asset Label Preview"
+        onConfirm={handlePrint}
+        confirmText="Print Label"
+      >
+        <div className="py-4 flex flex-col items-center space-y-6">
+          <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100">
+            <QRLabel item={itemForQr} organizationName={user?.company?.name || 'AIRMS'} />
+          </div>
+          <div className="text-center space-y-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Printer Optimization</p>
+            <p className="text-xs text-slate-500 max-w-xs">
+              Labels are formatted for 50mm x 30mm thermal printers or standard A4 sticker sheets.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Quick Activity Viewer Panel */}
+      <ActivityLogPanel 
+        isOpen={activityPanelOpen} 
+        onClose={() => setActivityPanelOpen(false)} 
+      />
     </div>
   );
 };

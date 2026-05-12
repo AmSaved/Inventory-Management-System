@@ -25,6 +25,8 @@ const RolesPage = () => {
   const [roles, setRoles] = useState([]);
   const [allPermissions, setAllPermissions] = useState([]);
   const [nodes, setNodes] = useState([]);
+  const [searchValue, setSearchValue] = useState('');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
@@ -121,8 +123,8 @@ const RolesPage = () => {
   };
 
   const filteredRoles = (roles || []).filter(r =>
-    (r.name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-    (r.description?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+    (r.name?.toLowerCase() || '').includes(search.toLowerCase()) ||
+    (r.description?.toLowerCase() || '').includes(search.toLowerCase())
   );
 
   if (loading) return <LoadingSpinner />;
@@ -155,16 +157,20 @@ const RolesPage = () => {
       </div>
 
       <div className="flex flex-col md:flex-row gap-6 items-center">
-        <div className="relative flex-1 group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input
-            type="text"
-            placeholder="Search roles..."
-            className="w-full h-16 pl-14 pr-6 bg-white border-2 border-slate-100 rounded-[28px] font-black text-slate-900 outline-none focus:border-blue-500 transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        <div className="w-full max-w-md">
+            <Input
+              placeholder="Search by ID or Name..."
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setSearch(searchValue);
+                }
+              }}
+              className="bg-gray-50 border-none shadow-inner"
+            />
+            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2 ml-2">Press Enter to Filter Roles</p>
+          </div>
       </div>
 
       <Card className="rounded-[40px] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-slate-100">
@@ -186,14 +192,13 @@ const RolesPage = () => {
                         <Lock className="text-slate-400 group-hover:text-blue-500" size={20} />
                       </div>
                       <div>
-                        <h4 className="font-black text-slate-900 text-sm tracking-tight">{role.name}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">LVL-{role.level} Access</p>
-                      </div>
-                      <div>
-                        <h4 className="font-black text-slate-900 text-sm tracking-tight">{role.description}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">LVL-{role.level} Access</p>
+                        <h4 className="font-bold text-slate-900 text-[10px] tracking-tight uppercase italic">{role.name}</h4>
+                        <p className="text-[11px] text-blue-500 font-black uppercase tracking-widest mt-1">LVL-{role.level} Access Protocol</p>
                       </div>
                     </div>
+                  </td>
+                  <td className="p-8">
+                      <h4 className="font-black text-slate-500 text-sm tracking-tight uppercase italic opacity-70">{role.description}</h4>
                   </td>
                   <td className="p-8 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all duration-300">
@@ -221,12 +226,12 @@ const RolesPage = () => {
           <div className="space-y-8 pt-8 border-t-2 border-slate-50">
             <div className="flex items-center justify-between px-2">
                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Security Matrix</label>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Security Matrix</label>
                   <h3 className="text-xl font-black text-slate-900 italic uppercase tracking-tight leading-none">Permissions Registry</h3>
                </div>
                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-full border border-emerald-100">
                   <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">{formData.permission_ids.length} Active Modules</span>
+                  <span className="text-xs font-black text-emerald-700 uppercase tracking-widest">{formData.permission_ids.length} Active Modules</span>
                </div>
             </div>
 

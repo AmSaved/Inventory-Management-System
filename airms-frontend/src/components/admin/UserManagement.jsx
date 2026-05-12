@@ -34,6 +34,8 @@ const UserManagement = ({ orgNodeId }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const isSuperAdmin = user?.role?.level >= 100;
@@ -53,8 +55,20 @@ const UserManagement = ({ orgNodeId }) => {
     return queryString ? `${url}?${queryString}` : url;
   }, [orgNodeId, isSuperAdmin]);
 
-  const { data: users, loading: usersLoading, refetch: refetchUsers } = useFetch(userFetchUrl);
+  const { data: usersData, loading: usersLoading, refetch: refetchUsers } = useFetch(userFetchUrl);
+  const users = usersData?.data || usersData || [];
   const { data: roles } = useFetch('/roles');
+
+  const filteredUsers = useMemo(() => {
+    if (!search) return users;
+    const term = search.toLowerCase();
+    return users.filter(u => 
+      u.first_name?.toLowerCase().includes(term) ||
+      u.last_name?.toLowerCase().includes(term) ||
+      u.email?.toLowerCase().includes(term) ||
+      u.employee_id?.toLowerCase().includes(term)
+    );
+  }, [users, search]);
 
   const handleOpenModal = (item = null) => {
     setEditingItem(item);
@@ -158,11 +172,18 @@ const UserManagement = ({ orgNodeId }) => {
          <Search size={18} className="text-slate-400" />
          <input 
            type="text" 
-           placeholder="SEARCH PERSONNEL REGISTRY..." 
+           placeholder="SEARCH BY ID OR NAME..." 
            className="bg-transparent border-none outline-none font-black text-[10px] uppercase tracking-widest text-slate-900 placeholder:text-slate-300 w-full"
+           value={searchTerm}
+           onChange={(e) => setSearchTerm(e.target.value)}
+           onKeyDown={(e) => {
+             if (e.key === 'Enter') {
+               setSearch(searchTerm);
+             }
+           }}
          />
          <div className="flex items-center gap-2">
-            <Badge className="bg-slate-900 text-white border-none text-[8px] font-black uppercase px-3 py-1 rounded-full">{users?.length || 0} RECORDS</Badge>
+            <Badge className="bg-slate-900 text-white border-none text-[8px] font-black uppercase px-3 py-1 rounded-full">{filteredUsers?.length || 0} RECORDS</Badge>
          </div>
       </div>
 
@@ -174,7 +195,7 @@ const UserManagement = ({ orgNodeId }) => {
         </div>
 
         <div className="grid grid-cols-1 gap-4">
-           {users?.map((u) => (
+           {filteredUsers.map((u) => (
              <div 
                key={u.id} 
                className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-8 border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.03)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.08)] transition-all duration-500 group flex flex-col xl:flex-row items-center justify-between gap-8 overflow-hidden relative"

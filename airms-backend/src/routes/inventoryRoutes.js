@@ -16,7 +16,7 @@ const {
 router.use(authMiddleware);
 
 // Inventory aggregation routes (Hierarchy-aware)
-router.get('/', checkPermission('inventory:view'), inventoryController.getAll);
+router.get('/', checkPermission(['inventory:view', 'request:create']), inventoryController.getAll);
 router.get('/low-stock', checkPermission('inventory:view'), inventoryController.getLowStock);
 router.get('/availability', checkPermission('inventory:view'), inventoryController.getAvailability);
 router.get('/:id', checkPermission('inventory:view'), inventoryController.getById);
@@ -69,6 +69,11 @@ router.post('/merge',
 router.post('/:id/decommission', 
     checkPermission('inventory:adjust'), 
     inventoryController.decommission
+);
+
+router.post('/bulk-delete', 
+    checkPermission('inventory:adjust'), 
+    inventoryController.bulkDelete
 );
 
 // Note: Direct deletion of inventory records is restricted to maintain hierarchical integrity.

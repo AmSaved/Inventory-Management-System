@@ -49,7 +49,7 @@ const inventoryService = {
 
   // Get low stock items
   getLowStock: async (unitId = null) => {
-    const params = unitId ? { org_unit_id: unitId } : {};
+    const params = unitId ? { org_node_id: unitId } : {};
     const response = await api.get('/inventory/low-stock', { params });
     return response.data.data;
   },
@@ -87,6 +87,15 @@ const inventoryService = {
   // Decommission inventory record
   decommissionItem: async (id, reason) => {
     const response = await api.post(`/inventory/${id}/decommission`, { reason });
+    return response.data;
+  },
+
+  // Bulk delete by product and node
+  bulkDelete: async (productId, orgNodeId) => {
+    const response = await api.post('/inventory/bulk-delete', {
+      product_id: productId,
+      org_node_id: orgNodeId
+    });
     return response.data;
   }
 };

@@ -15,39 +15,11 @@ const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
   };
 
   return (
-    <nav className="bg-slate-900 border-b border-white/10 sticky top-0 z-50 text-white">
-      <div className="px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-md text-white hover:text-blue-400 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 lg:hidden"
-            >
-              <span className="sr-only">Open sidebar</span>
-              <svg
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              </svg>
-            </button>
+    <nav className="fixed top-4 right-4 z-50 pointer-events-none">
+      <div className="bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl pointer-events-auto px-4">
 
-            <Link to="/" className="flex-shrink-0 flex items-center ml-4 lg:ml-0">
-              <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <ShieldCheck className="h-5 w-5 text-white" />
-              </div>
-              <span className="ml-2 text-xl font-black text-white tracking-tighter uppercase italic">AIRMS</span>
-            </Link>
-          </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center h-12">
             {isAuthenticated ? (
               <div className="relative">
                 <button
@@ -105,7 +77,6 @@ const Navbar = ({ sidebarOpen, setSidebarOpen }) => {
             )}
           </div>
         </div>
-      </div>
     </nav>
   );
 };

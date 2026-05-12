@@ -1,4 +1,4 @@
-const { Request, RequestItem, Product, Approval, User, OrganizationNode, ActivityLog, WorkflowStep, WorkflowStatus, DischargeForm, DischargeItem } = require('../models');
+const { Request, RequestItem, Product, Approval, User, OrganizationNode, ActivityLog, WorkflowStep, WorkflowStatus, DischargeForm, DischargeItem, Workflow } = require('../models');
 const { Op } = require('sequelize');
 const logger = require('../config/logger');
 const workflowService = require('./workflowService');
@@ -82,11 +82,12 @@ class ApprovalService {
                 this.getReturnApprovals(companyId, user, false, 'inventory-returns')
             ]);
 
-            // 3. Process standard requests into plain objects
+            // 3. Process standard requests into plain objects (Optimized)
             const standardResults = await Promise.all(requests.map(async (item) => {
                 const plain = item.get({ plain: true });
                 plain.resource_origin = 'request';
-                plain.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep);
+                // Use optimized check to avoid N+1 queries
+                plain.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
                 return plain;
             }));
 
@@ -113,7 +114,8 @@ class ApprovalService {
         try {
             const { DischargeForm, DischargeItem, Request, RequestItem } = require('../models');
             const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(user);
+            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
+            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
 
             const where = {
                 company_id: companyId,
@@ -137,12 +139,10 @@ class ApprovalService {
                     {
                         model: WorkflowStep,
                         as: 'currentStep',
-                        include: [{ model: WorkflowStatus, as: 'statusLabel' }]
-                    },
-                    {
-                        model: require('../models').Workflow,
-                        as: 'workflow',
-                        attributes: ['id', 'name', 'resource_type']
+                        include: [
+                            { model: WorkflowStatus, as: 'statusLabel' },
+                            { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                        ]
                     },
                     {
                         model: DischargeItem,
@@ -164,8 +164,14 @@ class ApprovalService {
                 include: [
                     { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
                     { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code'] },
-                    { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
-                    { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] },
+                    { 
+                        model: WorkflowStep, 
+                        as: 'currentStep', 
+                        include: [
+                            { model: WorkflowStatus, as: 'statusLabel' },
+                            { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                        ] 
+                    },
                     { model: RequestItem, as: 'items', include: ['product'] }
                 ]
             });
@@ -186,7 +192,6 @@ class ApprovalService {
             ];
 
             // Dynamically tag which ones the user can actually action right now
-            const modelsObj = require('../models');
             const results = await Promise.all(allResults.map(async (item) => {
                 const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
                 const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
@@ -195,15 +200,8 @@ class ApprovalService {
                 if (item.status !== 'pending' || !currentStepId || !isAuthorized) {
                     item.can_action = false;
                 } else {
-                    const modelMap = {
-                        'discharge': modelsObj.DischargeForm,
-                        'return': modelsObj.Return,
-                        'transfer': modelsObj.Transfer,
-                        'request': modelsObj.Request
-                    };
-                    const Model = modelMap[item.resource_origin] || modelsObj.Request;
-                    const instance = await Model.findByPk(item.id);
-                    item.can_action = await workflowService.userCanApproveStep(user, instance, item.currentStep);
+                    // Use optimized userCanApproveStep with pre-calculated values
+                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
                 }
                 return item;
             }));
@@ -223,7 +221,8 @@ class ApprovalService {
         try {
             const { Transfer, TransferItem, Request, RequestItem } = require('../models');
             const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(user);
+            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
+            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
 
             const where = {
                 company_id: companyId,
@@ -253,8 +252,14 @@ class ApprovalService {
                     { model: OrganizationNode, as: 'fromNode', attributes: ['id', 'name', 'code'] },
                     { model: OrganizationNode, as: 'toNode', attributes: ['id', 'name', 'code'] },
                     { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
-                    { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
-                    { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] },
+                    { 
+                        model: WorkflowStep, 
+                        as: 'currentStep', 
+                        include: [
+                            { model: WorkflowStatus, as: 'statusLabel' },
+                            { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                        ] 
+                    },
                     { model: TransferItem, as: 'items', include: ['product'] }
                 ],
                 order: [['created_at', 'DESC']]
@@ -273,8 +278,14 @@ class ApprovalService {
                     include: [
                         { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
                         { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code'] },
-                        { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
-                        { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] },
+                        { 
+                            model: WorkflowStep, 
+                            as: 'currentStep', 
+                            include: [
+                                { model: WorkflowStatus, as: 'statusLabel' },
+                                { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                            ] 
+                        },
                         { model: RequestItem, as: 'items', include: ['product'] }
                     ]
                 });
@@ -303,10 +314,8 @@ class ApprovalService {
                 if (item.status !== 'pending' || !currentStepId || !isAuthorized) {
                     item.can_action = false;
                 } else {
-                    // Re-instantiate model for complex check if needed
-                    const Model = item.resource_origin === 'transfer' ? Transfer : Request;
-                    const instance = await Model.findByPk(item.id);
-                    item.can_action = await workflowService.userCanApproveStep(user, instance, item.currentStep);
+                    // Optimized check with pre-calculated values
+                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
                 }
                 return item;
             }));
@@ -323,7 +332,8 @@ class ApprovalService {
         try {
             const { Return, ReturnItem, Request, RequestItem } = require('../models');
             const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(user);
+            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
+            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
 
             const returnWhere = {
                 company_id: companyId,
@@ -354,8 +364,14 @@ class ApprovalService {
                     { model: OrganizationNode, as: 'fromNode', attributes: ['id', 'name', 'code'] },
                     { model: OrganizationNode, as: 'toNode', attributes: ['id', 'name', 'code'] },
                     { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
-                    { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
-                    { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] },
+                    { 
+                        model: WorkflowStep, 
+                        as: 'currentStep', 
+                        include: [
+                            { model: WorkflowStatus, as: 'statusLabel' },
+                            { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                        ] 
+                    },
                     { model: ReturnItem, as: 'items', include: ['product'] }
                 ],
                 order: [['created_at', 'DESC']]
@@ -369,8 +385,14 @@ class ApprovalService {
                     include: [
                         { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
                         { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code'] },
-                        { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
-                        { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] },
+                        { 
+                            model: WorkflowStep, 
+                            as: 'currentStep', 
+                            include: [
+                                { model: WorkflowStatus, as: 'statusLabel' },
+                                { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'resource_type'] }
+                            ] 
+                        },
                         { model: RequestItem, as: 'items', include: ['product'] }
                     ]
                 });
@@ -396,9 +418,8 @@ class ApprovalService {
                 if (item.status !== 'pending' || !currentStepId || !isAuthorized) {
                     item.can_action = false;
                 } else {
-                    const Model = item.resource_origin === 'return' ? Return : Request;
-                    const instance = await Model.findByPk(item.id);
-                    item.can_action = await workflowService.userCanApproveStep(user, instance, item.currentStep);
+                    // Optimized check with pre-calculated values
+                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
                 }
                 return item;
             }));

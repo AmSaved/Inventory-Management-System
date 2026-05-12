@@ -193,27 +193,7 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
 
       {/* DYNAMIC APPROVALS SECTION */}
-      {hasPermission('request:approve') && pendingApprovals.length > 0 && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-2 h-8 bg-blue-600 rounded-full" />
-              <div>
-                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Pending Authorizations</h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Personnel Requests Requiring Action</p>
-              </div>
-            </div>
-            <Link to="/requests" className="text-[10px] font-black text-blue-600 hover:text-blue-800 uppercase tracking-widest bg-blue-50 px-6 py-2 rounded-full transition-all">
-              Full Command Center
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-            {pendingApprovals.slice(0, 3).map(task => (
-              <ApprovalTaskCard key={task.id} task={task} onAction={handleWorkflowAction} />
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* ASSET GALLERY */}
       <div className="space-y-8">

@@ -13,7 +13,8 @@ class InventoryService {
                 where: { 
                     company_id: companyId,
                     org_node_id: nodeId, 
-                    product_id: productId 
+                    product_id: productId,
+                    serial_number: options.serialNumber || null
                 },
                 defaults: {
                     quantity: 0,
@@ -64,7 +65,8 @@ class InventoryService {
                 where: { 
                     company_id: companyId,
                     org_node_id: nodeId, 
-                    product_id: productId 
+                    product_id: productId,
+                    serial_number: options.serialNumber || null
                 },
                 transaction: options.transaction
             });
@@ -114,7 +116,8 @@ class InventoryService {
                 where: { 
                     company_id: companyId,
                     org_node_id: nodeId, 
-                    product_id: productId 
+                    product_id: productId,
+                    serial_number: options.serialNumber || null
                 },
                 transaction: options.transaction
             });
@@ -219,13 +222,14 @@ class InventoryService {
      */
     async adjustInventory(companyId, nodeId, productId, newQuantity, reason, options = {}) {
         try {
-            const inventory = await Inventory.findOne({
-                where: { 
-                    company_id: companyId,
-                    org_node_id: nodeId, 
-                    product_id: productId 
-                }
-            });
+            const where = options.id ? { id: options.id, company_id: companyId } : { 
+                company_id: companyId,
+                org_node_id: nodeId, 
+                product_id: productId,
+                serial_number: options.serial_number || null
+            };
+
+            const inventory = await Inventory.findOne({ where });
 
             if (!inventory) {
                 throw new Error('Inventory item not found');
@@ -350,7 +354,7 @@ class InventoryService {
             const newInventory = await Inventory.create({
                 company_id: companyId,
                 product_id: source.product_id,
-                org_node_id: source.org_node_id,
+                org_node_id: metadata.org_node_id || source.org_node_id,
                 quantity: splitQuantity,
                 minimum_quantity: 0,
                 unit_cost: source.unit_cost,

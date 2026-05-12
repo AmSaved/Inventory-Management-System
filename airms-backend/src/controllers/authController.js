@@ -163,41 +163,36 @@ const authController = {
     // Get current user
     async getCurrentUser(req, res, next) {
         try {
+            // Optimization: If the middleware already loaded the basic user, 
+            // we only fetch the extra details we need if they aren't there.
             const user = await User.findByPk(req.user.id, {
                 include: [
                     {
                         model: Role,
                         as: 'role',
-                        attributes: ['id', 'name', 'level'],
-                        include: [
-                            {
-                                model: require('../models').Permission,
-                                as: 'permissions',
-                                attributes: ['id', 'name', 'resource', 'action']
-                            }
-                        ]
+                        attributes: ['id', 'name', 'level', 'visibility_scope'],
+                        include: [{
+                            model: require('../models').Permission,
+                            as: 'permissions',
+                            attributes: ['id', 'name', 'resource', 'action'],
+                            through: { attributes: [] }
+                        }]
                     },
                     {
                         model: Role,
                         as: 'roles',
                         attributes: ['id', 'name'],
-                        include: [
-                            {
-                                model: require('../models').Permission,
-                                as: 'permissions',
-                                attributes: ['id', 'name', 'resource', 'action']
-                            }
-                        ]
-                    },
-                    {
-                        model: require('../models').Permission,
-                        as: 'permissions',
-                        attributes: ['id', 'name', 'resource', 'action']
+                        include: [{
+                            model: require('../models').Permission,
+                            as: 'permissions',
+                            attributes: ['id', 'name', 'resource', 'action'],
+                            through: { attributes: [] }
+                        }]
                     },
                     {
                         model: require('../models').OrganizationNode,
                         as: 'organizationNode',
-                        attributes: ['id', 'name', 'code']
+                        attributes: ['id', 'name', 'code', 'path']
                     },
                     {
                         model: require('../models').Company,

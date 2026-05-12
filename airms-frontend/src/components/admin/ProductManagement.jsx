@@ -39,7 +39,7 @@ const ProductManagement = () => {
   const [formData, setFormData] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'table'
+  const [viewMode, setViewMode] = useState('table'); // Forced table view
 
   const { data: productsData, loading, refetch } = useFetch('/products');
   const products = productsData?.products || productsData?.data || [];
@@ -101,26 +101,12 @@ const ProductManagement = () => {
                 </div>
                 <div>
                    <div className="text-[11px] font-black text-blue-400 uppercase tracking-[0.4em] mb-1 italic">Resource Catalog</div>
-                   <h1 className="text-5xl font-black text-white tracking-tighter uppercase italic leading-none">Asset Lexicon</h1>
+                   <h1 className="text-5xl font-black text-white tracking-tighter uppercase italic leading-none">Master Registry</h1>
                 </div>
              </div>
              <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] ml-20 italic opacity-80">Global Product Blueprints & Technical Specifications</p>
           </div>
           <div className="flex items-center gap-4">
-             <div className="flex bg-white/5 backdrop-blur-md p-1.5 rounded-2xl border border-white/10">
-                <button 
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2.5 rounded-xl transition-all ${viewMode === 'grid' ? 'bg-white text-slate-950 shadow-xl' : 'text-slate-400 hover:text-white'}`}
-                >
-                  <LayoutGrid size={18} />
-                </button>
-                <button 
-                  onClick={() => setViewMode('table')}
-                  className={`p-2.5 rounded-xl transition-all ${viewMode === 'table' ? 'bg-white text-slate-950 shadow-xl' : 'text-slate-400 hover:text-white'}`}
-                >
-                  <List size={18} />
-                </button>
-             </div>
              <Button 
                 onClick={() => handleOpenModal()} 
                 className="bg-blue-600 text-white h-16 px-10 rounded-3xl font-black uppercase text-xs tracking-widest hover:bg-white hover:text-slate-950 transition-all shadow-2xl shadow-blue-500/20"
@@ -143,59 +129,7 @@ const ProductManagement = () => {
            </div>
         </div>
 
-        {viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-8">
-            {products.map(product => (
-              <div 
-                key={product.id} 
-                className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-8 border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.03)] hover:shadow-[0_32px_64px_rgba(0,0,0,0.1)] hover:-translate-y-2 transition-all duration-500 group relative overflow-hidden"
-              >
-                 <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
-                    <Package size={120} />
-                 </div>
-                 
-                 <div className="relative z-10">
-                    <div className="flex justify-between items-start mb-8">
-                       <div className="w-16 h-16 bg-slate-50 rounded-[22px] flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all duration-500 shadow-inner">
-                          <Package size={28} />
-                       </div>
-                       <Badge variant={product.is_active ? 'success' : 'gray'} className="text-[8px] font-black px-3 py-1 rounded-lg uppercase tracking-widest">
-                          {product.is_active ? 'Active Registry' : 'Dormant'}
-                       </Badge>
-                    </div>
-
-                    <div className="space-y-1 mb-8">
-                       <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{product.category} {product.sub_category ? `• ${product.sub_category}` : ''}</div>
-                       <h4 className="text-2xl font-black text-slate-900 tracking-tighter italic uppercase group-hover:text-blue-700 transition-colors leading-tight">{product.name}</h4>
-                       <div className="font-mono text-[9px] font-bold text-slate-400 tracking-widest uppercase mt-1">SKU: {product.sku}</div>
-                    </div>
-
-                    {/* TECHNICAL SNAPSHOT */}
-                    <div className="grid grid-cols-2 gap-3 mb-8">
-                       <div className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100 flex items-center gap-3">
-                          <Cpu size={14} className="text-slate-400" />
-                          <span className="text-[9px] font-black text-slate-600 uppercase truncate">{product.processor || 'Standard CPU'}</span>
-                       </div>
-                       <div className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100 flex items-center gap-3">
-                          <HardDrive size={14} className="text-slate-400" />
-                          <span className="text-[9px] font-black text-slate-600 uppercase truncate">{product.storage || 'Base Storage'}</span>
-                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                       <div className="flex gap-2">
-                          <button onClick={() => handleOpenModal(product)} className="w-12 h-12 flex items-center justify-center bg-white text-slate-400 rounded-2xl hover:bg-slate-950 hover:text-white transition-all shadow-sm border border-slate-100"><Edit size={18} /></button>
-                          <button onClick={() => handleDelete(product.id)} className="w-12 h-12 flex items-center justify-center bg-white text-rose-400 rounded-2xl hover:bg-rose-600 hover:text-white transition-all shadow-sm border border-slate-100"><Trash2 size={18} /></button>
-                       </div>
-                       <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic group-hover:text-slate-900 transition-colors flex items-center gap-2">
-                          View Specs <ArrowRight size={14} />
-                       </div>
-                    </div>
-                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
+        {products.length > 0 ? (
           <div className="bg-white rounded-[3rem] border border-slate-100 shadow-xl overflow-hidden">
              <table className="w-full text-left">
                 <thead>
@@ -230,9 +164,7 @@ const ProductManagement = () => {
                 </tbody>
              </table>
           </div>
-        )}
-
-        {products.length === 0 && (
+        ) : (
           <div className="p-32 bg-white/40 backdrop-blur-md rounded-[4rem] border-2 border-dashed border-slate-200 flex flex-col items-center text-center">
              <div className="w-24 h-24 bg-white rounded-[2rem] shadow-xl flex items-center justify-center text-slate-200 mb-8">
                 <Layers size={48} />

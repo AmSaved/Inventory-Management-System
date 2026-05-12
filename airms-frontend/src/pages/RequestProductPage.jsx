@@ -27,43 +27,44 @@ const RequestProductPage = () => {
   const [priority, setPriority] = useState('medium');
   const [expectedDate, setExpectedDate] = useState('');
   
-  // Fetching a large limit of active products to build the hierarchy tree
-  const { data: productsData } = useFetch('/products?limit=1000&is_active=true');
-  const products = Array.isArray(productsData) ? productsData : [];
+  // Fetching live inventory instead of generic blueprints to ensure serial number selection
+  const { data: inventoryData } = useFetch('/inventory?limit=1000&quantity_gt=0');
+  const inventoryItems = Array.isArray(inventoryData) ? inventoryData : (inventoryData?.data || []);
 
   // Fetch the dynamic workflow for requests for this branch
   const { data: workflowData } = useFetch('/workflows/active?resource_type=request');
   const activeWorkflow = workflowData?.data;
 
   // Helper to get unique normalized categories
-  const categories = [...new Set(products.map(p => p.category?.trim().toUpperCase()).filter(Boolean))].sort();
+  const categories = [...new Set(inventoryItems.map(item => item.product?.category?.trim()).filter(Boolean))].sort();
 
   // Helper to get sub-categories for a selected category (Case-Insensitive)
   const getSubCategories = (category) => {
     if (!category) return [];
     return [...new Set(
-      products
-        .filter(p => p.category?.trim().toUpperCase() === category.toUpperCase())
-        .map(p => p.sub_category?.trim().toUpperCase())
+      inventoryItems
+        .filter(item => item.product?.category?.trim().toUpperCase() === category.toUpperCase())
+        .map(item => item.product?.sub_category?.trim())
         .filter(Boolean)
     )].sort();
   };
 
   // Helper to get products for a selected sub-category (Case-Insensitive)
-  const getFilteredProducts = (category, subCategory) => {
+  const getFilteredItems = (category, subCategory) => {
     if (!category) return [];
-    return products
-      .filter(p => {
-        const catMatch = p.category?.trim().toUpperCase() === category.toUpperCase();
-        const subMatch = !subCategory || p.sub_category?.trim().toUpperCase() === subCategory.toUpperCase();
+    return inventoryItems
+      .filter(item => {
+        const catMatch = item.product?.category?.trim().toUpperCase() === category.toUpperCase();
+        const subMatch = !subCategory || item.product?.sub_category?.trim().toUpperCase() === subCategory.toUpperCase();
         return catMatch && subMatch;
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => (a.product?.name || '').localeCompare(b.product?.name || ''));
   };
 
   const handleAddItem = () => {
     setItems([...items, { 
       product_id: '', 
+      inventory_id: '',
       quantity: 1, 
       specifications: '',
       category: '',
@@ -77,7 +78,7 @@ const RequestProductPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (items.some(item => !item.product_id)) {
+    if (items.some(item => !item.inventory_id)) {
       return toast.error('Please complete the product selection for all items');
     }
 
@@ -87,11 +88,20 @@ const RequestProductPage = () => {
         purpose,
         priority,
         expected_delivery_date: expectedDate || null,
-        items: items.map(item => ({
-          product_id: parseInt(item.product_id),
-          quantity_requested: item.quantity,
-          specifications: item.specifications
-        }))
+        items: items.map(item => {
+          const invItem = inventoryItems.find(i => i.id === parseInt(item.inventory_id));
+          return {
+            product_id: parseInt(item.product_id),
+            quantity_requested: item.quantity,
+            specifications: {
+              ...item.specifications_obj, // if we had any
+              inventory_id: parseInt(item.inventory_id),
+              serial_number: invItem?.serial_number,
+              barcode: invItem?.barcode,
+              source_node_id: invItem?.org_node_id
+            }
+          };
+        })
       });
       toast.success('Requisition Protocol Initialized');
       navigate('/dashboard');
@@ -209,7 +219,7 @@ const RequestProductPage = () => {
                           const newItems = [...items];
                           newItems[index].category = e.target.value;
                           newItems[index].sub_category = '';
-                          newItems[index].product_id = '';
+                          newItems[index].inventory_id = '';
                           setItems(newItems);
                         }}
                         required
@@ -229,7 +239,7 @@ const RequestProductPage = () => {
                         onChange={(e) => {
                           const newItems = [...items];
                           newItems[index].sub_category = e.target.value;
-                          newItems[index].product_id = '';
+                          newItems[index].inventory_id = '';
                           setItems(newItems);
                         }}
                         required
@@ -244,18 +254,20 @@ const RequestProductPage = () => {
                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Item / Product Model</label>
                        <select
                         className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 font-black text-slate-900 outline-none hover:border-blue-200 transition-all cursor-pointer text-[10px] uppercase disabled:opacity-50"
-                        value={item.product_id}
+                        value={item.inventory_id}
                         disabled={!item.category}
                         onChange={(e) => {
                           const newItems = [...items];
-                          newItems[index].product_id = e.target.value;
+                          newItems[index].inventory_id = e.target.value;
+                          const selected = inventoryItems.find(i => i.id === parseInt(e.target.value));
+                          newItems[index].product_id = selected?.product_id;
                           setItems(newItems);
                         }}
                         required
                       >
-                        <option value="">Select Product...</option>
-                        {getFilteredProducts(item.category, item.sub_category).map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
+                        <option value="">Select Item / Serial...</option>
+                        {getFilteredItems(item.category, item.sub_category).map(p => (
+                          <option key={p.id} value={p.id}>{p.product?.name} [{p.serial_number || 'N/A'}]</option>
                         ))}
                       </select>
                     </div>
@@ -356,41 +368,16 @@ const RequestProductPage = () => {
           </CardContent>
         </Card>
 
-        {/* SUBMIT BUTTON */}
-        <div className="pt-6">
+        <div className="pt-6 flex justify-center">
            <Button 
              type="submit" 
              size="lg" 
-             className="w-full bg-slate-950 h-24 rounded-[45px] shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] hover:bg-slate-900 hover:scale-[1.01] text-white font-black text-2xl tracking-tighter uppercase transition-all flex flex-col items-center justify-center gap-1 group"
+             className="bg-slate-950 h-16 px-12 rounded-2xl shadow-xl hover:bg-slate-900 text-white font-black text-xs tracking-widest uppercase transition-all"
            >
-             <span className="flex items-center gap-3 group-hover:gap-5 transition-all">
-                Submit Requisition Protocol <Send size={24} className="text-blue-500" />
-             </span>
-             <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.4em] opacity-80 group-hover:opacity-100">Execute Secure Data Handshake</span>
+             Submit
            </Button>
         </div>
       </form>
-      
-      <div className="p-10 bg-slate-950 rounded-[40px] text-center shadow-2xl overflow-hidden relative group">
-         <div className="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] leading-relaxed relative z-10 flex items-center justify-center flex-wrap gap-2">
-           Dynamic Approval Pipeline: 
-           {activeWorkflow && activeWorkflow.steps && activeWorkflow.steps.length > 0 ? (
-             activeWorkflow.steps.map((step, index) => (
-               <React.Fragment key={step.id}>
-                 <span className="text-white ring-1 ring-slate-800 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700/50 shadow-inner">
-                   {step.statusLabel ? step.statusLabel.name : (step.requiredRole ? step.requiredRole.name : 'Approval')}
-                 </span>
-                 {index < activeWorkflow.steps.length - 1 && <span className="text-slate-600">→</span>}
-               </React.Fragment>
-             ))
-           ) : (
-             <span className="text-emerald-400 ring-1 ring-emerald-500/30 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner ml-2">
-               Direct Auto-Approval
-             </span>
-           )}
-         </p>
-      </div>
     </div>
   );
 };

@@ -30,7 +30,9 @@ const UsersPage = () => {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchValue, setSearchValue] = useState('');
+  const [search, setSearch] = useState('');
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -146,9 +148,9 @@ const UsersPage = () => {
   };
 
   const filteredUsers = (users || []).filter(u => 
-    (u.first_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
-    (u.last_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
-    (u.username?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+    (u.first_name?.toLowerCase() || '').includes(search.toLowerCase()) || 
+    (u.last_name?.toLowerCase() || '').includes(search.toLowerCase()) || 
+    (u.username?.toLowerCase() || '').includes(search.toLowerCase())
   );
 
   if (loading) return <LoadingSpinner />;
@@ -162,7 +164,7 @@ const UsersPage = () => {
           </div>
           <div>
             <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic">Staff Records</h1>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] ml-1">Registered by Super Admin</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] mt-2 ml-1 italic">Authorized Personnel Registry</p>
           </div>
         </div>
         <Button 
@@ -174,15 +176,19 @@ const UsersPage = () => {
       </div>
 
       <div className="flex flex-col md:flex-row gap-6 items-center">
-        <div className="relative flex-1 group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search users..." 
-            className="w-full h-16 pl-14 pr-6 bg-white border-2 border-slate-100 rounded-[28px] font-black text-slate-900 outline-none focus:border-blue-500 transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+        <div className="w-full max-w-md">
+          <Input
+            placeholder="Search by ID or Name..."
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setSearch(searchValue);
+              }
+            }}
+            className="bg-gray-50 border-none shadow-inner"
           />
+          <p className="text-[11px] text-blue-500 font-black uppercase tracking-widest mt-3 ml-2 italic">Press Enter to Filter Search Registry</p>
         </div>
       </div>
 
@@ -191,9 +197,9 @@ const UsersPage = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b-2 border-slate-100">
-                <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">Employee</th>
-                <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">Authority</th>
-                <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
+                <th className="p-8 text-xs font-black text-slate-500 uppercase tracking-widest">Employee Profile</th>
+                <th className="p-8 text-xs font-black text-slate-500 uppercase tracking-widest">Security Authority</th>
+                <th className="p-8 text-xs font-black text-slate-500 uppercase tracking-widest text-right">Administrative Controls</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -205,13 +211,13 @@ const UsersPage = () => {
                         {user.first_name?.charAt(0) || user.username?.charAt(0) || '?'}
                       </div>
                       <div>
-                        <h4 className="font-black text-slate-900 text-sm tracking-tight">{user.first_name} {user.last_name}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{user.email}</p>
+                        <h4 className="font-bold text-slate-900 text-[10px] tracking-tight uppercase italic">{user.first_name} {user.last_name}</h4>
+                        <p className="text-[11px] text-blue-500 font-black uppercase tracking-widest mt-1 opacity-70">{user.email}</p>
                       </div>
                     </div>
                   </td>
                   <td className="p-8">
-                    <Badge variant={user.role?.level >= 100 ? 'danger' : 'info'} className="bg-blue-50 text-blue-600 border-blue-100 uppercase text-[9px] font-black tracking-widest px-3 py-1">
+                    <Badge variant={user.role?.level >= 100 ? 'danger' : 'info'} className="bg-blue-50 text-blue-600 border-blue-100 uppercase text-[10px] font-black tracking-widest px-4 py-2">
                       <Shield size={12} className="mr-1" /> {user.role?.name || 'Unassigned'}
                     </Badge>
                   </td>

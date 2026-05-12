@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import QRCode from 'react-qr-code';
 import { useFetch } from '../hooks/useFetch';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -11,551 +12,328 @@ import inventoryService from '../services/inventoryService';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import {
-  Box, Search, Settings2, GitFork, Merge, Trash2, FileSearch, Zap,
-  Send, ArrowLeftRight, MessageSquareWarning, PackagePlus, PackageMinus,
-  Building2, Tag, Cpu, DollarSign, Calendar, ScanLine, Info, X,
-  AlertTriangle, Shield, ChevronDown, ChevronUp, RefreshCw
+  Box, Search, GitFork, Trash2, Info, X,
+  AlertTriangle, PackagePlus, PackageMinus, Layers, QrCode,
+  Edit3, ArrowRight, ArrowLeftRight, MessageSquareWarning, RefreshCw,
+  Menu, Filter, ChevronDown
 } from 'lucide-react';
+import UnitLedgerModal from '../components/inventory/UnitLedgerModal';
 
 // ─── IDENTITY CARD MODAL ─────────────────────────────────────────────────────
 const IdentityCard = ({ item, onClose }) => {
-  const [tab, setTab] = useState('overview');
   if (!item) return null;
   const p = item.product || {};
-
-  const Row = ({ label, value, mono = false }) => (
-    value ? (
-      <div className="flex justify-between items-start py-2 border-b border-slate-50 last:border-0 gap-4">
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">{label}</span>
-        <span className={`text-xs font-semibold text-slate-800 text-right ${mono ? 'font-mono' : ''}`}>{value}</span>
-      </div>
-    ) : null
-  );
-
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: <Info size={14} /> },
-    { id: 'physical', label: 'Physical', icon: <Box size={14} /> },
-    { id: 'technical', label: 'Technical', icon: <Cpu size={14} /> },
-    { id: 'financial', label: 'Financial', icon: <DollarSign size={14} /> },
-    { id: 'lifecycle', label: 'Lifecycle', icon: <Calendar size={14} /> },
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="bg-slate-950 p-8 flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-slate-950 p-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-blue-600 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-500/30">
+            <div className="w-14 h-14 bg-blue-600 rounded-3xl flex items-center justify-center">
               <Box className="text-white" size={26} />
             </div>
             <div>
-              <h2 className="text-white font-black text-xl tracking-tighter">{p.name || '—'}</h2>
-              <div className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{p.sku} · {p.brand} {p.model}</div>
+              <h2 className="text-white font-black text-xl tracking-tighter uppercase">{p.name || 'Unknown Item'}</h2>
+              <div className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{p.sku}</div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-2xl bg-white/10 hover:bg-white/20 transition-all text-white">
             <X size={18} />
           </button>
         </div>
-
-        {/* Tabs */}
-        <div className="flex gap-1 px-6 pt-4 border-b border-slate-100 shrink-0 overflow-x-auto">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>
-              {t.icon}{t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="overflow-y-auto flex-1 p-6">
-          {tab === 'overview' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-blue-50 rounded-2xl text-center">
-                  <div className="text-4xl font-black text-blue-600 tracking-tighter">{item.quantity}</div>
-                  <div className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Quantity in Stock</div>
-                </div>
-                <div className={`p-4 rounded-2xl text-center ${item.quantity <= item.minimum_quantity ? 'bg-red-50' : 'bg-emerald-50'}`}>
-                  <div className={`text-lg font-black uppercase tracking-tight ${item.quantity <= item.minimum_quantity ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {item.quantity <= item.minimum_quantity ? 'LOW STOCK' : 'SECURE'}
-                  </div>
-                  <div className={`text-[9px] font-black uppercase tracking-widest ${item.quantity <= item.minimum_quantity ? 'text-red-400' : 'text-emerald-400'}`}>
-                    Min: {item.minimum_quantity} | Max: {item.maximum_quantity || '∞'}
-                  </div>
-                </div>
+        <div className="p-10 space-y-6">
+           <div className="grid grid-cols-2 gap-6">
+              <div className="p-6 bg-slate-50 rounded-[30px]">
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock Status</p>
+                 <p className="text-2xl font-black text-slate-900 tracking-tighter">{item.quantity} Units Available</p>
               </div>
-              <div className="bg-slate-50 rounded-2xl divide-y divide-slate-100">
-                <Row label="Status" value={item.status} />
-                <Row label="Condition" value={item.condition} />
-                <Row label="Serial Number" value={item.serial_number} mono />
-                <Row label="Batch / Lot" value={item.batch_number} mono />
-                <Row label="Location" value={item.location_details} />
-                <Row label="Storage Node" value={item.organizationNode?.name} />
-                <Row label="Category" value={`${p.category}${p.sub_category ? ' → ' + p.sub_category : ''}`} />
-                <Row label="Unit of Measure" value={p.unit} />
+              <div className="p-6 bg-blue-50 rounded-[30px]">
+                 <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Catalog Entry</p>
+                 <p className="text-sm font-black text-blue-900 uppercase tracking-widest">{p.category || 'General'}</p>
               </div>
-              {p.description && (
-                <div className="p-4 bg-slate-50 rounded-2xl">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Description</p>
-                  <p className="text-sm text-slate-700 leading-relaxed">{p.description}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === 'physical' && (
-            <div className="bg-slate-50 rounded-2xl divide-y divide-slate-100">
-              <Row label="Weight" value={p.weight} />
-              <Row label="Dimensions" value={p.dimensions} />
-              <Row label="Color" value={p.color} />
-              <Row label="Material" value={p.material} />
-              {!p.weight && !p.dimensions && !p.color && !p.material && (
-                <p className="text-center text-slate-400 text-xs py-10">No physical specs recorded.</p>
-              )}
-            </div>
-          )}
-
-          {tab === 'technical' && (
-            <div className="bg-slate-50 rounded-2xl divide-y divide-slate-100">
-              <Row label="Processor" value={p.processor} />
-              <Row label="RAM" value={p.ram} />
-              <Row label="Storage" value={p.storage} />
-              <Row label="Graphics" value={p.graphics} />
-              <Row label="Display" value={p.display} />
-              <Row label="Operating System" value={p.os} />
-              <Row label="Battery" value={p.battery} />
-              <Row label="Ports" value={p.ports} />
-              {!p.processor && !p.ram && !p.storage && (
-                <p className="text-center text-slate-400 text-xs py-10">No technical specs recorded.</p>
-              )}
-            </div>
-          )}
-
-          {tab === 'financial' && (
-            <div className="bg-slate-50 rounded-2xl divide-y divide-slate-100">
-              <Row label="Unit Cost" value={item.unit_cost ? `${parseFloat(item.unit_cost).toLocaleString()}` : null} />
-              <Row label="Current Value" value={item.current_value ? `${parseFloat(item.current_value).toLocaleString()}` : null} />
-              <Row label="Supplier" value={item.supplier} />
-              <Row label="Invoice Number" value={item.invoice_number} mono />
-              {!item.unit_cost && !item.supplier && (
-                <p className="text-center text-slate-400 text-xs py-10">No financial data recorded.</p>
-              )}
-            </div>
-          )}
-
-          {tab === 'lifecycle' && (
-            <div className="bg-slate-50 rounded-2xl divide-y divide-slate-100">
-              <Row label="Purchase Date" value={item.purchase_date ? new Date(item.purchase_date).toLocaleDateString() : null} />
-              <Row label="Warranty Expiry" value={item.warranty_expiry ? new Date(item.warranty_expiry).toLocaleDateString() : null} />
-              <Row label="Expiry Date" value={item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : null} />
-              <Row label="Last Counted" value={item.last_counted_at ? new Date(item.last_counted_at).toLocaleDateString() : null} />
-              {!item.purchase_date && !item.warranty_expiry && (
-                <p className="text-center text-slate-400 text-xs py-10">No lifecycle dates recorded.</p>
-              )}
-            </div>
-          )}
+           </div>
+           <div className="space-y-4">
+              <DetailRow label="Condition" value={item.condition} />
+              <DetailRow label="Latest Location" value={item.location_details} />
+              <DetailRow label="Batch Identity" value={item.batch_number} />
+              <DetailRow label="Storage Node" value={item.organizationNode?.name} />
+           </div>
         </div>
       </div>
     </div>
   );
 };
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+const DetailRow = ({ label, value }) => (
+  <div className="flex justify-between items-center py-4 border-b border-slate-50 last:border-0">
+    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
+    <span className="text-sm font-black text-slate-900">{value || 'N/A'}</span>
+  </div>
+);
+
+// ─── MAIN COCKPIT COMPONENT ──────────────────────────────────────────────────
 const ItemManagementPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
   const [identityItem, setIdentityItem] = useState(null);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [unitLedgerItem, setUnitLedgerItem] = useState(null);
+  const [qrItem, setQrItem] = useState(null);
 
-  const [mergeModalOpen, setMergeModalOpen] = useState(false);
-  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [decommissionModalOpen, setDecommissionModalOpen] = useState(false);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
 
   const [adjustmentData, setAdjustmentData] = useState({ adjustment: 0, type: 'add', reason: '' });
-  const [splitData, setSplitData] = useState({ quantity: 1, serial_number: '', batch_number: '', location_details: '' });
-  const [decommissionReason, setDecommissionReason] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
 
-  const { data: inventoryData, loading, refetch } = useFetch('/inventory', {
-    params: { search, org_unit_id: selectedUnit, limit: 200 }
+  const { data: rawItems, loading, refetch } = useFetch('/inventory', {
+    params: { search, org_node_id: selectedUnit, limit: 1000 }
   });
 
-  const allItems = inventoryData?.data || [];
-  const filteredItems = statusFilter === 'all' ? allItems : allItems.filter(i => i.status === statusFilter);
-
-  const lowStock = allItems.filter(i => i.quantity <= i.minimum_quantity && i.minimum_quantity > 0).length;
-  const totalQty = allItems.reduce((s, i) => s + (i.quantity || 0), 0);
+  const groupedItems = useMemo(() => {
+    if (!rawItems) return [];
+    const groups = {};
+    rawItems.forEach(item => {
+      const key = item.product?.sku || item.product_id || 'unlinked';
+      if (!groups[key]) {
+        groups[key] = { ...item, quantity: 0, records: [] };
+      }
+      groups[key].quantity += item.quantity;
+      groups[key].records.push(item);
+    });
+    return Object.values(groups);
+  }, [rawItems]);
 
   const handleAdjust = async () => {
     try {
       await inventoryService.adjustQuantity(selectedItem.id, adjustmentData.adjustment, adjustmentData.type, adjustmentData.reason);
-      toast.success('Quantity adjusted');
+      toast.success('Inventory state adjusted');
       setAdjustModalOpen(false);
       refetch();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+    } catch (e) { toast.error('Adjustment failed'); }
   };
 
-  const handleSplit = async () => {
+  const handleBulkDelete = async () => {
     try {
-      await inventoryService.splitItem(selectedItem.id, splitData);
-      toast.success('Registry divided successfully');
-      setSplitModalOpen(false);
+      await inventoryService.bulkDelete(selectedItem.product_id, selectedItem.org_node_id);
+      toast.success(`Registry Wipe: All ${selectedItem.quantity} units removed.`);
+      setBulkDeleteModalOpen(false);
       refetch();
-    } catch (e) { toast.error(e.response?.data?.message || 'Split failed'); }
+    } catch (e) { toast.error('Bulk delete failed'); }
   };
 
-  const handleMerge = async () => {
-    try {
-      const targetId = selectedIds[0];
-      const sourceIds = selectedIds.slice(1);
-      await inventoryService.mergeItems(targetId, sourceIds);
-      toast.success(`${sourceIds.length + 1} records consolidated`);
-      setMergeModalOpen(false);
-      setSelectedIds([]);
-      refetch();
-    } catch (e) { toast.error(e.response?.data?.message || 'Merge failed'); }
-  };
-
-  const handleDecommission = async () => {
-    try {
-      await inventoryService.decommissionItem(selectedItem.id, decommissionReason);
-      toast.success('Asset decommissioned');
-      setDecommissionModalOpen(false);
-      refetch();
-    } catch (e) { toast.error(e.response?.data?.message || 'Decommission failed'); }
-  };
-
-  if (loading && !inventoryData) return <LoadingSpinner />;
+  if (loading && !rawItems) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-8 py-10 px-6 animate-in fade-in duration-500">
+    <div className="max-w-[1600px] mx-auto py-8 lg:py-12 px-4 lg:px-8 space-y-8 lg:space-y-10 animate-in fade-in duration-700">
       {identityItem && <IdentityCard item={identityItem} onClose={() => setIdentityItem(null)} />}
+      {unitLedgerItem && (
+        <UnitLedgerModal 
+          item={unitLedgerItem} 
+          onClose={() => setUnitLedgerItem(null)} 
+          onAdjust={(u) => { setSelectedItem(u); setAdjustModalOpen(true); }}
+          onDecommission={(u) => { setSelectedItem(u); setDecommissionModalOpen(true); }}
+          onTransfer={(u) => navigate(`/transfers/new?product_id=${u.product_id}&from_node_id=${u.org_node_id}`)}
+          onQr={(u) => setQrItem(u)}
+          onReport={(u) => navigate(`/report-problem?inventory_id=${u.id}`)}
+          onIdentity={(u) => setIdentityItem(u)}
+          onReplenish={(u) => navigate(`/requests/new?product_id=${u.product_id}`)}
+          onSplit={(u) => navigate(`/inventory/split?inventory_id=${u.id}`)}
+        />
+      )}
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white p-8 rounded-[45px] border border-slate-100 shadow-xl shadow-slate-100/80">
-        <div className="flex items-center gap-5">
-          <div className="w-16 h-16 bg-slate-950 rounded-[28px] flex items-center justify-center shadow-2xl rotate-3">
+      {/* Hero Header */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 lg:gap-8 bg-white p-6 lg:p-10 rounded-[35px] lg:rounded-[50px] border border-slate-100 shadow-2xl shadow-slate-200/50">
+        <div className="flex items-center gap-4 lg:gap-6">
+          <div className="w-16 h-16 lg:w-20 lg:h-20 bg-slate-950 rounded-[28px] lg:rounded-[35px] flex items-center justify-center shadow-2xl rotate-3">
             <Box className="text-blue-500" size={32} />
           </div>
           <div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Ops Cockpit</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
-                {user?.organizationNode?.name || user?.organization_node?.name || 'Authorized Domain'}
-              </p>
-            </div>
+            <h1 className="text-2xl lg:text-5xl font-black text-slate-900 tracking-tighter uppercase italic">Ops Cockpit</h1>
+            <p className="text-[10px] lg:text-[11px] font-black text-slate-400 uppercase tracking-[0.4em] mt-1 lg:mt-2">Inventory Management Domain</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => navigate('/store')}
-            className="group flex items-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-black px-6 h-16 rounded-[28px] uppercase text-xs tracking-widest shadow-xl shadow-blue-200 transition-all border-b-4 border-blue-800"
-          >
-            <PackagePlus size={20} /> Store Arrival
+        <div className="flex flex-wrap gap-3 lg:gap-4 w-full xl:w-auto">
+          <button onClick={() => navigate('/store')} className="flex-1 xl:flex-none bg-blue-600 hover:bg-blue-700 text-white font-black px-6 lg:px-8 h-16 lg:h-20 rounded-[25px] lg:rounded-[30px] uppercase text-[10px] lg:text-xs tracking-widest shadow-xl transition-all border-b-4 lg:border-b-8 border-blue-800 active:border-b-0 active:translate-y-2 flex items-center justify-center gap-3">
+            <PackagePlus size={20} /> New Intake
           </button>
-          <button
-            onClick={() => navigate('/discharge')}
-            className="group flex items-center gap-3 bg-slate-900 hover:bg-black text-white font-black px-6 h-16 rounded-[28px] uppercase text-xs tracking-widest shadow-xl shadow-slate-200 transition-all border-b-4 border-slate-700"
-          >
-            <PackageMinus size={20} /> Issue Asset
+          <button onClick={() => navigate('/discharge')} className="flex-1 xl:flex-none bg-slate-950 hover:bg-black text-white font-black px-6 lg:px-8 h-16 lg:h-20 rounded-[25px] lg:rounded-[30px] uppercase text-[10px] lg:text-xs tracking-widest shadow-xl transition-all border-b-4 lg:border-b-8 border-slate-800 active:border-b-0 active:translate-y-2 flex items-center justify-center gap-3">
+            <PackageMinus size={20} /> Distribution
           </button>
         </div>
       </div>
 
-      {/* Pulse Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total SKUs', value: allItems.length, color: 'blue' },
-          { label: 'Total Units', value: totalQty.toLocaleString(), color: 'emerald' },
-          { label: 'Low Stock', value: lowStock, color: lowStock > 0 ? 'red' : 'slate' },
-          { label: 'Selected', value: selectedIds.length, color: selectedIds.length > 0 ? 'purple' : 'slate' },
-        ].map(({ label, value, color }) => (
-          <div key={label} className={`bg-white rounded-[30px] p-6 shadow-sm ring-1 ring-slate-100 text-center`}>
-            <div className={`text-4xl font-black tracking-tighter italic text-${color}-600`}>{value}</div>
-            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{label}</div>
-          </div>
-        ))}
+      {/* Responsive Filter Bar with Mobile Toggle */}
+      <div className="bg-white rounded-[35px] lg:rounded-[45px] border border-slate-100 shadow-sm overflow-hidden">
+         {/* Mobile Toggle Button (Visible only on small screens) */}
+         <div className="md:hidden flex items-center justify-between p-6 bg-slate-50 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+               <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-white">
+                  <Filter size={18} />
+               </div>
+               <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Protocol Filters</span>
+            </div>
+            <button 
+               onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
+               className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-slate-400"
+            >
+               {mobileFiltersOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+         </div>
+
+         {/* Filter Content: Hidden on mobile unless toggled */}
+         <div className={`${mobileFiltersOpen ? 'block' : 'hidden'} md:block p-6 lg:p-8 animate-in slide-in-from-top duration-300`}>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 items-end">
+               <div className="md:col-span-4 space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Global Search</label>
+                  <div className="relative">
+                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      value={searchValue} 
+                      onChange={e => setSearchValue(e.target.value)} 
+                      onKeyDown={e => e.key === 'Enter' && setSearch(searchValue)}
+                      className="w-full h-14 pl-14 pr-6 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-blue-300 transition-all"
+                      placeholder="SKU or Name..."
+                    />
+                  </div>
+               </div>
+               <div className="md:col-span-5 space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Node Focus Scope</label>
+                  <CascadingUnitSelector value={selectedUnit} onChange={setSelectedUnit} />
+               </div>
+               <div className="md:col-span-3">
+                  <button onClick={refetch} className="w-full h-14 bg-slate-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-blue-600 transition-all shadow-lg active:scale-95">
+                    <RefreshCw size={14} /> Refresh Registry
+                  </button>
+               </div>
+            </div>
+         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        {/* Sidebar */}
-        <div className="xl:col-span-3 space-y-6">
-          <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-8 space-y-8">
-            <div className="flex items-center justify-between">
-              <h3 className="font-black text-slate-900 text-xs uppercase tracking-widest">Filter Matrix</h3>
-              <button onClick={() => refetch()} className="p-2 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-400 hover:text-blue-500 transition-all">
-                <RefreshCw size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Search</label>
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="SKU, name, serial..."
-                  className="w-full h-12 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium outline-none focus:border-blue-300 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Node Scope</label>
-              <CascadingUnitSelector value={selectedUnit} onChange={setSelectedUnit} className="bg-white" />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Filter</label>
-              <select
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value)}
-                className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium outline-none cursor-pointer"
-              >
-                <option value="all">All Statuses</option>
-                <option value="available">Available</option>
-                <option value="assigned">Assigned</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="decommissioned">Decommissioned</option>
-              </select>
-            </div>
-
-            {selectedIds.length > 1 && (
-              <div className="pt-4 border-t border-slate-100">
-                <button
-                  onClick={() => navigate(`/inventory/merge?ids=${selectedIds.join(',')}`)}
-                  className="w-full flex items-center justify-center gap-2 h-14 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-2xl uppercase text-[10px] tracking-widest shadow-lg shadow-amber-100 transition-all"
-                >
-                  <Merge size={18} /> Merge {selectedIds.length} Records
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Dark Pulse Panel */}
-          <div className="bg-slate-950 rounded-[40px] p-8 text-white relative overflow-hidden">
-            <div className="absolute -right-8 -bottom-8 w-36 h-36 bg-blue-600/10 rounded-full blur-3xl" />
-            <div className="relative z-10 space-y-5">
-              <div className="flex items-center gap-2">
-                <Zap className="text-blue-500" size={16} />
-                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-400">Inventory Pulse</span>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-4xl font-black italic tracking-tighter">{allItems.length}</div>
-                  <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">SKU Lines</div>
-                </div>
-                <div>
-                  <div className={`text-4xl font-black italic tracking-tighter ${lowStock > 0 ? 'text-red-500' : 'text-emerald-400'}`}>
-                    {lowStock}
-                  </div>
-                  <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Replenish</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Table */}
-        <div className="xl:col-span-9">
-          <div className="bg-white rounded-[45px] shadow-xl shadow-slate-100/80 ring-1 ring-slate-100 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="px-6 py-5 text-left w-12">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.length === filteredItems.length && filteredItems.length > 0}
-                        onChange={() => setSelectedIds(selectedIds.length === filteredItems.length ? [] : filteredItems.map(i => i.id))}
-                        className="w-4 h-4 rounded accent-blue-600"
-                      />
-                    </th>
-                    <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Asset Identity</th>
-                    <th className="px-4 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</th>
-                    <th className="px-4 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Condition</th>
-                    <th className="px-4 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Node</th>
-                    <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Serial / Batch</th>
-                    <th className="px-6 py-5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {filteredItems.map(item => {
-                    const isLow = item.quantity <= item.minimum_quantity && item.minimum_quantity > 0;
-                    return (
-                      <tr key={item.id} className={`group hover:bg-slate-50/60 transition-all duration-150 ${selectedIds.includes(item.id) ? 'bg-blue-50/40' : ''}`}>
-                        <td className="px-6 py-5">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.includes(item.id)}
-                            onChange={() => setSelectedIds(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}
-                            className="w-4 h-4 rounded accent-blue-600"
-                          />
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-                              <Box className="text-slate-400 group-hover:text-blue-500 transition-colors" size={20} />
-                            </div>
-                            <div>
-                              <div className="font-black text-slate-900 text-sm tracking-tight">{item.product?.name}</div>
-                              <div className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">{item.product?.sku}</div>
-                              {item.product?.brand && <div className="text-[9px] text-slate-400">{item.product.brand} {item.product.model}</div>}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl font-black tracking-tighter text-slate-900">{item.quantity}</span>
-                            {isLow && <AlertTriangle size={14} className="text-red-500" />}
-                          </div>
-                          {item.minimum_quantity > 0 && (
-                            <div className="text-[9px] text-slate-400 font-bold">Min: {item.minimum_quantity}</div>
-                          )}
-                        </td>
-                        <td className="px-4 py-5">
-                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                            item.condition === 'new' ? 'bg-emerald-100 text-emerald-700' :
-                            item.condition === 'damaged' ? 'bg-red-100 text-red-700' :
-                            item.condition === 'maintenance' ? 'bg-amber-100 text-amber-700' :
-                            'bg-slate-100 text-slate-600'
-                          }`}>
-                            {item.condition || 'N/A'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-5">
-                          <div className="flex items-center gap-2">
-                            <Building2 size={12} className="text-slate-400 shrink-0" />
-                            <span className="text-[10px] font-bold text-slate-600">{item.organizationNode?.name || '—'}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="text-[10px] font-mono text-slate-500">
-                            {item.serial_number && <div>SN: {item.serial_number}</div>}
-                            {item.batch_number && <div>Batch: {item.batch_number}</div>}
-                            {!item.serial_number && !item.batch_number && <span className="text-slate-300">—</span>}
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0 transition-all duration-200">
-                            {/* Identity Card */}
-                            <button onClick={() => setIdentityItem(item)} title="View Identity Card" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-blue-600 hover:border-blue-200 shadow-sm flex items-center justify-center transition-all">
-                              <Info size={14} />
-                            </button>
-                            {/* Adjust */}
-                            <button onClick={() => { setSelectedItem(item); setAdjustmentData({ adjustment: 0, type: 'add', reason: '' }); setAdjustModalOpen(true); }} title="Adjust Quantity" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 shadow-sm flex items-center justify-center transition-all">
-                              <Zap size={14} />
-                            </button>
-                            <button disabled={item.quantity <= 1} onClick={() => navigate(`/inventory/split?inventory_id=${item.id}`)} title="Split Registry" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-purple-600 hover:border-purple-200 shadow-sm flex items-center justify-center transition-all disabled:opacity-30">
-                              <GitFork size={14} />
-                            </button>
-                            {/* Transfer */}
-                            <button onClick={() => navigate(`/transfers/new?product_id=${item.product_id}&from_node_id=${item.org_node_id}`)} title="Transfer Between Nodes" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-amber-600 hover:border-amber-200 shadow-sm flex items-center justify-center transition-all">
-                              <ArrowLeftRight size={14} />
-                            </button>
-                            {/* Request */}
-                            <button onClick={() => navigate(`/requests/new?product_id=${item.product_id}`)} title="Request Replenishment" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-blue-600 hover:border-blue-200 shadow-sm flex items-center justify-center transition-all">
-                              <Send size={14} />
-                            </button>
-                            {/* Report Issue */}
-                            <button onClick={() => navigate(`/report-problem?inventory_id=${item.id}`)} title="Report Issue" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-orange-500 hover:border-orange-200 shadow-sm flex items-center justify-center transition-all">
-                              <MessageSquareWarning size={14} />
-                            </button>
-                            {/* Decommission */}
-                            <button onClick={() => { setSelectedItem(item); setDecommissionReason(''); setDecommissionModalOpen(true); }} title="Decommission" className="w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-200 shadow-sm flex items-center justify-center transition-all">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {filteredItems.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-32 text-slate-300 gap-5">
-                  <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center">
-                    <FileSearch size={40} className="opacity-20" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-black uppercase tracking-[0.3em] text-xs">Ledger Clear</p>
-                    <p className="text-[10px] opacity-60 mt-1">No assets found in selected scope.</p>
-                  </div>
-                </div>
+      {/* Catalog Display */}
+      <div className="bg-white rounded-[40px] lg:rounded-[50px] shadow-xl ring-1 ring-slate-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="px-6 lg:px-10 py-6 text-left text-xs font-black text-slate-400 uppercase tracking-widest">Product / SKU</th>
+                <th className="px-6 py-6 text-left text-xs font-black text-slate-400 uppercase tracking-widest">Total Qty</th>
+                <th className="hidden md:table-cell px-6 py-6 text-left text-xs font-black text-slate-400 uppercase tracking-widest">Global State</th>
+                <th className="px-6 lg:px-10 py-6 text-right text-xs font-black text-slate-400 uppercase tracking-widest">Protocol Controls</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {groupedItems.map(group => (
+                <tr key={group.product?.sku || group.id} className="group hover:bg-slate-50/50 transition-all">
+                  <td className="px-6 lg:px-10 py-6">
+                    <div className="flex items-center gap-4 lg:gap-5">
+                      <div className="w-12 h-12 lg:w-14 lg:h-14 bg-slate-100 rounded-[20px] lg:rounded-[22px] flex items-center justify-center group-hover:bg-blue-100 transition-all">
+                         <Box className="text-slate-400 group-hover:text-blue-600 transition-all" size={24} />
+                      </div>
+                      <div>
+                         <div className="font-black text-slate-900 text-sm lg:text-base tracking-tight uppercase italic break-words max-w-[200px] lg:max-w-none">
+                           {group.product?.name || 'CSV Auto-Generated Item'}
+                         </div>
+                         <div className="text-[10px] lg:text-[11px] font-black text-blue-500 uppercase tracking-widest">
+                           {group.product?.sku}
+                         </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-6">
+                     <div className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter">{group.quantity}</div>
+                     <div className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Total Units</div>
+                  </td>
+                  <td className="hidden md:table-cell px-6 py-6">
+                     <span className="px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 border border-emerald-100">
+                        {group.condition || 'Factory New'}
+                     </span>
+                  </td>
+                  <td className="px-6 lg:px-10 py-6 text-right">
+                     <div className="flex items-center justify-end gap-2 lg:gap-3">
+                        <button onClick={() => { setSelectedItem(group); setBulkDeleteModalOpen(true); }} title="Wipe Entire Group" className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-white border border-slate-100 text-slate-300 hover:text-red-600 hover:border-red-100 shadow-sm flex items-center justify-center transition-all">
+                           <Trash2 size={20} />
+                        </button>
+                        <button onClick={() => setUnitLedgerItem(group)} className="px-5 lg:px-8 h-10 lg:h-12 bg-slate-950 text-white text-[10px] lg:text-[11px] font-black uppercase tracking-widest rounded-xl lg:rounded-2xl hover:bg-blue-600 shadow-xl shadow-blue-500/10 transition-all flex items-center gap-2 lg:gap-3">
+                           <Layers size={18} /> <span className="hidden sm:inline">Open Ledger</span>
+                        </button>
+                     </div>
+                  </td>
+                </tr>
+              ))}
+              {groupedItems.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="py-32 text-center">
+                    <Box size={60} className="mx-auto text-slate-100 mb-6" />
+                    <h1 className="text-5xl font-black text-white tracking-tighter uppercase italic leading-none">Master Registry</h1>
+                  </td>
+                </tr>
               )}
-            </div>
-          </div>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* MODALS */}
+      {/* QR MODAL */}
+      {qrItem && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl" onClick={() => setQrItem(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+             <div className="p-10 text-center bg-slate-50 border-b border-slate-100">
+                <QrCode size={40} className="mx-auto mb-4 text-slate-900" />
+                <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">Physical Identity Tag</h3>
+                <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-1">{qrItem.product?.name}</p>
+             </div>
+             <div className="p-12 flex flex-col items-center gap-8 bg-white">
+                <div className="p-6 bg-white rounded-[40px] shadow-2xl ring-1 ring-slate-100">
+                   <QRCode value={JSON.stringify({ id: qrItem.id, sku: qrItem.product?.sku, serial: qrItem.serial_number })} size={240} level="H" />
+                </div>
+                <div className="text-center">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-2">Unique Identity Binding</p>
+                   <p className="font-mono text-lg font-black text-slate-900 uppercase">{qrItem.serial_number || `REG-ID-${qrItem.id}`}</p>
+                </div>
+             </div>
+             <div className="p-10 bg-slate-50 flex flex-col gap-4">
+                <button onClick={() => window.print()} className="w-full h-16 bg-slate-950 text-white font-black rounded-3xl uppercase text-xs tracking-widest hover:bg-blue-600 transition-all">Print Tag</button>
+                <button onClick={() => setQrItem(null)} className="text-[10px] font-black text-slate-400 hover:text-slate-900 uppercase tracking-widest">Dismiss</button>
+             </div>
+          </div>
+        </div>
+      )}
 
-      {/* Adjust */}
-      <Modal isOpen={adjustModalOpen} onClose={() => setAdjustModalOpen(false)} title="Quantity Adjustment" onConfirm={handleAdjust} confirmText="Apply Adjustment">
+      {/* Bulk Delete Modal */}
+      <Modal isOpen={bulkDeleteModalOpen} onClose={() => setBulkDeleteModalOpen(false)} title="Confirm Registry Wipe" onConfirm={handleBulkDelete} confirmText="Wipe Group">
+        <div className="p-6 text-center space-y-6">
+           <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
+              <AlertTriangle size={48} />
+           </div>
+           <p className="text-sm font-bold text-slate-600">
+              This action will permanently delete <span className="text-red-600">{selectedItem?.quantity} units</span> of <span className="font-black underline">{selectedItem?.product?.name}</span> from this node. 
+           </p>
+           <div className="bg-red-50 p-4 rounded-2xl text-[10px] font-black text-red-700 uppercase tracking-widest">
+              Action is irreversible. Audit trail will be logged.
+           </div>
+        </div>
+      </Modal>
+
+      {/* Simple Adjust Modal */}
+      <Modal isOpen={adjustModalOpen} onClose={() => setAdjustModalOpen(false)} title="Quick Adjust" onConfirm={handleAdjust}>
         <div className="space-y-6 p-2">
-          <div className="p-6 bg-slate-900 rounded-[30px] text-white flex justify-between items-center">
-            <div>
-              <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Projected Total</div>
-              <div className="text-5xl font-black italic tracking-tighter">
-                {adjustmentData.type === 'add' && ((selectedItem?.quantity || 0) + (parseInt(adjustmentData.adjustment) || 0))}
-                {adjustmentData.type === 'subtract' && ((selectedItem?.quantity || 0) - (parseInt(adjustmentData.adjustment) || 0))}
-                {adjustmentData.type === 'set' && (parseInt(adjustmentData.adjustment) || 0)}
-              </div>
-            </div>
-            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center"><Zap className="text-white" size={28} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Operation</label>
-              <select value={adjustmentData.type} onChange={e => setAdjustmentData({ ...adjustmentData, type: e.target.value })} className="w-full h-12 bg-slate-100 rounded-2xl px-4 font-black text-sm outline-none cursor-pointer">
-                <option value="add">Add (+)</option>
-                <option value="subtract">Remove (−)</option>
-                <option value="set">Set (=)</option>
+           <div className="grid grid-cols-2 gap-4">
+              <select value={adjustmentData.type} onChange={e => setAdjustmentData({...adjustmentData, type: e.target.value})} className="h-14 bg-slate-50 border border-slate-100 rounded-2xl px-6 font-black text-xs outline-none">
+                 <option value="add">Add (+)</option>
+                 <option value="subtract">Subtract (-)</option>
               </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount</label>
-              <input type="number" value={adjustmentData.adjustment} onChange={e => setAdjustmentData({ ...adjustmentData, adjustment: parseInt(e.target.value) || 0 })} className="w-full h-12 bg-slate-100 rounded-2xl px-4 font-black text-xl text-blue-600 text-center outline-none" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reason (Audit Log)</label>
-            <input value={adjustmentData.reason} onChange={e => setAdjustmentData({ ...adjustmentData, reason: e.target.value })} placeholder="Reason for adjustment..." className="w-full h-12 bg-slate-100 rounded-2xl px-4 font-medium text-sm outline-none" />
-          </div>
+              <input type="number" value={adjustmentData.adjustment} onChange={e => setAdjustmentData({...adjustmentData, adjustment: parseInt(e.target.value) || 0})} className="h-14 bg-slate-50 border border-slate-100 rounded-2xl px-6 font-black text-xl text-center" />
+           </div>
+           <Input placeholder="Justification for adjustment..." value={adjustmentData.reason} onChange={e => setAdjustmentData({...adjustmentData, reason: e.target.value})} />
         </div>
       </Modal>
 
-
-
-      {/* Decommission */}
-      <Modal isOpen={decommissionModalOpen} onClose={() => setDecommissionModalOpen(false)} title="Decommission Asset" onConfirm={handleDecommission} confirmText="Retire Asset">
-        <div className="space-y-6 p-2 text-center">
-          <div className="w-20 h-20 bg-red-100 rounded-[30px] flex items-center justify-center mx-auto shadow-xl shadow-red-100">
-            <Trash2 className="text-red-500" size={36} />
-          </div>
-          <div>
-            <h4 className="text-xl font-black text-slate-900 tracking-tighter italic mb-2">RETIRE ASSET RECORD</h4>
-            <p className="text-xs text-slate-400 uppercase tracking-widest leading-relaxed">
-              Asset will be zero-stocked and tagged <span className="text-red-500 font-black">DECOMMISSIONED</span>. Audit trail is preserved.
-            </p>
-          </div>
-          <input
-            value={decommissionReason}
-            onChange={e => setDecommissionReason(e.target.value)}
-            placeholder="Mandatory retirement justification..."
-            className="w-full h-12 bg-red-50 rounded-2xl px-4 font-medium text-sm text-red-900 placeholder:text-red-300 outline-none focus:ring-2 focus:ring-red-200"
-          />
-        </div>
-      </Modal>
     </div>
   );
 };

@@ -212,11 +212,8 @@ const RoleManagement = () => {
                       <div className="absolute inset-0 bg-slate-950 opacity-0 group-hover:opacity-100 transition-opacity" />
                    </div>
                    <div>
-                      <h4 className="text-2xl font-black text-slate-900 tracking-tighter italic uppercase group-hover:text-blue-700 transition-colors">{role.name.replace('_', ' ')}</h4>
-                      <div className="flex items-center gap-4 mt-1">
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100/50 px-2 py-1 rounded-md">SCOPE: {role.roleRegistrar?.organizationNode?.name || 'GLOBAL SYSTEM'}</span>
-                         <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] font-black uppercase px-2 py-0.5 rounded-lg">ARCHETYPE #{role.id}</Badge>
-                      </div>
+                      <h4 className="text-lg font-black text-slate-900 tracking-tighter italic uppercase group-hover:text-blue-700 transition-colors">{role.name.replace('_', ' ')}</h4>
+
                    </div>
                 </div>
 
@@ -280,7 +277,7 @@ const RoleManagement = () => {
                      </div>
                      <div className="relative group w-full md:w-64">
                         <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600" />
-                        <input type="text" placeholder="SEARCH CAPABILITIES..." className="w-full h-10 bg-slate-50 rounded-xl pl-10 pr-4 font-black text-[9px] uppercase tracking-widest outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                        <input type="text" placeholder="SEARCH CAPABILITIES..." className="w-full h-10 bg-slate-50 rounded-xl pl-10 pr-4 font-black text-[9px] text-slate-900 uppercase tracking-widest outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                      </div>
                   </div>
 
