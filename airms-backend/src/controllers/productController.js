@@ -18,17 +18,6 @@ const productController = {
             if (brand) where.brand = brand;
             if (is_active !== undefined) where.is_active = is_active === 'true';
             
-            if (in_stock === 'true') {
-                // Filter to products that actually exist in the inventory (Stock Intake)
-                where.id = {
-                    [Op.in]: sequelize.literal(`(
-                        SELECT DISTINCT product_id 
-                        FROM inventory 
-                        WHERE company_id = ${company_id}
-                    )`)
-                };
-            }
-
             if (search) {
                 where[Op.or] = [
                     { name: { [Op.iLike]: `%${search}%` } },
@@ -131,14 +120,15 @@ const productController = {
 
             const product = await Product.create(productData);
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'CREATE',
                 resource: 'products',
                 resource_id: product.id,
                 details: { sku: product.sku, name: product.name }
-            });
+            }).catch(err => logger.error(`Background activity logging failed for product creation:`, err));
 
             res.status(201).json({
                 success: true,
@@ -169,14 +159,15 @@ const productController = {
 
             await product.update(productData);
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'UPDATE',
                 resource: 'products',
                 resource_id: id,
                 details: productData
-            });
+            }).catch(err => logger.error(`Background activity logging failed for product update:`, err));
 
             res.json({ success: true, message: 'Product updated successfully', data: product });
         } catch (error) {
@@ -202,13 +193,14 @@ const productController = {
 
             await product.destroy();
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'DELETE',
                 resource: 'products',
                 resource_id: id
-            });
+            }).catch(err => logger.error(`Background activity logging failed for product deletion:`, err));
 
             res.json({ success: true, message: 'Product deleted successfully' });
         } catch (error) {
@@ -267,14 +259,15 @@ const productController = {
 
             await product.update({ is_active: !product.is_active });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'UPDATE',
                 resource: 'products',
                 resource_id: id,
                 details: { is_active: product.is_active }
-            });
+            }).catch(err => logger.error(`Background activity logging failed for product toggle:`, err));
 
             res.json({ success: true, data: product });
         } catch (error) {

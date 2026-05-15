@@ -21,22 +21,19 @@ const organizationController = {
                 : await hierarchyService.getAllowedNodes(req.user, permissions);
 
             const where = { 
-                id: { [Op.in]: allowedNodeIds },
+                ...(allowedNodeIds !== null ? { id: { [Op.in]: allowedNodeIds } } : {}),
                 company_id: companyId,
                 status: { [Op.ne]: 'archived' }
             };
 
-            if (only_mine === 'true') {
-                // Simplified: Just filter by the current user if 'only_mine' requested, 
-                // as Super Admins are the only ones who can see root creations anyway.
-                where.created_by = req.user.id;
-            }
-
-            // Fetch authorized nodes (Efficient query with type inclusion)
+            // Fetch authorized nodes (Efficient query with type inclusion and raw data)
             const nodes = await OrganizationNode.findAll({
                 where,
+                attributes: ['id', 'name', 'code', 'parent_id', 'org_type_id', 'manager_id', 'location_id', 'status', 'path', 'can_store_inventory'],
                 include: [{ model: OrganizationType, as: 'type', attributes: ['id', 'name', 'code_prefix'] }],
-                order: [['path', 'ASC']]
+                order: [['path', 'ASC']],
+                raw: true,
+                nest: true
             });
 
             // ─── OPTIMIZED TREE BUILDER (O(N)) ───
@@ -44,7 +41,7 @@ const organizationController = {
             const nodeMap = {};
             nodes.forEach(node => {
                 nodeMap[node.id] = {
-                    ...node.get({ plain: true }),
+                    ...node, // Already raw JS object, no need for node.get({ plain: true })
                     id: String(node.id),
                     parent_id: node.parent_id ? String(node.parent_id) : null,
                     children: []
@@ -113,7 +110,10 @@ const organizationController = {
 
             const nodes = await OrganizationNode.findAll({
                 where: whereClause,
-                include: [{ model: OrganizationType, as: 'type' }]
+                attributes: ['id', 'name', 'code', 'parent_id', 'org_type_id', 'manager_id', 'location_id', 'status', 'path', 'can_store_inventory'],
+                include: [{ model: OrganizationType, as: 'type', attributes: ['id', 'name', 'code_prefix'] }],
+                raw: true,
+                nest: true
             });
             res.json({ success: true, data: nodes });
         } catch (error) {

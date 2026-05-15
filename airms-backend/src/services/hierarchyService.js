@@ -20,7 +20,8 @@ class HierarchyService {
                 },
                 status: { [Op.ne]: 'archived' }
             },
-            attributes: ['id']
+            attributes: ['id'],
+            raw: true
         });
 
         return descendants.map(d => d.id);
@@ -99,14 +100,9 @@ class HierarchyService {
                                      permissions.includes('system:manage');
         
         if (hasGlobalVisibility) {
-            const allNodes = await OrganizationNode.findAll({
-                where: { 
-                    company_id: user.company_id,
-                    status: { [Op.ne]: 'archived' }
-                },
-                attributes: ['id']
-            });
-            return allNodes.map(n => n.id);
+            // Signal global visibility by returning null
+            // This prevents building massive arrays of IDs that slow down SQL IN clauses
+            return null;
         }
 
         // 2. Recursive authority check

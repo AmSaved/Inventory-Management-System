@@ -9,6 +9,8 @@ import { useAuth } from '../hooks/useAuth';
 import userService from '../services/userService';
 import roleService from '../services/roleService';
 import organizationService from '../services/organizationService';
+import Pagination from '../components/ui/Pagination';
+import { useFetch } from '../hooks/useFetch';
 import toast from 'react-hot-toast';
 import { 
   Users, 
@@ -24,15 +26,17 @@ import {
 
 const UsersPage = () => {
   const { user } = useAuth();
-  const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]);
   const [nodes, setNodes] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  
+  const { data: usersData, pagination, loading: usersLoading, refetch: refetchUsers } = useFetch('/users', {
+    params: { page, limit: 10, search }
+  });
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -47,29 +51,24 @@ const UsersPage = () => {
   });
 
   useEffect(() => {
-    fetchData();
+    const fetchMetadata = async () => {
+      try {
+        const [rolesData, nodesData] = await Promise.all([
+          roleService.getAllRoles(),
+          organizationService.getNodes()
+        ]);
+        setRoles(rolesData.data || []);
+        setNodes(nodesData || []);
+      } catch (error) {
+        toast.error('Failed to load personnel metadata');
+      }
+    };
+    fetchMetadata();
   }, []);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      // Let the backend handle scoping based on hierarchy automatically
-      const params = {};
-      
-      const [usersData, rolesData, nodesData] = await Promise.all([
-        userService.getAllUsers(params),
-        roleService.getAllRoles(params),
-        organizationService.getNodes()
-      ]);
-      setUsers(usersData.data || []);
-      setRoles(rolesData.data || []);
-      setNodes(nodesData || []);
-    } catch (error) {
-      toast.error('Failed to load user management data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const users = usersData || [];
+  const loading = usersLoading;
+  const fetchData = refetchUsers;
 
   const handleOpenModal = (user = null) => {
     setEditingUser(user);
@@ -147,11 +146,7 @@ const UsersPage = () => {
     }
   };
 
-  const filteredUsers = (users || []).filter(u => 
-    (u.first_name?.toLowerCase() || '').includes(search.toLowerCase()) || 
-    (u.last_name?.toLowerCase() || '').includes(search.toLowerCase()) || 
-    (u.username?.toLowerCase() || '').includes(search.toLowerCase())
-  );
+  const filteredUsers = users;
 
   if (loading) return <LoadingSpinner />;
 
@@ -231,6 +226,9 @@ const UsersPage = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="p-8 border-t border-slate-50 flex justify-center">
+           <Pagination pagination={pagination} onPageChange={setPage} />
         </div>
       </Card>
 

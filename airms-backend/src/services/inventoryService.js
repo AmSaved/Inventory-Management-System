@@ -23,17 +23,28 @@ class InventoryService {
                 transaction: options.transaction
             });
 
+            let locationDetails = options.locationDetails || inventory.location_details;
+            if (!locationDetails) {
+                const node = await OrganizationNode.findByPk(nodeId, { 
+                    transaction: options.transaction,
+                    attributes: ['name']
+                });
+                if (node) locationDetails = node.name;
+            }
+
             await inventory.update({
                 quantity: inventory.quantity + quantity,
                 serial_number: options.serialNumber || inventory.serial_number,
                 batch_number: options.batchNumber || inventory.batch_number,
-                status: options.status || inventory.status,
+                status: options.status || (inventory.quantity + quantity > 0 ? 'available' : inventory.status),
+                location_details: locationDetails,
                 unit_cost: options.unitCost || inventory.unit_cost,
                 ...options.metadata
             }, { transaction: options.transaction });
 
             // Log activity
-            await ActivityLog.create({
+            // Background logging (off-transaction)
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: options.userId,
                 action: 'INVENTORY_ADD',
@@ -47,7 +58,7 @@ class InventoryService {
                     reference: options.reference,
                     notes: options.notes
                 }
-            }, { transaction: options.transaction });
+            }).catch(err => logger.error('Background inventory log failed:', err));
 
             return inventory;
         } catch (error) {
@@ -79,12 +90,19 @@ class InventoryService {
                 throw new Error('Insufficient inventory');
             }
 
-            await inventory.update({
-                quantity: inventory.quantity - quantity
-            }, { transaction: options.transaction });
+            const newQuantity = inventory.quantity - quantity;
+            const updates = { quantity: newQuantity };
+
+            // If it's a physical item (serial) and it's now "gone", update its status
+            if (newQuantity === 0 && inventory.serial_number) {
+                updates.status = 'discharged';
+            }
+
+            await inventory.update(updates, { transaction: options.transaction });
 
             // Log activity
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: options.userId,
                 action: 'INVENTORY_REMOVE',
@@ -98,7 +116,7 @@ class InventoryService {
                     reference: options.reference,
                     notes: options.notes
                 }
-            }, { transaction: options.transaction });
+            }).catch(err => logger.error('Background inventory log failed:', err));
 
             return inventory;
         } catch (error) {
@@ -108,33 +126,78 @@ class InventoryService {
     }
 
     /**
+     * Assign a specific inventory item to a user.
+     */
+    async assignInventory(companyId, inventoryId, userId, options = {}) {
+        try {
+            const inventory = await Inventory.findOne({
+                where: { id: inventoryId, company_id: companyId },
+                transaction: options.transaction
+            });
+
+            if (!inventory) throw new Error('Physical inventory record not found');
+            if (inventory.status !== 'available' && !options.force) {
+                throw new Error(`Inventory item is currently ${inventory.status} and cannot be assigned`);
+            }
+
+            const oldStatus = inventory.status;
+            
+            await inventory.update({
+                status: 'assigned',
+                assigned_to: userId,
+                assigned_at: new Date(),
+                quantity: Math.max(0, inventory.quantity - 1), // Decrease available count
+                assignment_notes: options.notes || 'Assigned via Request Approval'
+            }, { transaction: options.transaction });
+
+            // Background logging
+            ActivityLog.create({
+                company_id: companyId,
+                user_id: options.actorId,
+                action: 'INVENTORY_ASSIGN',
+                resource: 'inventory',
+                resource_id: inventory.id,
+                details: {
+                    user_id: userId,
+                    old_status: oldStatus,
+                    serial_number: inventory.serial_number,
+                    reference: options.reference
+                }
+            }).catch(err => logger.error('Background inventory log failed:', err));
+
+            return inventory;
+        } catch (error) {
+            logger.error('Assign inventory error:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Check inventory availability at a specific node.
      */
     async checkAvailability(companyId, nodeId, productId, quantity, options = {}) {
         try {
-            const inventory = await Inventory.findOne({
-                where: { 
-                    company_id: companyId,
-                    org_node_id: nodeId, 
-                    product_id: productId,
-                    serial_number: options.serialNumber || null
-                },
-                transaction: options.transaction
-            });
+            const where = {
+                company_id: companyId,
+                org_node_id: nodeId,
+                product_id: productId,
+                status: 'available'
+            };
 
-            if (!inventory) {
-                return {
-                    available: false,
-                    current_quantity: 0,
-                    required: quantity
-                };
+            if (options.serialNumber) {
+                where.serial_number = options.serialNumber;
             }
 
+            const totalQuantity = await Inventory.sum('quantity', {
+                where,
+                transaction: options.transaction
+            }) || 0;
+
             return {
-                available: inventory.quantity >= quantity,
-                current_quantity: inventory.quantity,
+                available: totalQuantity >= quantity,
+                current_quantity: totalQuantity,
                 required: quantity,
-                shortfall: Math.max(0, quantity - inventory.quantity)
+                shortfall: Math.max(0, quantity - totalQuantity)
             };
         } catch (error) {
             logger.error('Check availability error:', error);
@@ -180,38 +243,38 @@ class InventoryService {
      * Transfer between two nodes.
      */
     async transferBetweenNodes(companyId, fromNodeId, toNodeId, productId, quantity, options = {}) {
+        const t = options.transaction || await Inventory.sequelize.transaction();
         try {
-            // Check source inventory
-            const sourceInventory = await Inventory.findOne({
-                where: { 
-                    company_id: companyId, 
-                    org_node_id: fromNodeId, 
-                    product_id: productId 
-                },
-                transaction: options.transaction
-            });
+            // 1. Subtract from source branch and get record to preserve metadata
+            const sourceItem = await this.removeFromInventory(
+                companyId,
+                fromNodeId,
+                productId,
+                quantity,
+                {
+                    ...options,
+                    transaction: t
+                }
+            );
 
-            if (!sourceInventory || sourceInventory.quantity < quantity) {
-                throw new Error('Insufficient inventory in source node');
-            }
+            // 2. Add to target branch, propagating batch and location if not overridden
+            await this.addToInventory(
+                companyId,
+                toNodeId,
+                productId,
+                quantity,
+                {
+                    ...options,
+                    batchNumber: options.batchNumber || sourceItem.batch_number,
+                    locationDetails: options.locationDetails, // If provided, use it; otherwise addToInventory will use node name
+                    transaction: t
+                }
+            );
 
-            // Perform transfer
-            await this.removeFromInventory(companyId, fromNodeId, productId, quantity, {
-                userId: options.userId,
-                reference: options.reference,
-                notes: `Transfer to node ${toNodeId}`,
-                transaction: options.transaction
-            });
-
-            await this.addToInventory(companyId, toNodeId, productId, quantity, {
-                userId: options.userId,
-                reference: options.reference,
-                notes: `Transfer from node ${fromNodeId}`,
-                transaction: options.transaction
-            });
-
+            if (!options.transaction) await t.commit();
             return true;
         } catch (error) {
+            if (!options.transaction) await t.rollback();
             logger.error('Transfer between units error:', error);
             throw error;
         }
@@ -243,7 +306,8 @@ class InventoryService {
             }, { transaction: options.transaction });
 
             // Log adjustment
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: options.userId,
                 action: 'INVENTORY_ADJUST',
@@ -257,7 +321,7 @@ class InventoryService {
                     difference: newQuantity - oldQuantity,
                     reason
                 }
-            }, { transaction: options.transaction });
+            }).catch(err => logger.error('Background inventory log failed:', err));
 
             return inventory;
         } catch (error) {
@@ -360,18 +424,19 @@ class InventoryService {
                 unit_cost: source.unit_cost,
                 status: metadata.status || source.status,
                 serial_number: metadata.serial_number,
-                batch_number: metadata.batch_number,
+                batch_number: metadata.batch_number || source.batch_number,
                 location_details: metadata.location_details || source.location_details
             }, { transaction: t });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: options.userId,
                 action: 'INVENTORY_SPLIT',
                 resource: 'inventory',
                 resource_id: sourceId,
                 details: { source_id: sourceId, new_id: newInventory.id, quantity: splitQuantity }
-            }, { transaction: t });
+            }).catch(err => logger.error('Background inventory log failed:', err));
 
             await t.commit();
             return newInventory;
@@ -409,14 +474,15 @@ class InventoryService {
 
             await target.update({ quantity: target.quantity + totalMerged }, { transaction: t });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: options.userId,
                 action: 'INVENTORY_MERGE',
                 resource: 'inventory',
                 resource_id: targetId,
                 details: { merged_ids: sourceIds, total_quantity_merged: totalMerged }
-            }, { transaction: t });
+            }).catch(err => logger.error('Background inventory log failed:', err));
 
             await t.commit();
             return target;
@@ -445,14 +511,15 @@ class InventoryService {
                 last_counted_at: new Date()
             }, { transaction: options.transaction });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: options.userId,
                 action: 'INVENTORY_DECOMMISSION',
                 resource: 'inventory',
                 resource_id: id,
                 details: { old_quantity: oldQuantity, reason }
-            }, { transaction: options.transaction });
+            }).catch(err => logger.error('Background inventory log failed:', err));
 
             return inventory;
         } catch (error) {
@@ -478,48 +545,68 @@ class InventoryService {
             });
 
             for (const item of items) {
-                // 1. Subtract from source inventory
-                await this.removeFromInventory(
-                    company_id,
-                    dischargeForm.from_node_id,
-                    item.product_id,
-                    item.quantity,
-                    {
-                        userId: user.id,
-                        reference: `DISCHARGE-${dischargeForm.discharge_number}`,
-                        transaction: t
-                    }
-                );
-
-                // 2. Determine Destination
                 const targetUserId = item.to_user_id || dischargeForm.to_user_id;
                 const targetNodeId = item.to_node_id || dischargeForm.to_node_id;
                 
                 const isUnitDischarge = !!targetNodeId && (targetNodeId !== dischargeForm.from_node_id);
                 const isUserDischarge = !isUnitDischarge && !!targetUserId;
 
-                if (isUnitDischarge) {
-                    await this.addToInventory(
-                        company_id,
-                        targetNodeId,
-                        item.product_id,
-                        item.quantity,
-                        {
-                            userId: user.id,
-                            reference: `RECEIVE-DISCHARGE-${dischargeForm.discharge_number}`,
-                            notes: `Received from unit ${dischargeForm.from_node_id}`,
-                            transaction: t,
-                            metadata: {
-                                condition: item.condition,
-                                batch_number: item.batch_number,
-                                serial_numbers: item.serial_numbers
-                            }
-                        }
-                    );
-                } else if (isUserDischarge) {
-                    const targetUser = await User.findByPk(targetUserId, { transaction: t });
-                    const serialNumbers = item.serial_numbers || [];
+                const serialNumbers = item.serial_numbers || [];
 
+                if (isUnitDischarge) {
+                    if (serialNumbers.length > 0) {
+                        for (const sn of serialNumbers) {
+                            await this.transferBetweenNodes(
+                                company_id,
+                                dischargeForm.from_node_id,
+                                targetNodeId,
+                                item.product_id,
+                                1,
+                                {
+                                    userId: user.id,
+                                    reference: `DISCHARGE-${dischargeForm.discharge_number}`,
+                                    notes: `Serialized transfer from node ${dischargeForm.from_node_id}`,
+                                    serialNumber: sn,
+                                    transaction: t
+                                }
+                            );
+                        }
+                    } else {
+                        await this.transferBetweenNodes(
+                            company_id,
+                            dischargeForm.from_node_id,
+                            targetNodeId,
+                            item.product_id,
+                            item.quantity,
+                            {
+                                userId: user.id,
+                                reference: `DISCHARGE-${dischargeForm.discharge_number}`,
+                                notes: `Bulk transfer from node ${dischargeForm.from_node_id}`,
+                                transaction: t
+                            }
+                        );
+                    }
+                } else if (isUserDischarge) {
+                    // 1. Subtract from source
+                    if (serialNumbers.length > 0) {
+                        for (const sn of serialNumbers) {
+                            await this.removeFromInventory(company_id, dischargeForm.from_node_id, item.product_id, 1, {
+                                userId: user.id,
+                                reference: `DISCHARGE-${dischargeForm.discharge_number}`,
+                                serialNumber: sn,
+                                transaction: t
+                            });
+                        }
+                    } else {
+                        await this.removeFromInventory(company_id, dischargeForm.from_node_id, item.product_id, item.quantity, {
+                            userId: user.id,
+                            reference: `DISCHARGE-${dischargeForm.discharge_number}`,
+                            transaction: t
+                        });
+                    }
+
+                    // 2. Create assignments
+                    const targetUser = await User.findByPk(targetUserId, { transaction: t });
                     for (let i = 0; i < item.quantity; i++) {
                         await Assignment.create({
                             company_id,
@@ -532,6 +619,24 @@ class InventoryService {
                             status: 'active',
                             condition_at_assignment: item.condition
                         }, { transaction: t });
+                    }
+                } else {
+                    // Generic release (no target) - just remove from source
+                    if (serialNumbers.length > 0) {
+                        for (const sn of serialNumbers) {
+                            await this.removeFromInventory(company_id, dischargeForm.from_node_id, item.product_id, 1, {
+                                userId: user.id,
+                                reference: `DISCHARGE-${dischargeForm.discharge_number}`,
+                                serialNumber: sn,
+                                transaction: t
+                            });
+                        }
+                    } else {
+                        await this.removeFromInventory(company_id, dischargeForm.from_node_id, item.product_id, item.quantity, {
+                            userId: user.id,
+                            reference: `DISCHARGE-${dischargeForm.discharge_number}`,
+                            transaction: t
+                        });
                     }
                 }
             }
@@ -560,36 +665,42 @@ class InventoryService {
             });
 
             for (const item of items) {
-                // 1. Subtract from source branch
-                await this.removeFromInventory(
-                    company_id,
-                    transferForm.from_node_id,
-                    item.product_id,
-                    item.quantity,
-                    {
-                        userId: user.id,
-                        reference: `TRANSFER-OUT-${transferForm.transfer_number}`,
-                        transaction: t
-                    }
-                );
+                const serialNumbers = item.serial_numbers || [];
 
-                // 2. Add to target branch
-                await this.addToInventory(
-                    company_id,
-                    transferForm.to_node_id,
-                    item.product_id,
-                    item.quantity,
-                    {
-                        userId: user.id,
-                        reference: `TRANSFER-IN-${transferForm.transfer_number}`,
-                        notes: `Lateral transfer from branch ID ${transferForm.from_node_id}`,
-                        transaction: t,
-                        metadata: {
-                            condition: item.condition,
-                            serial_numbers: item.serial_numbers
-                        }
+                if (serialNumbers.length > 0) {
+                    // Serialized Transfer: Move each physical unit individually to preserve identity
+                    for (const sn of serialNumbers) {
+                        await this.transferBetweenNodes(
+                            company_id,
+                            transferForm.from_node_id,
+                            transferForm.to_node_id,
+                            item.product_id,
+                            1,
+                            {
+                                userId: user.id,
+                                reference: `TRANSFER-${transferForm.transfer_number}`,
+                                serialNumber: sn,
+                                metadata: { condition: item.condition },
+                                transaction: t
+                            }
+                        );
                     }
-                );
+                } else {
+                    // Bulk Transfer: Standard quantity movement
+                    await this.transferBetweenNodes(
+                        company_id,
+                        transferForm.from_node_id,
+                        transferForm.to_node_id,
+                        item.product_id,
+                        item.quantity,
+                        {
+                            userId: user.id,
+                            reference: `TRANSFER-${transferForm.transfer_number}`,
+                            metadata: { condition: item.condition },
+                            transaction: t
+                        }
+                    );
+                }
             }
 
             if (!options.transaction) await t.commit();

@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import Modal from '../components/common/Modal';
 import CascadingUnitSelector from '../components/common/CascadingUnitSelector';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -85,6 +86,12 @@ const DischargePage = () => {
   const [view, setView] = useState(searchParams.get('view') || 'new'); // 'new' or 'list'
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  
+  // Physical Selection State
+  const [selectionModalOpen, setSelectionModalOpen] = useState(false);
+  const [activeItemIndex, setActiveItemIndex] = useState(null);
+  const [availablePhysicalItems, setAvailablePhysicalItems] = useState([]);
+  const [loadingPhysical, setLoadingPhysical] = useState(false);
 
   const { data: dischargeForms, loading: listLoading, refetch: refetchList } = useFetch(`/discharge?search=${search}`);
   const { data: productsData } = useFetch('/products');
@@ -104,6 +111,39 @@ const DischargePage = () => {
       setFromUnitId(user.org_node_id);
     }
   }, [user, requestId]);
+
+  // Handle URL Pre-fill for Product or Specific Inventory
+  useEffect(() => {
+    const pid = searchParams.get('product_id');
+    const nodeid = searchParams.get('org_node_id');
+    const invid = searchParams.get('inventory_id');
+
+    if (pid) {
+      setItems([{ 
+        product_id: pid, 
+        to_unit_id: '',
+        quantity: 1, 
+        batch_number: '', 
+        serial_numbers: [], 
+        condition: 'new' 
+      }]);
+      if (nodeid) setFromUnitId(nodeid);
+    } else if (invid) {
+      // If we have a specific inventory ID, we should probably fetch its details to pre-fill
+      api.get(`/inventory/${invid}`).then(res => {
+        const inv = res.data.data;
+        setItems([{
+          product_id: inv.product_id.toString(),
+          to_unit_id: '',
+          quantity: 1,
+          batch_number: inv.batch_number || '',
+          serial_numbers: [inv.serial_number].filter(Boolean),
+          condition: inv.condition || 'new'
+        }]);
+        setFromUnitId(inv.org_node_id.toString());
+      });
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (requestId) {
@@ -168,6 +208,74 @@ const DischargePage = () => {
   const updateItem = (index, field, value) => {
     const newItems = [...items];
     newItems[index][field] = value;
+    
+    // If quantity or product changes, we might need to reset serial numbers if they no longer match
+    if (field === 'product_id' || field === 'quantity') {
+      newItems[index].serial_numbers = [];
+    }
+    
+    setItems(newItems);
+  };
+
+  const openSelectionModal = async (index) => {
+    const item = items[index];
+    if (!item.product_id || !fromUnitId) {
+      return toast.error('Select product and source unit first');
+    }
+
+    setActiveItemIndex(index);
+    setLoadingPhysical(true);
+    setSelectionModalOpen(true);
+
+    try {
+      const res = await api.get('/inventory', {
+        params: {
+          product_id: item.product_id,
+          org_node_id: fromUnitId,
+          status: 'available',
+          limit: 200 // Show up to 200 available items
+        }
+      });
+      
+      // Get IDs already selected in OTHER items to prevent double selection
+      const otherSelectedIds = items
+        .filter((_, i) => i !== index)
+        .flatMap(it => it.serial_numbers || []); // Assuming serial_numbers currently stores the serials/identifiers we pick
+
+      // Wait, we should probably store inventory_ids in a separate field or use serial_numbers as unique identifiers
+      // Let's assume serial_numbers stores the unique serial string for now.
+      
+      setAvailablePhysicalItems(res.data.data || []);
+    } catch (err) {
+      toast.error('Failed to fetch physical inventory items');
+    } finally {
+      setLoadingPhysical(false);
+    }
+  };
+
+  const togglePhysicalItem = (serial) => {
+    const newItems = [...items];
+    const currentSns = newItems[activeItemIndex].serial_numbers || [];
+    const targetQty = parseInt(newItems[activeItemIndex].quantity);
+
+    if (currentSns.includes(serial)) {
+      newItems[activeItemIndex].serial_numbers = currentSns.filter(s => s !== serial);
+    } else {
+      if (currentSns.length >= targetQty) {
+        return toast.error(`You can only select up to ${targetQty} items for this line`);
+      }
+      
+      // Check for global uniqueness
+      const isAlreadyPicked = items.some((it, i) => 
+        i !== activeItemIndex && it.serial_numbers?.includes(serial)
+      );
+      
+      if (isAlreadyPicked) {
+        return toast.error('This specific item is already assigned to another branch/line');
+      }
+
+      newItems[activeItemIndex].serial_numbers = [...currentSns, serial];
+    }
     setItems(newItems);
   };
 
@@ -214,6 +322,17 @@ const DischargePage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!fromUnitId) return toast.error('Select a source unit');
+    
+    // Validation: Check that each item has exactly the required number of physical items selected
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const required = parseInt(item.quantity);
+      const selected = item.serial_numbers?.length || 0;
+      
+      if (selected !== required) {
+        return toast.error(`Line ${i + 1}: Please select exactly ${required} physical items (currently ${selected})`);
+      }
+    }
     
     setSubmitting(true);
     try {
@@ -473,17 +592,32 @@ const DischargePage = () => {
                                  </select>
                               </div>
                               <div className="space-y-2 md:col-span-2">
-                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Serial Reference Sequence</label>
-                                 <Input 
-                                    placeholder="SN SEQUENCE (COMMAS)" 
-                                    value={item.serial_numbers?.join(', ') || ''} 
-                                    onChange={(e) => {
-                                      const val = e.target.value.trim();
-                                      const sns = val ? val.split(',').map(s => s.trim()).filter(Boolean) : null;
-                                      updateItem(index, 'serial_numbers', sns);
-                                    }} 
-                                    className="h-12 border-none bg-slate-50 rounded-xl font-bold px-6 text-xs text-slate-500" 
-                                  />
+                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Physical Asset Selection</label>
+                                 <button
+                                   type="button"
+                                   onClick={() => openSelectionModal(index)}
+                                   className={`w-full h-12 rounded-xl font-black px-6 text-[10px] uppercase tracking-widest transition-all flex items-center justify-between ${
+                                     item.serial_numbers?.length === parseInt(item.quantity) 
+                                       ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' 
+                                       : 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                                   }`}
+                                 >
+                                   <span>
+                                     {item.serial_numbers?.length === parseInt(item.quantity) 
+                                       ? `✓ ${item.serial_numbers.length} ITEMS ALLOCATED` 
+                                       : `SELECT ${item.quantity} PHYSICAL ITEMS`}
+                                   </span>
+                                   <Layers size={16} />
+                                 </button>
+                                 {item.serial_numbers?.length > 0 && (
+                                   <div className="mt-2 flex flex-wrap gap-1 px-2">
+                                      {item.serial_numbers.map(sn => (
+                                        <span key={sn} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-bold">
+                                          {sn}
+                                        </span>
+                                      ))}
+                                   </div>
+                                 )}
                               </div>
                            </div>
                         </div>
@@ -555,31 +689,48 @@ const DischargePage = () => {
                       </div>
 
                       <div className="bg-slate-50 p-10 flex items-center justify-center gap-4 border-l border-slate-100">
-                         {form.status.startsWith('pending') && (
-                           <Button 
-                             onClick={async () => {
-                               try {
-                                 const res = await api.post(`/discharge/${form.id}/approve`, {});
-                                 toast.success(res.data.message);
-                                 refetchList();
-                                } catch (err) {
-                                  const errorData = err.response?.data;
-                                  if (errorData?.errors && Array.isArray(errorData.errors)) {
-                                    errorData.errors.forEach(e => {
-                                      const field = e.path || e.field || 'Error';
-                                      const msg = e.msg || e.message || 'Validation failed';
-                                      toast.error(`${field}: ${msg}`);
-                                    });
-                                  } else {
-                                    toast.error(errorData?.message || 'Verification phase failed');
-                                  }
-                                }
-                             }}
-                             className="bg-amber-500 hover:bg-amber-400 text-white font-black px-10 h-16 rounded-3xl shadow-xl shadow-amber-100 uppercase text-[10px] tracking-[0.2em] transition-all"
-                           >
-                             Approve Phase
-                           </Button>
-                         )}
+                         {(() => {
+                            const canAction = form.can_action && 
+                                            !form.approvals?.some(a => Number(a.user_id) === Number(user?.id));
+
+                            if (!canAction) return null;
+
+                            return (
+                               <div className="flex gap-4">
+                                  <Button 
+                                    onClick={async () => {
+                                      try {
+                                        const res = await api.post(`/discharge/${form.id}/approve`, { notes: 'Authorized via Ledger' });
+                                        toast.success(res.data.message);
+                                        refetchList();
+                                      } catch (err) {
+                                        toast.error(err.response?.data?.message || 'Approval failed');
+                                      }
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 h-16 rounded-3xl shadow-xl uppercase text-[10px] tracking-[0.2em] transition-all"
+                                  >
+                                    Approve Phase
+                                  </Button>
+                                  <Button 
+                                    onClick={async () => {
+                                      const reason = window.prompt("Reason for rejection:");
+                                      if (reason === null) return;
+                                      try {
+                                        await api.post(`/discharge/${form.id}/reject`, { notes: reason });
+                                        toast.success("Discharge protocol rejected.");
+                                        refetchList();
+                                      } catch (err) {
+                                        toast.error(err.response?.data?.message || 'Rejection failed');
+                                      }
+                                    }}
+                                    className="bg-red-500 hover:bg-red-400 text-white font-black px-8 h-16 rounded-3xl shadow-xl uppercase text-[10px] tracking-[0.2em] transition-all"
+                                  >
+                                    Reject
+                                  </Button>
+                               </div>
+                            );
+                         })()}
+
                          {form.status === 'approved' && (
                            <Button 
                              onClick={async () => {
@@ -621,6 +772,81 @@ const DischargePage = () => {
            </div>
         </div>
       )}
+
+      {/* Physical Selection Modal */}
+      <Modal
+        isOpen={selectionModalOpen}
+        onClose={() => setSelectionModalOpen(false)}
+        title="Physical Asset Registry Allocation"
+      >
+        <div className="space-y-6 p-2">
+          <div className="bg-slate-950 p-6 rounded-[30px] border border-slate-800 flex justify-between items-center">
+            <div>
+              <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-1">Target Quantity</p>
+              <p className="text-3xl font-black text-white italic tracking-tighter">
+                {items[activeItemIndex]?.serial_numbers?.length || 0} / {items[activeItemIndex]?.quantity || 0}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Catalog Unit</p>
+              <p className="text-sm font-bold text-slate-300 uppercase">
+                {products.find(p => p.id.toString() === items[activeItemIndex]?.product_id)?.name || 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          <div className="max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+            {loadingPhysical ? (
+              <div className="py-10 text-center text-slate-400 font-black uppercase text-[10px] animate-pulse">Scanning Registry...</div>
+            ) : availablePhysicalItems.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 font-black uppercase text-[10px]">No available items found at origin unit</div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2">
+                {availablePhysicalItems.map((inv) => {
+                  const isPickedInOtherLine = items.some((it, i) => 
+                    i !== activeItemIndex && it.serial_numbers?.includes(inv.serial_number)
+                  );
+                  const isSelected = items[activeItemIndex]?.serial_numbers?.includes(inv.serial_number);
+
+                  return (
+                    <button
+                      key={inv.id}
+                      type="button"
+                      disabled={isPickedInOtherLine}
+                      onClick={() => togglePhysicalItem(inv.serial_number)}
+                      className={`w-full p-4 rounded-2xl border flex items-center justify-between transition-all ${
+                        isSelected 
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-lg' 
+                          : isPickedInOtherLine 
+                            ? 'bg-slate-50 border-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                            : 'bg-white border-slate-100 text-slate-600 hover:border-blue-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-3 h-3 rounded-full ${isSelected ? 'bg-white animate-pulse' : 'bg-slate-200'}`} />
+                        <div className="text-left">
+                          <p className="text-xs font-black tracking-tight">{inv.serial_number || `ITEM-${inv.id}`}</p>
+                          <p className={`text-[8px] font-bold uppercase tracking-widest ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
+                            ID: {inv.id} {inv.batch_number ? `• BATCH: ${inv.batch_number}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      {isPickedInOtherLine && <span className="text-[8px] font-black uppercase">ALREADY ALLOCATED</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <Button
+            onClick={() => setSelectionModalOpen(false)}
+            className="w-full bg-slate-950 text-white h-16 rounded-[24px] font-black uppercase text-[10px] tracking-widest shadow-xl"
+          >
+            Confirm Allocation Selection
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 };

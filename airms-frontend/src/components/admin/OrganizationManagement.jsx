@@ -54,7 +54,7 @@ const OrganizationManagement = () => {
       setLoading(true);
       const [typesData, treeData] = await Promise.all([
         organizationService.getTypes(), 
-        organizationService.getNodeTree({ only_mine: isSuperAdmin })
+        organizationService.getNodeTree()
       ]);
       setTypes(typesData);
       setNodeTree(treeData);
@@ -305,7 +305,7 @@ const OrganizationManagement = () => {
                   onClick={() => handleOpenNodeModal()}
                   className="mt-10 bg-slate-950 text-white px-10 py-5 h-auto rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl"
                 >
-                  Deploy First Sub-Node
+                  {navigationStack.length > 0 ? 'Deploy First Sub-Node' : (isSuperAdmin ? 'Deploy First Root Org' : 'Deploy First Sub-Unit')}
                 </Button>
              </div>
            )}

@@ -29,7 +29,7 @@ const TransferItem = sequelize.define('TransferItem', {
         }
     },
     serial_numbers: {
-        type: DataTypes.ARRAY(DataTypes.TEXT)
+        type: DataTypes.JSON
     },
     condition: {
         type: DataTypes.STRING(20)

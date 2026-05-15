@@ -41,7 +41,7 @@ const ProductManagement = () => {
   const [activeTab, setActiveTab] = useState('basic');
   const [viewMode, setViewMode] = useState('table'); // Forced table view
 
-  const { data: productsData, loading, refetch } = useFetch('/products');
+  const { data: productsData, loading, refetch } = useFetch('/products', { params: { limit: 1000 } });
   const products = productsData?.products || productsData?.data || [];
 
   const handleOpenModal = (item = null) => {
@@ -134,32 +134,32 @@ const ProductManagement = () => {
              <table className="w-full text-left">
                 <thead>
                    <tr className="bg-slate-50/50 border-b-2 border-slate-100">
+                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Actions</th>
                       <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Blueprint ID</th>
                       <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Identity</th>
                       <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Classification</th>
                       <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit</th>
-                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                    </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                    {products.map(p => (
-                     <tr key={p.id} className="group hover:bg-slate-50/80 transition-all">
-                        <td className="p-8 font-mono text-[10px] font-bold text-blue-600">{p.sku}</td>
-                        <td className="p-8">
-                           <div className="font-black text-slate-900 text-sm uppercase italic">{p.name}</div>
-                           <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{p.brand} {p.model}</div>
-                        </td>
-                        <td className="p-8">
-                           <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] font-black uppercase px-2 py-1 rounded-lg">{p.category}</Badge>
-                        </td>
-                        <td className="p-8 text-xs font-black text-slate-500 uppercase">{p.unit}</td>
-                        <td className="p-8 text-right">
-                           <div className="flex justify-end gap-2">
-                              <button onClick={() => handleOpenModal(p)} className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-950 hover:text-white transition-all"><Edit size={16} /></button>
-                              <button onClick={() => handleDelete(p.id)} className="p-2.5 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={16} /></button>
-                           </div>
-                        </td>
-                     </tr>
+                      <tr key={p.id} className="group hover:bg-slate-50/80 transition-all">
+                         <td className="p-8 text-left">
+                            <div className="flex gap-2">
+                               <button onClick={() => handleOpenModal(p)} className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-950 hover:text-white transition-all shadow-sm"><Edit size={16} /></button>
+                               <button onClick={() => handleDelete(p.id)} className="p-2.5 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>
+                            </div>
+                         </td>
+                         <td className="p-8 font-mono text-[10px] font-bold text-blue-600">{p.sku}</td>
+                         <td className="p-8">
+                            <div className="font-black text-slate-900 text-sm uppercase italic">{p.name}</div>
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{p.brand} {p.model}</div>
+                         </td>
+                         <td className="p-8">
+                            <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] font-black uppercase px-2 py-1 rounded-lg">{p.category}</Badge>
+                         </td>
+                         <td className="p-8 text-xs font-black text-slate-500 uppercase">{p.unit}</td>
+                      </tr>
                    ))}
                 </tbody>
              </table>

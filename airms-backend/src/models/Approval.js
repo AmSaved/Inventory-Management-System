@@ -48,6 +48,20 @@ const Approval = sequelize.define('Approval', {
             model: 'store_forms',
             key: 'id'
         }
+    },
+    transfer_id: {
+        type: DataTypes.INTEGER,
+        references: {
+            model: 'transfers',
+            key: 'id'
+        }
+    },
+    return_id: {
+        type: DataTypes.INTEGER,
+        references: {
+            model: 'returns',
+            key: 'id'
+        }
     }
 }, {
     tableName: 'approvals',

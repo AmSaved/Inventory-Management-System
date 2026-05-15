@@ -32,11 +32,20 @@ const issueController = {
 
             // Hierarchical Scoping
             if (org_node_id) {
-                const nodeIds = await hierarchyService.getDescendants(org_node_id);
+                const targetNodeId = Number(org_node_id);
+                const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+                
+                if (allowedNodes !== null && !allowedNodes.includes(targetNodeId)) {
+                    return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
+                }
+                
+                const nodeIds = await hierarchyService.getDescendants(targetNodeId);
                 where.org_node_id = { [Op.in]: nodeIds };
-            } else if (!hasGlobalVisibility && req.user.org_node_id) {
-                const nodeIds = await hierarchyService.getDescendants(req.user.org_node_id);
-                where.org_node_id = { [Op.in]: nodeIds };
+            } else if (!hasGlobalVisibility) {
+                const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+                if (allowedNodes !== null) {
+                    where.org_node_id = { [Op.in]: allowedNodes };
+                }
             }
 
             if (user_id) where.user_id = user_id;
@@ -111,7 +120,8 @@ const issueController = {
             
             if (!hasGlobalVisibility) {
                 const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-                if (!allowedNodes.includes(issue.org_node_id)) {
+                const isAuthorized = allowedNodes === null || (issue.org_node_id && allowedNodes.includes(Number(issue.org_node_id)));
+                if (!isAuthorized) {
                     return res.status(403).json({ success: false, message: 'Access denied: Issue is outside your visibility scope' });
                 }
             }
@@ -159,14 +169,15 @@ const issueController = {
                 await issue.reload();
             }
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'CREATE',
                 resource: 'issues',
                 resource_id: issue.id,
                 details: { issue_number: issue.issue_number, severity: issue.severity }
-            });
+            }).catch(err => logger.error(`Background activity logging failed for issue creation:`, err));
 
             res.status(201).json({ success: true, message: 'Issue reported and workflow initiated', data: issue });
         } catch (error) {
@@ -192,14 +203,15 @@ const issueController = {
                 notes: notes ? `${issue.notes || ''} [ASSIGNED: ${notes}]`.trim() : issue.notes
             });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'ASSIGN',
                 resource: 'issues',
                 resource_id: id,
                 details: { assigned_to }
-            });
+            }).catch(err => logger.error(`Background activity logging failed for issue assignment:`, err));
 
             res.json({ success: true, message: 'Issue assigned successfully', data: issue });
         } catch (error) {

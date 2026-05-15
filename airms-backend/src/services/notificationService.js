@@ -28,16 +28,16 @@ class NotificationService {
                     priority: 'high'
                 };
 
-                // Save to database
+                // Save to database (We await this as it's part of the record)
                 const saved = await Notification.create(notification);
                 notifications.push(saved);
 
-                // Send email for high priority
-                await emailService.sendNotificationEmail(chairman.email, {
+                // Send email for high priority (FIRE AND FORGET to avoid SMTP blocking)
+                emailService.sendNotificationEmail(chairman.email, {
                     subject: notification.title,
                     message: notification.message,
                     data
-                });
+                }).catch(err => logger.error(`Background email notification failed for ${chairman.email}:`, err));
             }
 
             return notifications;
@@ -78,11 +78,12 @@ class NotificationService {
                 const saved = await Notification.create(notification);
                 notifications.push(saved);
 
-                await emailService.sendNotificationEmail(manager.email, {
+                // Send email (FIRE AND FORGET)
+                emailService.sendNotificationEmail(manager.email, {
                     subject: notification.title,
                     message: notification.message,
                     data
-                });
+                }).catch(err => logger.error(`Background email notification failed for storage manager ${manager.email}:`, err));
             }
 
             return notifications;
@@ -116,13 +117,13 @@ class NotificationService {
 
             const saved = await Notification.create(notification);
 
-            // Send email for important notifications
+            // Send email for important notifications (FIRE AND FORGET)
             if (this.shouldSendEmail(event)) {
-                await emailService.sendNotificationEmail(user.email, {
+                emailService.sendNotificationEmail(user.email, {
                     subject: notification.title,
                     message: notification.message,
                     data: notificationData
-                });
+                }).catch(err => logger.error(`Background email notification failed for user ${user.email}:`, err));
             }
 
             return saved;

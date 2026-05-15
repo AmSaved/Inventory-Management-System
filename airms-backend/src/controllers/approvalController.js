@@ -49,10 +49,10 @@ const approvalController = {
     async approve(req, res, next) {
         try {
             const { id } = req.params;
-            const { comments, resourceType } = req.body;
+            const { comments, resourceType, allocations } = req.body;
             const company_id = req.user.company_id;
 
-            const result = await approvalService.processAction(company_id, id, resourceType || 'request', req.user, 'approve', comments);
+            const result = await approvalService.processAction(company_id, id, resourceType || 'request', req.user, 'approve', comments, { allocations });
             
             res.json({
                 success: true,

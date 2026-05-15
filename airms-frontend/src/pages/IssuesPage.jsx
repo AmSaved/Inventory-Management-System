@@ -26,10 +26,14 @@ import {
   MoreVertical,
   ChevronRight
 } from 'lucide-react';
+import Pagination from '../components/ui/Pagination';
 
 const IssuesPage = () => {
   const { user, hasPermission } = useAuth();
-  const { data: issuesData, loading, refetch } = useFetch('/issues');
+  const [page, setPage] = useState(1);
+  const { data: issuesData, pagination, loading, refetch } = useFetch('/issues', {
+    params: { page, limit: 10 }
+  });
   const { data: myAssets } = useFetch('/assets');
   
   const [showModal, setShowModal] = useState(false);
@@ -198,6 +202,9 @@ const IssuesPage = () => {
              </div>
           </div>
         )}
+        <div className="mt-8 flex justify-center">
+           <Pagination pagination={pagination} onPageChange={setPage} />
+        </div>
       </div>
 
       {/* Enhanced Incident Log Modal */}

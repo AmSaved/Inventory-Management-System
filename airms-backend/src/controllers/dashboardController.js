@@ -1,7 +1,7 @@
 const { 
     User, Product, Inventory, Request, RequestItem,
-    DischargeForm, Assignment, Return, Transfer, Issue,
-    OrganizationNode, ActivityLog, Role, sequelize
+    DischargeForm, Assignment, Return, Transfer, TransferItem, Issue,
+    OrganizationNode, ActivityLog, Role, Company, sequelize
 } = require('../models');
 const { Op } = require('sequelize');
 const hierarchyService = require('../services/hierarchyService');
@@ -34,25 +34,23 @@ const dashboardController = {
 
             if (activeOrgId) {
                 // Focus View: Scoped to a specific branch
-                if (!allowedNodes.includes(activeOrgId)) {
+                // Super Admin can see any node; others only within their allowedNodes
+                if (allowedNodes !== null && !allowedNodes.includes(activeOrgId)) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
                 const requestedDescendants = await hierarchyService.getDescendants(activeOrgId);
-                targetNodeIds = requestedDescendants.filter(id => allowedNodes.includes(id));
+                // If allowedNodes is null, they see all descendants; otherwise filter by authorization
+                targetNodeIds = allowedNodes === null ? requestedDescendants : requestedDescendants.filter(id => allowedNodes.includes(id));
             } else {
                 // Global View: Scoped to all authorized nodes
                 targetNodeIds = allowedNodes;
             }
 
-            const where = { company_id };
-            // For global company-wide stats (Super Admin + No specific node selected), 
-            // we DON'T add an org_node_id filter to allow seeing everything including root-less nodes.
-            // But if we have a specific set of target nodes, we apply it.
-            if (activeOrgId || !isSuperAdmin) {
-                if (targetNodeIds.length > 0) {
-                    where.org_node_id = { [Op.in]: targetNodeIds };
-                }
-            }
+            // --- UNIFIED SCOPING LOGIC ---
+            // null = Global (Super Admin), [] = No Access, [ids] = Scoped Access
+            const baseWhere = { company_id };
+            const nodeFilter = targetNodeIds === null ? {} : { org_node_id: { [Op.in]: targetNodeIds } };
+            const where = { ...baseWhere, ...nodeFilter };
 
             // 2. Aggregate Metrics (Conditional based on role)
             let metrics = {};
@@ -87,7 +85,7 @@ const dashboardController = {
             } else {
                 // OPERATIONAL VIEW (Scoped)
                 const results = await Promise.all([
-                    User.count({ where: { company_id, ... (targetNodeIds.length > 0 ? { org_node_id: { [Op.in]: targetNodeIds } } : {}) } }),
+                    User.count({ where }),
                     Product.count({ where: { company_id } }),
                     Inventory.sum('quantity', { where }) || 0,
                     approvalService.getPendingApprovals(company_id, req.user),
@@ -109,21 +107,81 @@ const dashboardController = {
                 const openIssues = results[5];
                 const lowStockCount = results[6];
 
+                // --- CROSS-NODE LOGISTICS SCOPING ---
+                const transferWhere = { company_id };
+                const dischargeWhere = { company_id };
+                
+                if (targetNodeIds !== null) {
+                    const scopeOp = { [Op.in]: targetNodeIds };
+                    transferWhere[Op.or] = [{ from_node_id: scopeOp }, { to_node_id: scopeOp }];
+                    dischargeWhere[Op.or] = [{ from_node_id: scopeOp }, { to_node_id: scopeOp }];
+                }
+
+                const [
+                    totalTransfers,
+                    totalDischarges,
+                    totalReturns,
+                    totalProcurement,
+                    totalIssues,
+                    pendingTransferRequests
+                ] = await Promise.all([
+                    Transfer.count({ where: transferWhere }),
+                    DischargeForm.count({ where: dischargeWhere }),
+                    Request.count({ 
+                        where: { 
+                            ...where, 
+                            request_type: { [Op.in]: ['return', 'returns'] } 
+                        } 
+                    }),
+                    Request.count({ 
+                        where: { 
+                            ...where, 
+                            request_type: { [Op.in]: ['procurement', 'new', 'requisition'] } 
+                        } 
+                    }),
+                    Issue.count({ where }),
+                    Request.count({
+                        where: {
+                            ...where,
+                            request_type: { [Op.in]: ['transfer', 'items'] }
+                        }
+                    })
+                ]);
+
+                // Calculate Total Transferred Items
+                const transferredItemsResult = await TransferItem.findAll({
+                    attributes: [[sequelize.fn('SUM', sequelize.col('quantity')), 'total']],
+                    include: [{
+                        model: Transfer,
+                        as: 'transfer',
+                        where: transferWhere,
+                        attributes: []
+                    }],
+                    raw: true
+                });
+                const totalTransferredItems = parseInt(transferredItemsResult[0]?.total || 0);
+
                 metrics = {
                     total_users: totalUsers,
                     total_products: totalProducts,
                     total_stock: totalInventorySum,
-                    total_nodes: targetNodeIds.length,
+                    total_nodes: targetNodeIds === null ? await OrganizationNode.count({ where: { company_id } }) : targetNodeIds.length,
                     pending_requests: pendingApprovalListRaw.length,
                     active_assignments: activeAssignments,
                     open_issues: openIssues,
-                    low_stock: lowStockCount
+                    low_stock: lowStockCount,
+                    total_transfers: totalTransfers + pendingTransferRequests,
+                    total_discharges: totalDischarges,
+                    total_returns: totalReturns,
+                    total_procurement: totalProcurement,
+                    total_reports: totalIssues,
+                    total_transferred_items: totalTransferredItems
                 };
             }
 
             // 3. Trends
             const recentActivity = await ActivityLog.findAll({
-                where: { company_id, ... (targetNodeIds.length > 0 ? { org_node_id: { [Op.in]: targetNodeIds } } : {}) },
+                where,
                 limit: 10,
                 order: [['created_at', 'DESC']],
                 include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }]
@@ -142,10 +200,7 @@ const dashboardController = {
 
             // Get all inventory sums grouped by org_node_id for the whole target scope
             const inventoryStats = await Inventory.findAll({
-                where: {
-                    company_id,
-                    org_node_id: { [Op.in]: targetNodeIds }
-                },
+                where,
                 attributes: [
                     'org_node_id',
                     [sequelize.fn('SUM', sequelize.col('quantity')), 'total_stock']

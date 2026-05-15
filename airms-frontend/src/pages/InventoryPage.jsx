@@ -14,6 +14,7 @@ import { formatNumber, formatDate } from '../utils/formatters';
 import inventoryService from '../services/inventoryService';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import Pagination from '../components/ui/Pagination';
 import { 
   Package, 
   Search, 
@@ -28,7 +29,8 @@ import {
   AlertTriangle,
   Fingerprint,
   QrCode,
-  Printer
+  Printer,
+  Eye
 } from 'lucide-react';
 import QRLabel from '../components/inventory/QRLabel';
 import ActivityLogPanel from '../components/inventory/ActivityLogPanel';
@@ -53,6 +55,7 @@ const InventoryPage = () => {
 
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [itemForQr, setItemForQr] = useState(null);
+  const [page, setPage] = useState(1);
 
   const handlePrint = () => {
     window.print();
@@ -60,19 +63,25 @@ const InventoryPage = () => {
 
   // Auto-set the user's unit for filtering if not already set
   useEffect(() => {
-    if (user?.org_node_id && !selectedUnit) {
+    if (user?.role?.level < 100 && user?.org_node_id && !selectedUnit) {
       // setSelectedUnit(user.org_node_id); 
       // Note: We might want "All" by default for admins, but for others, auto-select is better.
     }
   }, [user, selectedUnit]);
 
-  const { data: inventoryData, loading, refetch } = useFetch('/inventory', {
+  const { data: inventoryData, pagination, loading, refetch } = useFetch('/inventory', {
     params: {
       search,
       org_node_id: selectedUnit,
-      limit: 100
+      page,
+      limit: 15
     }
   });
+
+  // Reset to page 1 when search or unit changes
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedUnit]);
 
   const handleAdjust = async () => {
     if (!adjustmentData.adjustment && adjustmentData.type !== 'set') {
@@ -103,7 +112,8 @@ const InventoryPage = () => {
     return { label: 'SECURE STOCK', color: 'success', icon: <ShieldCheck size={12} /> };
   };
 
-  if (loading) return <LoadingSpinner />;
+  // We remove the full-page loading return to keep the UI static during fetch
+  // if (loading) return <LoadingSpinner />;
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-10 py-10 px-6 print:hidden">
@@ -218,7 +228,25 @@ const InventoryPage = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {inventoryData?.map((item) => {
+                  {loading ? (
+                    // Skeleton Rows for high-end perceived performance
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <TableRow key={`skeleton-${i}`} className="animate-pulse">
+                        <TableCell className="py-6 px-8">
+                           <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-slate-100 rounded-2xl" />
+                              <div className="space-y-2">
+                                 <div className="h-4 w-32 bg-slate-100 rounded-lg" />
+                                 <div className="h-2 w-20 bg-slate-50 rounded-lg" />
+                              </div>
+                           </div>
+                        </TableCell>
+                        <TableCell><div className="h-8 w-24 bg-slate-50 rounded-xl" /></TableCell>
+                        <TableCell><div className="h-8 w-32 bg-slate-50 rounded-xl" /></TableCell>
+                        <TableCell className="px-8 text-right"><div className="h-10 w-32 bg-slate-50 rounded-xl ml-auto" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : inventoryData?.map((item) => {
                     const stockStatus = getStockStatus(item.quantity, item.minimum_quantity);
                     return (
                       <TableRow key={item.id} className="hover:bg-slate-50/30 transition-colors group">
@@ -267,8 +295,9 @@ const InventoryPage = () => {
                               size="sm"
                               onClick={() => navigate(`/inventory/${item.id}`)}
                               className="w-10 h-10 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-blue-600 shadow-sm"
+                              title="View Asset Profile"
                             >
-                              <Search size={14} />
+                              <Eye size={14} />
                             </Button>
                              <Button
                                 variant="ghost"
@@ -315,6 +344,10 @@ const InventoryPage = () => {
                 </div>
               )}
             </CardContent>
+            <Pagination 
+              pagination={pagination} 
+              onPageChange={setPage} 
+            />
           </Card>
         </div>
       </div>

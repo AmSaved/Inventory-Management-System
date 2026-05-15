@@ -51,29 +51,12 @@ class AuthService {
         try {
 // authService.js
             // Find user with case-insensitive email matching
+            // PHASE 1: Fetch User and simple associations (No Permissions yet)
             const user = await User.findOne({
                 where: { 
                     email: { [Op.iLike]: email } 
                 },
                 include: [
-                    {
-                        model: Role,
-                        as: 'role',
-                        include: [{
-                            model: Permission,
-                            as: 'permissions',
-                            through: { attributes: [] }
-                        }]
-                    },
-                    {
-                        model: Role,
-                        as: 'roles',
-                        include: [{
-                            model: Permission,
-                            as: 'permissions',
-                            through: { attributes: [] }
-                        }]
-                    },
                     {
                         model: require('../models').OrganizationNode,
                         as: 'organizationNode'
@@ -84,6 +67,34 @@ class AuthService {
                     }
                 ]
             });
+
+            if (!user) {
+                throw new Error('Invalid email or password');
+            }
+
+            // PHASE 2: Fetch Primary Role with Permissions separately (FAST)
+            if (user.role_id) {
+                const primaryRole = await Role.findByPk(user.role_id, {
+                    include: [{
+                        model: Permission,
+                        as: 'permissions',
+                        through: { attributes: [] }
+                    }]
+                });
+                // Attach it to the user object so it looks like it was eager-loaded
+                user.setDataValue('role', primaryRole);
+            }
+
+            // PHASE 3: Fetch Secondary Roles with Permissions separately (FAST)
+            const secondaryRoles = await user.getRoles({
+                include: [{
+                    model: Permission,
+                    as: 'permissions',
+                    through: { attributes: [] }
+                }]
+            });
+            // Attach them to the user object
+            user.setDataValue('roles', secondaryRoles);
 
             if (!user) {
                 throw new Error('Invalid email or password');

@@ -12,6 +12,8 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import { formatDate } from '../utils/formatters';
 import requestService from '../services/requestService';
 import toast from 'react-hot-toast';
+import { parseSpecifications } from '../utils/helpers';
+import Pagination from '../components/ui/Pagination';
 
 const RequestsPage = () => {
   const navigate = useNavigate();
@@ -27,11 +29,14 @@ const RequestsPage = () => {
   const [processing, setProcessing] = useState(false);
   const [viewingRequest, setViewingRequest] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [page, setPage] = useState(1);
 
-  const { data, loading, refetch } = useFetch('/requests', {
+  const { data, pagination, loading, refetch } = useFetch('/requests', {
     params: { 
       status: statusFilter,
-      search: search
+      search: search,
+      page: page,
+      limit: 10
     }
   });
 
@@ -245,6 +250,9 @@ const RequestsPage = () => {
                 <span className="text-gray-400 font-bold text-sm tracking-widest uppercase">No requests logged in current ledger view</span>
               </div>
             )}
+            <div className="p-4 border-t border-gray-50 flex justify-center">
+               <Pagination pagination={pagination} onPageChange={setPage} />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -312,42 +320,49 @@ const RequestsPage = () => {
                  Manifested Resources
               </h3>
               <div className="space-y-3">
-                 {viewingRequest?.items?.map((item, idx) => (
-                    <div key={idx} className="p-6 bg-gray-50 border border-gray-100 rounded-[30px] shadow-sm group">
-                       <div className="flex justify-between items-start mb-6">
-                          <div>
-                             <p className="font-black text-gray-900 text-lg uppercase italic leading-none">{item.product?.name}</p>
-                             <p className="text-[9px] text-primary-600 font-black uppercase tracking-widest mt-2">{item.product?.sku} • {item.product?.category}</p>
-                          </div>
-                          <div className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-tighter shadow-lg">
-                             QTY: {item.quantity_requested}
-                          </div>
-                       </div>
-                       
-                       <div className="grid grid-cols-1 gap-4">
-                          <div className="space-y-2">
-                             <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest ml-1">Digital Barcode / UUID</p>
-                             <div className="p-4 bg-white rounded-2xl border border-gray-100 font-mono text-xs font-black text-slate-800 flex items-center justify-between group-hover:border-blue-200 transition-all">
-                                <span>{item.barcode || 'UNASSIGNED_PROTOCOL'}</span>
-                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                             </div>
-                          </div>
-                          <div className="space-y-2">
-                             <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest ml-1">Hardware Serial Number</p>
-                             <div className="p-4 bg-white rounded-2xl border border-gray-100 font-mono text-xs font-black text-slate-500 flex items-center justify-between italic">
-                                <span>{item.serial_number || 'PENDING_PHYSICAL_HANDOVER'}</span>
-                             </div>
-                          </div>
-                       </div>
+                 {viewingRequest?.items?.map((item, idx) => {
+                    const { specs, notes: userNotes } = parseSpecifications(item.specifications);
+                    
+                    const displayBarcode = item.barcode || specs.barcode || 'UNASSIGNED_PROTOCOL';
+                    const displaySerial = item.serial_number || specs.serial_number || 'PENDING_PHYSICAL_HANDOVER';
 
-                       {item.specifications && (
-                         <div className="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                            <p className="text-[8px] text-blue-400 font-black uppercase tracking-widest mb-1">Custom Specifications</p>
-                            <p className="text-[10px] text-blue-900 font-bold italic">"{item.specifications}"</p>
+                    return (
+                      <div key={idx} className="p-6 bg-gray-50 border border-gray-100 rounded-[30px] shadow-sm group">
+                         <div className="flex justify-between items-start mb-6">
+                            <div>
+                               <p className="font-black text-gray-900 text-lg uppercase italic leading-none">{item.product?.name}</p>
+                               <p className="text-[9px] text-primary-600 font-black uppercase tracking-widest mt-2">{item.product?.sku} • {item.product?.category}</p>
+                            </div>
+                            <div className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-tighter shadow-lg">
+                               QTY: {item.quantity_requested}
+                            </div>
                          </div>
-                       )}
-                    </div>
-                 ))}
+                         
+                         <div className="grid grid-cols-1 gap-4">
+                            <div className="space-y-2">
+                               <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest ml-1">Digital Barcode / UUID</p>
+                               <div className="p-4 bg-white rounded-2xl border border-gray-100 font-mono text-xs font-black text-slate-800 flex items-center justify-between group-hover:border-blue-200 transition-all">
+                                  <span>{displayBarcode}</span>
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                               </div>
+                            </div>
+                            <div className="space-y-2">
+                               <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest ml-1">Hardware Serial Number</p>
+                               <div className="p-4 bg-white rounded-2xl border border-gray-100 font-mono text-xs font-black text-slate-500 flex items-center justify-between italic">
+                                  <span>{displaySerial}</span>
+                                </div>
+                             </div>
+                          </div>
+   
+                          {userNotes && (
+                            <div className="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                               <p className="text-[8px] text-blue-400 font-black uppercase tracking-widest mb-1">Custom Specifications</p>
+                               <p className="text-[10px] text-blue-900 font-bold italic">"{userNotes}"</p>
+                            </div>
+                          )}
+                       </div>
+                    );
+                 })}
               </div>
            </div>
         </div>

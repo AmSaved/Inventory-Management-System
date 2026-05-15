@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 
 export const useFetch = (url, options = {}) => {
   const [data, setData] = useState(null);
+  const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -12,6 +13,7 @@ export const useFetch = (url, options = {}) => {
     try {
       const response = await api.get(url, options);
       setData(response.data.data);
+      setPagination(response.data.pagination || null);
       setError(null);
     } catch (err) {
       setError(err.response?.data?.message || err.message);
@@ -27,5 +29,5 @@ export const useFetch = (url, options = {}) => {
     fetchData();
   }, [fetchData]);
 
-  return { data, loading, error, refetch: fetchData };
+  return { data, pagination, loading, error, refetch: fetchData };
 };

@@ -6,6 +6,7 @@ const logger = require('../config/logger');
 const authController = {
     // Register new user
     async register(req, res, next) {
+        const startTime = Date.now();
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
@@ -13,9 +14,15 @@ const authController = {
             }
 
             const userData = req.body;
-            const user = await authService.register(userData);
+            logger.info(`Starting registration for email: ${userData.email}`);
+            
+            const registrationResult = await authService.register(userData);
+            const user = registrationResult.user; // Extract the actual user object
 
-            await ActivityLog.create({
+            logger.debug(`User record created in ${Date.now() - startTime}ms. Finalizing in background...`);
+
+            // FIRE AND FORGET Activity Log to avoid blocking response
+            ActivityLog.create({
                 user_id: user.id,
                 action: 'CREATE',
                 resource: 'users',
@@ -24,14 +31,18 @@ const authController = {
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent'),
                 company_id: user.company_id
-            });
+            }).catch(err => logger.error(`Background activity logging failed for registration:`, err));
+
+            const totalTime = Date.now() - startTime;
+            logger.info(`Registration completed successfully in ${totalTime}ms for user ID: ${user.id}`);
 
             res.status(201).json({
                 success: true,
                 message: 'User registered successfully',
-                data: user
+                data: registrationResult
             });
         } catch (error) {
+            logger.error(`Registration failed after ${Date.now() - startTime}ms: ${error.message}`);
             next(error);
         }
     },
@@ -165,30 +176,9 @@ const authController = {
         try {
             // Optimization: If the middleware already loaded the basic user, 
             // we only fetch the extra details we need if they aren't there.
+            // PHASE 1: Fetch basic user info and simple associations
             const user = await User.findByPk(req.user.id, {
                 include: [
-                    {
-                        model: Role,
-                        as: 'role',
-                        attributes: ['id', 'name', 'level', 'visibility_scope'],
-                        include: [{
-                            model: require('../models').Permission,
-                            as: 'permissions',
-                            attributes: ['id', 'name', 'resource', 'action'],
-                            through: { attributes: [] }
-                        }]
-                    },
-                    {
-                        model: Role,
-                        as: 'roles',
-                        attributes: ['id', 'name'],
-                        include: [{
-                            model: require('../models').Permission,
-                            as: 'permissions',
-                            attributes: ['id', 'name', 'resource', 'action'],
-                            through: { attributes: [] }
-                        }]
-                    },
                     {
                         model: require('../models').OrganizationNode,
                         as: 'organizationNode',
@@ -202,6 +192,34 @@ const authController = {
                 ],
                 attributes: { exclude: ['password_hash', 'refresh_token'] }
             });
+
+            if (user) {
+                // PHASE 2: Fetch Primary Role and its permissions separately
+                if (user.role_id) {
+                    const primaryRole = await Role.findByPk(user.role_id, {
+                        attributes: ['id', 'name', 'level', 'visibility_scope'],
+                        include: [{
+                            model: require('../models').Permission,
+                            as: 'permissions',
+                            attributes: ['id', 'name', 'resource', 'action'],
+                            through: { attributes: [] }
+                        }]
+                    });
+                    user.setDataValue('role', primaryRole);
+                }
+
+                // PHASE 3: Fetch Secondary Roles and their permissions separately
+                const secondaryRoles = await user.getRoles({
+                    attributes: ['id', 'name'],
+                    include: [{
+                        model: require('../models').Permission,
+                        as: 'permissions',
+                        attributes: ['id', 'name', 'resource', 'action'],
+                        through: { attributes: [] }
+                    }]
+                });
+                user.setDataValue('roles', secondaryRoles);
+            }
 
             res.json({
                 success: true,

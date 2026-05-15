@@ -41,11 +41,13 @@ const requestController = {
             // Hierarchical Scoping
             if (req.query.org_node_id) {
                 const targetNode = Number(req.query.org_node_id);
-                if (!isSuperAdmin && !allowedNodes.includes(targetNode)) {
+                // Null allowedNodes means global visibility
+                if (allowedNodes !== null && !allowedNodes.includes(targetNode)) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
                 where.org_node_id = targetNode;
-            } else if (!isSuperAdmin) {
+            } else if (allowedNodes !== null) {
+                // Only filter by allowed nodes if NOT a global admin (null means global)
                 where.org_node_id = { [Op.in]: allowedNodes };
             }
 
@@ -140,6 +142,9 @@ const requestController = {
 
                     if (plain.currentStep) {
                         plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions);
+                        if (plain.can_action) {
+                            plain.is_final_step = await workflowService.isFinalStep(row, plain.current_step_id);
+                        }
                     }
                 } else {
                     plain.can_action = false;
@@ -203,12 +208,22 @@ const requestController = {
             const allowedNodes = req.getAuthorizedNodes 
                 ? await req.getAuthorizedNodes() 
                 : await hierarchyService.getAllowedNodes(req.user, permissions);
+                
+            const isAuthorized = isSuperAdmin || allowedNodes === null || allowedNodes.includes(Number(request.org_node_id));
 
-            if (!isSuperAdmin && !allowedNodes.includes(request.org_node_id) && request.requester_id !== req.user.id) {
+            if (!isAuthorized && request.requester_id !== req.user.id) {
                 return res.status(403).json({ success: false, message: 'Access denied: Request is outside your visibility scope' });
             }
 
-            res.json({ success: true, data: request });
+            const plain = request.get({ plain: true });
+            if (plain.currentStep) {
+                plain.can_action = await workflowService.userCanApproveStep(req.user, request, plain.currentStep, permissions);
+                if (plain.can_action) {
+                    plain.is_final_step = await workflowService.isFinalStep(request, plain.current_step_id);
+                }
+            }
+
+            res.json({ success: true, data: plain });
         } catch (error) {
             next(error);
         }
@@ -268,7 +283,8 @@ const requestController = {
                 await RequestItem.bulkCreate(requestItems);
             }
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'CREATE',
@@ -277,7 +293,7 @@ const requestController = {
                 details: { request_number: request.request_number, items },
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for request creation:`, err));
 
             const createdRequest = await Request.findByPk(request.id, { include: ['items'] });
 
@@ -307,7 +323,8 @@ const requestController = {
 
             await request.update(updates);
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 org_node_id: request.org_node_id,
                 user_id: req.user.id,
@@ -317,7 +334,7 @@ const requestController = {
                 details: updates,
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for request update:`, err));
 
             res.json({ success: true, message: 'Request updated successfully', data: request });
         } catch (error) {
@@ -357,7 +374,8 @@ const requestController = {
                 notes: reason
             });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 org_node_id: request.org_node_id,
                 user_id: req.user.id,
@@ -367,7 +385,7 @@ const requestController = {
                 details: { reason },
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for request cancellation:`, err));
 
             res.json({ success: true, message: 'Request cancelled successfully' });
         } catch (error) {

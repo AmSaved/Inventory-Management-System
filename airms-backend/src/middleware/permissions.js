@@ -3,39 +3,45 @@ const logger = require('../config/logger');
 const hierarchyService = require('../services/hierarchyService');
 
 const getEffectivePermissions = async (user) => {
-    // Optimization: Check if permissions are already attached to the user object (if eager-loaded)
+    // 1. Request-Level Cache Check
+    // If we've already calculated permissions for this specific request, return them immediately.
     if (user.permissions_cache) return user.permissions_cache;
-
-    // 1. Aggregate permissions from all roles (Legacy + M2M)
-    const userWithRoles = await User.findByPk(user.id, {
-        attributes: ['id'],
-        include: [
-            {
-                model: Role,
-                as: 'role',
-                include: [{ model: Permission, as: 'permissions', attributes: ['name'], through: { attributes: [] } }]
-            },
-            {
-                model: Role,
-                as: 'roles',
-                include: [{ model: Permission, as: 'permissions', attributes: ['name'], through: { attributes: [] } }]
-            }
-        ]
-    });
-
-    if (!userWithRoles) return [];
-
+    
+    // Check if the request object is available (via a global hack or passed context)
+    // In our case, we'll rely on the user object being the one attached to the request.
+    
     const permissionSet = new Set();
-    
-    // Process legacy role
-    userWithRoles.role?.permissions?.forEach(p => permissionSet.add(p.name));
-    
-    // Process many-to-many roles
-    userWithRoles.roles?.forEach(r => {
-        r.permissions?.forEach(p => permissionSet.add(p.name));
-    });
 
-    // 2. Aggregate direct permissions
+    // PHASE 1: Fetch Primary Role permissions (FAST)
+    if (user.role_id) {
+        const primaryRole = await Role.findByPk(user.role_id, {
+            include: [{ 
+                model: Permission, 
+                as: 'permissions', 
+                attributes: ['name'], 
+                through: { attributes: [] } 
+            }]
+        });
+        primaryRole?.permissions?.forEach(p => permissionSet.add(p.name));
+    }
+
+    // PHASE 2: Fetch Secondary Roles permissions (FAST)
+    const dbUser = await User.findByPk(user.id, { attributes: ['id'] });
+    if (dbUser) {
+        const secondaryRoles = await dbUser.getRoles({
+            include: [{ 
+                model: Permission, 
+                as: 'permissions', 
+                attributes: ['name'], 
+                through: { attributes: [] } 
+            }]
+        });
+        secondaryRoles?.forEach(r => {
+            r.permissions?.forEach(p => permissionSet.add(p.name));
+        });
+    }
+
+    // PHASE 3: Fetch Direct Permissions (FAST)
     const directPerms = await UserPermission.findAll({
         where: {
             user_id: user.id,
@@ -49,7 +55,10 @@ const getEffectivePermissions = async (user) => {
     });
 
     const finalPermissions = Array.from(permissionSet);
-    user.permissions_cache = finalPermissions; // Attach to object for request-lifetime cache
+    
+    // Store in cache for this request lifecycle
+    user.permissions_cache = finalPermissions;
+
     return finalPermissions;
 };
 
@@ -126,7 +135,7 @@ const checkHierarchyScope = async (req, res, next) => {
         const allPermissions = await getEffectivePermissions(user);
         const allowedNodes = await hierarchyService.getAllowedNodes(user, allPermissions);
 
-        if (!allowedNodes.includes(Number(targetNodeId))) {
+        if (allowedNodes !== null && !allowedNodes.includes(Number(targetNodeId))) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Target node is outside your organizational visibility scope'

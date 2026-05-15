@@ -9,7 +9,7 @@ class ApprovalService {
      * Process a generic workflow action (Approve/Reject).
      * Replacing hardcoded roles (Chairman/Storage) with dynamic Processing Design.
      */
-    async processAction(companyId, requestId, resourceType, user, action, comments = '') {
+    async processAction(companyId, requestId, resourceType, user, action, comments = '', options = {}) {
         try {
             const models = require('../models');
             const modelMap = {
@@ -32,7 +32,7 @@ class ApprovalService {
             }
 
             if (action === 'approve') {
-                return await workflowService.advanceWorkflow(resource, resourceType || 'request', user, comments);
+                return await workflowService.advanceWorkflow(resource, resourceType || 'request', user, comments, 'approve', options);
             } else if (action === 'reject') {
                 return await workflowService.rejectWorkflow(resource, resourceType || 'request', user, comments);
             } else {
@@ -50,44 +50,47 @@ class ApprovalService {
      */
     async getPendingApprovals(companyId, user) {
         try {
-            const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
+            // PHASE 1: Calculate security context ONCE
+            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
+            const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user, permissions);
+            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
+
             if (authorizedStepIds.length === 0) return [];
-            
-            const allowedNodes = await hierarchyService.getAllowedNodes(user);
 
-            // 1. Fetch standard/legacy requests (excluding types handled by specialized tables)
-            const requests = await Request.findAll({
-                where: {
-                    company_id: companyId,
-                    status: 'pending',
-                    current_step_id: { [Op.in]: authorizedStepIds },
-                    org_node_id: { [Op.in]: allowedNodes },
-                    request_type: { [Op.notIn]: ['discharge', 'issue', 'transfer', 'return'] }
-                },
-                include: [
-                    { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
-                    { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code', 'path'] },
-                    { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
-                    { model: RequestItem, as: 'items', include: ['product'] },
-                    { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] }
-                ],
-                order: [['priority', 'DESC'], ['created_at', 'ASC']]
-            });
-
-            // 2. Aggregate results from specialized modules
-            const [discharges, transfers, returns, inventoryReturns] = await Promise.all([
-                this.getDischargeApprovals(companyId, user),
-                this.getTransferApprovals(companyId, user),
-                this.getReturnApprovals(companyId, user, false, 'returns'),
-                this.getReturnApprovals(companyId, user, false, 'inventory-returns')
+            // PHASE 2: Parallel Fetch using shared context (Optimization)
+            const [requests, discharges, transfers, returns, inventoryReturns] = await Promise.all([
+                Request.findAll({
+                    where: {
+                        company_id: companyId,
+                        status: 'pending',
+                        current_step_id: { [Op.in]: authorizedStepIds },
+                        org_node_id: allowedNodes === null ? { [Op.ne]: null } : { [Op.in]: allowedNodes },
+                        request_type: { [Op.notIn]: ['discharge', 'issue', 'transfer', 'return'] }
+                    },
+                    include: [
+                        { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
+                        { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code', 'path'] },
+                        { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
+                        { model: RequestItem, as: 'items', include: ['product'] },
+                        { model: require('../models').Workflow, as: 'workflow', attributes: ['id', 'name', 'resource_type'] }
+                    ],
+                    order: [['priority', 'DESC'], ['created_at', 'ASC']]
+                }),
+                this.getDischargeApprovals(companyId, user, false, permissions, authorizedStepIds, allowedNodes),
+                this.getTransferApprovals(companyId, user, 'all', false, permissions, authorizedStepIds, allowedNodes),
+                this.getReturnApprovals(companyId, user, false, 'returns', permissions, authorizedStepIds, allowedNodes),
+                this.getReturnApprovals(companyId, user, false, 'inventory-returns', permissions, authorizedStepIds, allowedNodes)
             ]);
 
             // 3. Process standard requests into plain objects (Optimized)
             const standardResults = await Promise.all(requests.map(async (item) => {
                 const plain = item.get({ plain: true });
                 plain.resource_origin = 'request';
-                // Use optimized check to avoid N+1 queries
+                // Pass cached security values to avoid N+1 queries inside userCanApproveStep
                 plain.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                if (plain.can_action) {
+                    plain.is_final_step = await workflowService.isFinalStep(item, plain.current_step_id);
+                }
                 return plain;
             }));
 
@@ -110,16 +113,16 @@ class ApprovalService {
      * Get discharge forms that require approval or are visible to the user.
      * Merges DischargeForm table and legacy Request table (type='discharge' or 'issue').
      */
-    async getDischargeApprovals(companyId, user, includeAll = false) {
+    async getDischargeApprovals(companyId, user, includeAll = false, providedPermissions = null, providedStepIds = null, providedNodes = null) {
         try {
             const { DischargeForm, DischargeItem, Request, RequestItem } = require('../models');
-            const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
-            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
+            const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
+            const authorizedStepIds = providedStepIds || await workflowService.getAuthorizedStepIds(companyId, user, permissions);
+            const allowedNodes = providedNodes || await hierarchyService.getAllowedNodes(user, permissions);
 
             const where = {
                 company_id: companyId,
-                from_node_id: { [Op.in]: allowedNodes }
+                ...(allowedNodes !== null ? { from_node_id: { [Op.in]: allowedNodes } } : {})
             };
 
             // If not including all, filter specifically for items waiting for this user's authorized steps
@@ -158,7 +161,7 @@ class ApprovalService {
                 where: {
                     company_id: companyId,
                     request_type: { [Op.in]: ['discharge', 'issue'] },
-                    org_node_id: { [Op.in]: allowedNodes },
+                    ...(allowedNodes !== null ? { org_node_id: { [Op.in]: allowedNodes } } : {}),
                     ...(includeAll ? {} : { status: 'pending', current_step_id: { [Op.in]: authorizedStepIds } })
                 },
                 include: [
@@ -193,15 +196,26 @@ class ApprovalService {
 
             // Dynamically tag which ones the user can actually action right now
             const results = await Promise.all(allResults.map(async (item) => {
-                const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
-                const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
-
-                // If it's not pending or user has no matching step, can't action
-                if (item.status !== 'pending' || !currentStepId || !isAuthorized) {
-                    item.can_action = false;
+                const userRoleId = Number(user.role?.id || user.role_id);
+                const stepRoleId = item.currentStep?.required_role_id ? Number(item.currentStep.required_role_id) : null;
+                
+                // Priority 1: Strict Role Match (Always allow action)
+                if (stepRoleId && userRoleId === stepRoleId) {
+                    item.can_action = true;
                 } else {
-                    // Use optimized userCanApproveStep with pre-calculated values
-                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                    // Priority 2: Permission/Hierarchy check
+                    const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
+                    const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
+                    
+                    if (item.status?.startsWith('pending') && isAuthorized) {
+                        item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                    } else {
+                        item.can_action = false;
+                    }
+                }
+
+                if (item.can_action) {
+                    item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id);
                 }
                 return item;
             }));
@@ -217,19 +231,21 @@ class ApprovalService {
      * Get transfers (Inventory or Item) awaiting approval.
      * Merges results from Transfer table and legacy Request table (type='transfer').
      */
-    async getTransferApprovals(companyId, user, transferTypeFilter = 'all', includeAll = false) {
+    async getTransferApprovals(companyId, user, transferTypeFilter = 'all', includeAll = false, providedPermissions = null, providedStepIds = null, providedNodes = null) {
         try {
             const { Transfer, TransferItem, Request, RequestItem } = require('../models');
-            const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
-            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
+            const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
+            const authorizedStepIds = providedStepIds || await workflowService.getAuthorizedStepIds(companyId, user, permissions);
+            const allowedNodes = providedNodes || await hierarchyService.getAllowedNodes(user, permissions);
 
             const where = {
                 company_id: companyId,
-                [Op.or]: [
-                    { from_node_id: { [Op.in]: allowedNodes } },
-                    { to_node_id: { [Op.in]: allowedNodes } }
-                ]
+                ...(allowedNodes !== null ? {
+                    [Op.or]: [
+                        { from_node_id: { [Op.in]: allowedNodes } },
+                        { to_node_id: { [Op.in]: allowedNodes } }
+                    ]
+                } : {})
             };
 
             if (transferTypeFilter !== 'all') {
@@ -272,7 +288,7 @@ class ApprovalService {
                     where: {
                         company_id: companyId,
                         request_type: 'transfer',
-                        org_node_id: { [Op.in]: allowedNodes },
+                        ...(allowedNodes !== null ? { org_node_id: { [Op.in]: allowedNodes } } : {}),
                         ...(includeAll ? {} : { status: 'pending', current_step_id: { [Op.in]: authorizedStepIds } })
                     },
                     include: [
@@ -316,6 +332,9 @@ class ApprovalService {
                 } else {
                     // Optimized check with pre-calculated values
                     item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                    if (item.can_action) {
+                        item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id);
+                    }
                 }
                 return item;
             }));
@@ -328,26 +347,28 @@ class ApprovalService {
     /**
      * Get return requests awaiting approval.
      */
-    async getReturnApprovals(companyId, user, includeAll = false, type = 'returns') {
+    async getReturnApprovals(companyId, user, includeAll = false, type = 'returns', providedPermissions = null, providedStepIds = null, providedNodes = null) {
         try {
             const { Return, ReturnItem, Request, RequestItem } = require('../models');
-            const authorizedStepIds = await workflowService.getAuthorizedStepIds(companyId, user);
-            const permissions = await require('../middleware/permissions').getEffectivePermissions(user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(user, permissions);
+            const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
+            const authorizedStepIds = providedStepIds || await workflowService.getAuthorizedStepIds(companyId, user, permissions);
+            const allowedNodes = providedNodes || await hierarchyService.getAllowedNodes(user, permissions);
 
             const returnWhere = {
                 company_id: companyId,
                 return_type: type === 'inventory-returns' ? 'inventory' : 'normal',
-                [Op.or]: [
-                    { from_node_id: { [Op.in]: allowedNodes } },
-                    { to_node_id: { [Op.in]: allowedNodes } }
-                ]
+                ...(allowedNodes !== null ? {
+                    [Op.or]: [
+                        { from_node_id: { [Op.in]: allowedNodes } },
+                        { to_node_id: { [Op.in]: allowedNodes } }
+                    ]
+                } : {})
             };
 
             const requestWhere = {
                 company_id: companyId,
                 request_type: 'return',
-                org_node_id: { [Op.in]: allowedNodes }
+                ...(allowedNodes !== null ? { org_node_id: { [Op.in]: allowedNodes } } : {})
             };
 
             if (!includeAll) {
@@ -420,6 +441,9 @@ class ApprovalService {
                 } else {
                     // Optimized check with pre-calculated values
                     item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                    if (item.can_action) {
+                        item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id);
+                    }
                 }
                 return item;
             }));

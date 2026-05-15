@@ -40,6 +40,13 @@ const RequestItem = sequelize.define('RequestItem', {
     },
     notes: {
         type: DataTypes.TEXT
+    },
+    inventory_id: {
+        type: DataTypes.INTEGER,
+        references: {
+            model: 'inventory',
+            key: 'id'
+        }
     }
 }, {
     tableName: 'request_items',

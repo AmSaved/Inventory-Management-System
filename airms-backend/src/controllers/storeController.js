@@ -198,6 +198,8 @@ const storeController = {
                                     reference: `STORE-${storeForm.store_number}`,
                                     notes: `Store form #${storeForm.store_number}`,
                                     serialNumber: serializedSN,
+                                    batchNumber: item.batch_number || storeForm.store_number,
+                                    locationDetails: item.location_details,
                                     transaction
                                 }
                             );
@@ -214,7 +216,9 @@ const storeController = {
                                 userId: req.user.id,
                                 reference: `STORE-${storeForm.store_number}`,
                                 notes: `Store form #${storeForm.store_number}`,
-                                serialNumber: item.serial_number, // PASS SERIAL NUMBER HERE
+                                serialNumber: item.serial_number,
+                                batchNumber: item.batch_number || storeForm.store_number,
+                                locationDetails: item.location_details,
                                 transaction
                             }
                         );
@@ -290,6 +294,8 @@ const storeController = {
                                     reference: `STORE-${storeForm.store_number}`,
                                     notes: `Finalized via workflow approval`,
                                     serialNumber: serializedSN,
+                                    batchNumber: item.batch_number || storeForm.store_number,
+                                    locationDetails: item.location_details,
                                     transaction
                                 }
                             );
@@ -304,7 +310,9 @@ const storeController = {
                                 userId: req.user.id,
                                 reference: `STORE-${storeForm.store_number}`,
                                 notes: `Finalized via workflow approval`,
-                                serialNumber: item.serial_number, // PASS SERIAL NUMBER
+                                serialNumber: item.serial_number,
+                                batchNumber: item.batch_number || storeForm.store_number,
+                                locationDetails: item.location_details,
                                 transaction
                             }
                         );

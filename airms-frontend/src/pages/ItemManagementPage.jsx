@@ -53,7 +53,7 @@ const IdentityCard = ({ item, onClose }) => {
            </div>
            <div className="space-y-4">
               <DetailRow label="Condition" value={item.condition} />
-              <DetailRow label="Latest Location" value={item.location_details} />
+              <DetailRow label="Latest Location" value={item.location_details || item.organizationNode?.name} />
               <DetailRow label="Batch Identity" value={item.batch_number} />
               <DetailRow label="Storage Node" value={item.organizationNode?.name} />
            </div>
@@ -137,7 +137,7 @@ const ItemManagementPage = () => {
           onClose={() => setUnitLedgerItem(null)} 
           onAdjust={(u) => { setSelectedItem(u); setAdjustModalOpen(true); }}
           onDecommission={(u) => { setSelectedItem(u); setDecommissionModalOpen(true); }}
-          onTransfer={(u) => navigate(`/transfers/new?product_id=${u.product_id}&from_node_id=${u.org_node_id}`)}
+          onTransfer={(u) => navigate(`/transfers?product_id=${u.product_id}&from_node_id=${u.org_node_id}`)}
           onQr={(u) => setQrItem(u)}
           onReport={(u) => navigate(`/report-problem?inventory_id=${u.id}`)}
           onIdentity={(u) => setIdentityItem(u)}
@@ -257,6 +257,12 @@ const ItemManagementPage = () => {
                      <div className="flex items-center justify-end gap-2 lg:gap-3">
                         <button onClick={() => { setSelectedItem(group); setBulkDeleteModalOpen(true); }} title="Wipe Entire Group" className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-white border border-slate-100 text-slate-300 hover:text-red-600 hover:border-red-100 shadow-sm flex items-center justify-center transition-all">
                            <Trash2 size={20} />
+                        </button>
+                        <button onClick={() => navigate(`/transfers?product_id=${group.product_id}&from_node_id=${group.org_node_id}`)} title="Transfer Stock" className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-white border border-slate-100 text-slate-400 hover:text-blue-600 hover:border-blue-100 shadow-sm flex items-center justify-center transition-all">
+                           <ArrowLeftRight size={20} />
+                        </button>
+                        <button onClick={() => navigate(`/discharge?product_id=${group.product_id}&org_node_id=${group.org_node_id}`)} title="Discharge Stock" className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-white border border-slate-100 text-slate-400 hover:text-red-600 hover:border-red-100 shadow-sm flex items-center justify-center transition-all">
+                           <PackageMinus size={20} />
                         </button>
                         <button onClick={() => setUnitLedgerItem(group)} className="px-5 lg:px-8 h-10 lg:h-12 bg-slate-950 text-white text-[10px] lg:text-[11px] font-black uppercase tracking-widest rounded-xl lg:rounded-2xl hover:bg-blue-600 shadow-xl shadow-blue-500/10 transition-all flex items-center gap-2 lg:gap-3">
                            <Layers size={18} /> <span className="hidden sm:inline">Open Ledger</span>

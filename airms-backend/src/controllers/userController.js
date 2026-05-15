@@ -47,19 +47,26 @@ const userController = {
                 // Determine target scope: Specified node or user's allowed branch
                 const targetNodeId = req.query.org_node_id || req.user.org_node_id;
                 
-                if (targetNodeId) {
+                if (targetNodeId && allowedNodes !== null) {
+                    const numTargetNodeId = Number(targetNodeId);
                     // Verify the user has access to the node they are trying to view
-                    if (allowedNodes.includes(Number(targetNodeId))) {
+                    if (allowedNodes.includes(numTargetNodeId)) {
                         // Resolve entire subtree (Recursive visibility - Downward)
-                        const descendants = await hierarchyService.getDescendants(targetNodeId);
+                        const descendants = await hierarchyService.getDescendants(numTargetNodeId);
                         filters.org_node_id = { [Op.in]: descendants };
                     } else {
                         // Outside scope - restrict to an impossible ID
                         filters.org_node_id = -1; 
                     }
-                } else if (allowedNodes.length > 0) {
+                } else if (allowedNodes !== null) {
                     // Fallback to all allowed nodes (usually their branch and below)
                     filters.org_node_id = { [Op.in]: allowedNodes };
+                } else if (allowedNodes === null) {
+                    // Global visibility: if targetNodeId is specified, show its subtree, else show all
+                    if (targetNodeId) {
+                        const descendants = await hierarchyService.getDescendants(targetNodeId);
+                        filters.org_node_id = { [Op.in]: descendants };
+                    }
                 } else {
                     // No node assignment = see no operational users
                     filters.org_node_id = -1;
@@ -108,7 +115,8 @@ const userController = {
                     ? await req.getAuthorizedNodes() 
                     : await hierarchyService.getAllowedNodes(req.user, permissions);
                     
-                if (!allowedNodes.includes(user.org_node_id)) {
+                const isAuthorized = allowedNodes === null || allowedNodes.includes(Number(user.org_node_id));
+                if (!isAuthorized) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target personnel is outside your visibility scope' });
                 }
             }
@@ -123,6 +131,7 @@ const userController = {
      * Create a user (Secured by companyId).
      */
     async create(req, res, next) {
+        const startTime = Date.now();
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
@@ -135,12 +144,18 @@ const userController = {
             const hasFullManagePower = permissions.includes('user:manage:all') || permissions.includes('system:manage');
             const isSuperAdmin = hasFullManagePower;
 
+            logger.info(`Starting manual user creation for email: ${userData.email} by user: ${req.user.id}`);
+
             // Ensure the target org_node_id is within the creator's visibility scope
             // BYPASS for Super Admins: They can onboard staff anywhere
             if (!isSuperAdmin) {
                 const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-                if (userData.org_node_id && !allowedNodes.includes(Number(userData.org_node_id))) {
-                    return res.status(403).json({ success: false, message: 'Access denied: Cannot onboard staff outside your visibility scope' });
+                
+                // Safety check for null (global access)
+                if (allowedNodes !== null) {
+                    if (userData.org_node_id && !allowedNodes.includes(Number(userData.org_node_id))) {
+                        return res.status(403).json({ success: false, message: 'Access denied: Cannot onboard staff outside your visibility scope' });
+                    }
                 }
             }
 
@@ -155,7 +170,10 @@ const userController = {
 
             const user = await userService.createUser(companyId, userData, req.user.id);
 
-            await ActivityLog.create({
+            logger.debug(`User record created in ${Date.now() - startTime}ms. Finalizing in background...`);
+
+            // FIRE AND FORGET Activity Log
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: req.user.id,
                 action: 'CREATE',
@@ -164,7 +182,10 @@ const userController = {
                 details: { employee_id: user.employee_id, email: user.email },
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for manual user creation:`, err));
+
+            const totalTime = Date.now() - startTime;
+            logger.info(`Manual user creation completed in ${totalTime}ms for user ID: ${user.id}`);
 
             res.status(201).json({
                 success: true,
@@ -172,6 +193,7 @@ const userController = {
                 data: user
             });
         } catch (error) {
+            logger.error(`Manual user creation failed after ${Date.now() - startTime}ms: ${error.message}`);
             next(error);
         }
     },
@@ -227,7 +249,8 @@ const userController = {
 
             const user = await userService.updateUser(companyId, id, userData, req.user.id);
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: req.user.id,
                 action: 'UPDATE',
@@ -235,7 +258,7 @@ const userController = {
                 resource_id: user.id,
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for user update:`, err));
 
             res.json({ success: true, message: 'User updated successfully', data: user });
         } catch (error) {
@@ -273,7 +296,8 @@ const userController = {
 
             await userService.deleteUser(companyId, id);
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: req.user.id,
                 action: 'DELETE',
@@ -281,7 +305,7 @@ const userController = {
                 resource_id: id,
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for user deletion:`, err));
 
             res.json({ success: true, message: 'User deleted successfully' });
         } catch (error) {
@@ -315,14 +339,15 @@ const userController = {
             
             await user.update({ is_active: !user.is_active });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id: companyId,
                 user_id: req.user.id,
                 action: 'UPDATE',
                 resource: 'users',
                 resource_id: id,
                 details: { is_active: user.is_active }
-            });
+            }).catch(err => logger.error(`Background activity logging failed for user status toggle:`, err));
 
             res.json({ success: true, data: user });
         } catch (error) {

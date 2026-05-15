@@ -27,24 +27,24 @@ const RequestProductPage = () => {
   const [priority, setPriority] = useState('medium');
   const [expectedDate, setExpectedDate] = useState('');
   
-  // Fetching live inventory instead of generic blueprints to ensure serial number selection
-  const { data: inventoryData } = useFetch('/inventory?limit=1000&quantity_gt=0');
-  const inventoryItems = Array.isArray(inventoryData) ? inventoryData : (inventoryData?.data || []);
+  // Fetching product catalog (blueprints) instead of live inventory
+  const { data: productData } = useFetch('/products?limit=1000&is_active=true');
+  const products = Array.isArray(productData) ? productData : (productData?.data || []);
 
   // Fetch the dynamic workflow for requests for this branch
   const { data: workflowData } = useFetch('/workflows/active?resource_type=request');
   const activeWorkflow = workflowData?.data;
 
   // Helper to get unique normalized categories
-  const categories = [...new Set(inventoryItems.map(item => item.product?.category?.trim()).filter(Boolean))].sort();
+  const categories = [...new Set(products.map(p => p.category?.trim()).filter(Boolean))].sort();
 
   // Helper to get sub-categories for a selected category (Case-Insensitive)
   const getSubCategories = (category) => {
     if (!category) return [];
     return [...new Set(
-      inventoryItems
-        .filter(item => item.product?.category?.trim().toUpperCase() === category.toUpperCase())
-        .map(item => item.product?.sub_category?.trim())
+      products
+        .filter(p => p.category?.trim().toUpperCase() === category.toUpperCase())
+        .map(p => p.sub_category?.trim())
         .filter(Boolean)
     )].sort();
   };
@@ -52,19 +52,18 @@ const RequestProductPage = () => {
   // Helper to get products for a selected sub-category (Case-Insensitive)
   const getFilteredItems = (category, subCategory) => {
     if (!category) return [];
-    return inventoryItems
-      .filter(item => {
-        const catMatch = item.product?.category?.trim().toUpperCase() === category.toUpperCase();
-        const subMatch = !subCategory || item.product?.sub_category?.trim().toUpperCase() === subCategory.toUpperCase();
+    return products
+      .filter(p => {
+        const catMatch = p.category?.trim().toUpperCase() === category.toUpperCase();
+        const subMatch = !subCategory || p.sub_category?.trim().toUpperCase() === subCategory.toUpperCase();
         return catMatch && subMatch;
       })
-      .sort((a, b) => (a.product?.name || '').localeCompare(b.product?.name || ''));
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   };
 
   const handleAddItem = () => {
     setItems([...items, { 
       product_id: '', 
-      inventory_id: '',
       quantity: 1, 
       specifications: '',
       category: '',
@@ -78,7 +77,7 @@ const RequestProductPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (items.some(item => !item.inventory_id)) {
+    if (items.some(item => !item.product_id)) {
       return toast.error('Please complete the product selection for all items');
     }
 
@@ -88,20 +87,13 @@ const RequestProductPage = () => {
         purpose,
         priority,
         expected_delivery_date: expectedDate || null,
-        items: items.map(item => {
-          const invItem = inventoryItems.find(i => i.id === parseInt(item.inventory_id));
-          return {
-            product_id: parseInt(item.product_id),
-            quantity_requested: item.quantity,
-            specifications: {
-              ...item.specifications_obj, // if we had any
-              inventory_id: parseInt(item.inventory_id),
-              serial_number: invItem?.serial_number,
-              barcode: invItem?.barcode,
-              source_node_id: invItem?.org_node_id
-            }
-          };
-        })
+        items: items.map(item => ({
+          product_id: parseInt(item.product_id),
+          quantity_requested: item.quantity,
+          specifications: {
+            notes: item.specifications
+          }
+        }))
       });
       toast.success('Requisition Protocol Initialized');
       navigate('/dashboard');
@@ -219,7 +211,7 @@ const RequestProductPage = () => {
                           const newItems = [...items];
                           newItems[index].category = e.target.value;
                           newItems[index].sub_category = '';
-                          newItems[index].inventory_id = '';
+                          newItems[index].product_id = '';
                           setItems(newItems);
                         }}
                         required
@@ -239,7 +231,7 @@ const RequestProductPage = () => {
                         onChange={(e) => {
                           const newItems = [...items];
                           newItems[index].sub_category = e.target.value;
-                          newItems[index].inventory_id = '';
+                          newItems[index].product_id = '';
                           setItems(newItems);
                         }}
                         required
@@ -254,20 +246,18 @@ const RequestProductPage = () => {
                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Item / Product Model</label>
                        <select
                         className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 font-black text-slate-900 outline-none hover:border-blue-200 transition-all cursor-pointer text-[10px] uppercase disabled:opacity-50"
-                        value={item.inventory_id}
+                        value={item.product_id}
                         disabled={!item.category}
                         onChange={(e) => {
                           const newItems = [...items];
-                          newItems[index].inventory_id = e.target.value;
-                          const selected = inventoryItems.find(i => i.id === parseInt(e.target.value));
-                          newItems[index].product_id = selected?.product_id;
+                          newItems[index].product_id = e.target.value;
                           setItems(newItems);
                         }}
                         required
                       >
-                        <option value="">Select Item / Serial...</option>
+                        <option value="">Select Item / Model...</option>
                         {getFilteredItems(item.category, item.sub_category).map(p => (
-                          <option key={p.id} value={p.id}>{p.product?.name} [{p.serial_number || 'N/A'}]</option>
+                          <option key={p.id} value={p.id}>{p.name} [{p.sku || 'N/A'}]</option>
                         ))}
                       </select>
                     </div>

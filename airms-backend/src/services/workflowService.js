@@ -114,15 +114,21 @@ class WorkflowService {
             return false;
         }
 
-        // ─── PRIORITY 0: ALREADY ACTED CHECK ───
-        // If the user has already approved any part of this request, they shouldn't action it again
-        // in a multi-step workflow (enforces 4-eyes principle)
+        const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
+        
+        // ─── PRIORITY 1: GLOBAL OVERRIDES ───
+        const isGlobalAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
+        if (isGlobalAdmin) return true;
+
+        // ─── PRIORITY 2: ALREADY ACTED CHECK (4-Eyes Principle) ───
         const hasAlreadyActed = await Approval.findOne({
             where: {
                 [Op.or]: [
                     { request_id: resource.id },
                     { discharge_form_id: resource.id },
-                    { store_form_id: resource.id }
+                    { store_form_id: resource.id },
+                    { transfer_id: resource.id },
+                    { return_id: resource.id }
                 ],
                 approver_id: user.id
             }
@@ -131,14 +137,8 @@ class WorkflowService {
         if (hasAlreadyActed) {
             return false;
         }
-        
-        const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
-        
-        // ─── PRIORITY 1: GLOBAL OVERRIDES ───
-        const isGlobalAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
-        if (isGlobalAdmin) return true;
 
-        // ─── PRIORITY 2: RESOURCE IDENTITY CHECK (Receiver Bypass) ───
+        // ─── PRIORITY 3: RESOURCE IDENTITY CHECK (Receiver Bypass) ───
         const isTargetUser = (resource.target_user_id && Number(resource.target_user_id) === Number(user.id)) || 
                              (resource.to_user_id && Number(resource.to_user_id) === Number(user.id));
         
@@ -146,18 +146,12 @@ class WorkflowService {
             return true;
         }
 
-        // ─── PRIORITY 3: PERMISSION & ROLE VALIDATION ───
+        // ─── PRIORITY 4: AUTHORIZATION VALIDATION (Permission/Role + Branch) ───
         const userRoleId = Number(user.role?.id || user.role_id);
         const isAssignedRole = step.required_role_id && userRoleId === Number(step.required_role_id);
-
-        // If the user is specifically assigned to this step by role, GRANT immediately
-        if (isAssignedRole) {
-            return true;
-        }
-
-        // Branch-scoped check for general approval permissions
+        
         const resourceTag = (step.workflow?.resource_type || 'request').replace('inventory_', '');
-        const hasApprovePower = permissions.some(p => 
+        const hasApprovePower = isAssignedRole || permissions.some(p => 
             p === step.required_permission || 
             p === `${resourceTag}:approve` || 
             p === `${resourceTag}:execute` ||
@@ -168,7 +162,7 @@ class WorkflowService {
 
         if (hasApprovePower) {
             try {
-                // Optimization: Use provided allowedNodes to avoid N+1 queries
+                // Hierarchical Enforcement: User must be in the branch hierarchy of the resource
                 const allowedNodes = providedAllowedNodes || await require('./hierarchyService').getAllowedNodes(user, permissions);
                 
                 const nodeIds = [
@@ -187,6 +181,37 @@ class WorkflowService {
         }
 
         return false;
+    }
+
+    /**
+     * Checks if a specific step is the final step in a workflow.
+     */
+    async isFinalStep(resource, stepId) {
+        if (!resource.workflow_id || !stepId) return false;
+
+        // Check if there are any routes leaving this step for 'approve'
+        const route = await WorkflowRoute.findOne({
+            where: {
+                workflow_id: resource.workflow_id,
+                source_step_id: stepId,
+                action_trigger: 'approve'
+            }
+        });
+
+        if (route && route.target_step_id) return false;
+
+        // Fallback: Check if there's any step with a higher order
+        const currentStep = await WorkflowStep.findByPk(stepId);
+        if (!currentStep) return false;
+
+        const nextStep = await WorkflowStep.findOne({
+            where: {
+                workflow_id: resource.workflow_id,
+                step_order: { [Op.gt]: currentStep.step_order }
+            }
+        });
+
+        return !nextStep;
     }
 
     /**
@@ -233,8 +258,12 @@ class WorkflowService {
                 approvalData.discharge_form_id = resource.id;
             } else if (modelName === 'StoreForm') {
                 approvalData.store_form_id = resource.id;
+            } else if (modelName === 'Transfer') {
+                approvalData.transfer_id = resource.id;
+            } else if (modelName === 'Return') {
+                approvalData.return_id = resource.id;
             } else {
-                // For all other models (Transfers, Returns etc) that share the Request schema
+                // Fallback
                 approvalData.request_id = resource.id;
             }
 
@@ -321,9 +350,10 @@ class WorkflowService {
                     if (modelName === 'Request') {
                          const requestService = require('./requestService');
                          await requestService.fulfillRequest(resource.id, approver.company_id, approver, { 
-                            workflowStatus: 'Fulfilled (Final)',
-                            transaction: options.transaction 
-                         });
+                             ...options,
+                             workflowStatus: 'Fulfilled (Final)',
+                             transaction: options.transaction 
+                          });
                          nextStatus = 'fulfilled';
                          nextWorkflowStatus = 'Fulfilled (Final)';
                     } else {
@@ -456,11 +486,11 @@ class WorkflowService {
      * Finds all WorkflowStep IDs that the user is authorized to approve/act upon.
      * This is the engine room for the "Inbox / Pending Approvals" logic.
      */
-    async getAuthorizedStepIds(companyId, user) {
+    async getAuthorizedStepIds(companyId, user, providedPermissions = null) {
         if (!user) return [];
         
         const permissionHelper = require('../middleware/permissions');
-        const permissions = await permissionHelper.getEffectivePermissions(user);
+        const permissions = providedPermissions || await permissionHelper.getEffectivePermissions(user);
         const userRoleId = Number(user.role?.id || user.role_id);
         const roleLevel = user.role?.level || 0;
 

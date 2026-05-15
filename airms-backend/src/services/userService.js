@@ -44,18 +44,6 @@ class UserService {
                         as: 'roles',
                         attributes: ['id', 'name'],
                         through: { attributes: [] }
-                    },
-                    {
-                        model: Assignment,
-                        as: 'assignments',
-                        required: false,
-                        where: { status: 'active' },
-                        include: [
-                            {
-                                model: Product,
-                                as: 'product'
-                            }
-                        ]
                     }
                 ],
                 attributes: { exclude: ['password_hash', 'refresh_token'] },

@@ -76,7 +76,7 @@ const CascadingUnitSelector = ({
       } else if (!value && !sourceNodeId && tree.length === 1 && selectedPath.length === 0) {
         const rootNode = tree[0];
         setSelectedPath([rootNode]);
-        onChange(String(rootNode.id));
+        onChange(String(rootNode.id), rootNode);
       }
     }
   }, [tree.length, flatNodes.length, value]);
@@ -117,7 +117,8 @@ const CascadingUnitSelector = ({
     if (!nodeId) {
       const newPath = selectedPath.slice(0, levelIndex);
       setSelectedPath(newPath);
-      onChange(newPath.length > 0 ? String(newPath[newPath.length - 1].id) : '');
+      const lastNode = newPath.length > 0 ? newPath[newPath.length - 1] : null;
+      onChange(lastNode ? String(lastNode.id) : '', lastNode);
       return;
     }
 
@@ -125,7 +126,7 @@ const CascadingUnitSelector = ({
     if (selectedNode) {
       const newPath = [...selectedPath.slice(0, levelIndex), selectedNode];
       setSelectedPath(newPath);
-      onChange(String(selectedNode.id));
+      onChange(String(selectedNode.id), selectedNode);
       // Close dropdown if it's a leaf node or if user is done
       if (!selectedNode.children || selectedNode.children.length === 0) {
         // We might want to keep it open for multi-level, but for simplicity:
@@ -227,7 +228,7 @@ const CascadingUnitSelector = ({
                       <option value="" className="bg-slate-900 text-slate-400">-- Choose --</option>
                       {level.nodes.map(node => (
                         <option key={node.id} value={node.id} className="bg-slate-900 text-white font-bold">
-                          {node.name}
+                          {node.name} {node.can_store_inventory ? '📦' : ''}
                         </option>
                       ))}
                     </select>
@@ -294,12 +295,15 @@ const CascadingUnitSelector = ({
                    onClick={() => {
                      const path = findPathFromFlat(flatNodes, node.id);
                      if (path) setSelectedPath(path);
-                     onChange(String(node.id));
+                     onChange(String(node.id), node);
                      setShowSearch(false);
                    }}
                    className="w-full flex justify-between items-center p-4 hover:bg-blue-50 transition-all border-b border-slate-50 last:border-0"
                  >
-                    <span className="text-[10px] font-black text-slate-900 uppercase">{node.name}</span>
+                    <div className="flex items-center gap-2">
+                       <span className="text-[10px] font-black text-slate-900 uppercase">{node.name}</span>
+                       {node.can_store_inventory && <div className="px-2 py-0.5 bg-emerald-500 text-white text-[7px] font-black rounded-full uppercase tracking-widest">Storage Ready</div>}
+                    </div>
                     <ChevronRight size={12} className="text-slate-300" />
                  </button>
                ))}
@@ -318,7 +322,7 @@ const CascadingUnitSelector = ({
               >
                 <option value="">-- Choose --</option>
                 {level.nodes.map(node => (
-                  <option key={node.id} value={node.id}>{node.name}</option>
+                  <option key={node.id} value={node.id}>{node.name} {node.can_store_inventory ? ' (Storage)' : ''}</option>
                 ))}
               </select>
             </div>

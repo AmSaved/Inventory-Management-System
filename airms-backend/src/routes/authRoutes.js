@@ -13,6 +13,7 @@ const {
 } = require('../validations/authValidation');
 
 // Public routes with rate limiting
+router.post('/register', rateLimiter, validate(registerValidation), authController.register);
 router.post('/login', rateLimiter, validate(loginValidation), authController.login);
 router.post('/refresh-token', rateLimiter, authController.refreshToken);
 router.post('/forgot-password', rateLimiter, validate(forgotPasswordValidation), authController.forgotPassword);

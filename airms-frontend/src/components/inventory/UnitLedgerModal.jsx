@@ -109,11 +109,19 @@ const UnitLedgerModal = ({
                  <p className="text-sm font-black text-blue-600 uppercase tracking-widest">{units.length} Records Expanded</p>
               </div>
            </div>
-           <div className="flex gap-3">
+            <div className="flex gap-3">
+              <button onClick={() => onTransfer(item)} className="h-10 px-6 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2">
+                <ArrowLeftRight size={14} className="text-blue-600" />
+                Transfer Stock
+              </button>
+              <button onClick={() => navigate(`/discharge?product_id=${item.product_id}&org_node_id=${item.org_node_id}`)} className="h-10 px-6 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2">
+                <PackageMinus size={14} className="text-red-600" />
+                Discharge Stock
+              </button>
               <button onClick={() => onReplenish(item)} className="h-10 px-6 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all">
                 Replenish Product
               </button>
-           </div>
+            </div>
         </div>
 
         {/* Ledger Table */}
@@ -147,7 +155,7 @@ const UnitLedgerModal = ({
                              </div>
                           </td>
                           <td className="px-6 py-4">
-                             <div className="text-xs font-bold text-slate-700">{u.location_details || 'Unassigned'}</div>
+                             <div className="text-xs font-bold text-slate-700">{u.location_details || u.organizationNode?.name || 'Unassigned'}</div>
                              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{u.batch_number || 'No Batch Data'}</div>
                           </td>
                           <td className="px-6 py-4">
@@ -157,8 +165,8 @@ const UnitLedgerModal = ({
                              <div className="flex items-center justify-end gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
                                 <ToolButton icon={<Info size={14} />} title="Inspect Unit" onClick={() => onIdentity(u)} />
                                 <ToolButton icon={<Edit3 size={14} />} title="Adjust Unit" onClick={() => onAdjust(u)} />
-                                <ToolButton icon={<GitFork size={14} />} title="Split to Branch" onClick={() => onSplit(u)} color="purple" />
                                 <ToolButton icon={<ArrowLeftRight size={14} />} title="Internal Transfer" onClick={() => onTransfer(u)} />
+                                <ToolButton icon={<PackageMinus size={14} />} title="Discharge Unit" onClick={() => navigate(`/discharge?inventory_id=${u.id}`)} color="red" />
                                 <ToolButton icon={<QrCode size={14} />} title="Print Identity Label" onClick={() => onQr(u)} />
                                 <ToolButton icon={<MessageSquareWarning size={14} />} title="Report Issue" onClick={() => onReport(u)} color="amber" />
                                 <ToolButton icon={<Trash2 size={14} />} title="Decommission Unit" onClick={() => onDecommission(u)} color="red" />

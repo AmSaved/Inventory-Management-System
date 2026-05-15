@@ -99,7 +99,12 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
-  const [selectedUnit, setSelectedUnit] = useState(searchParams.get('unit') || user?.org_node_id || '');
+  const [selectedUnit, setSelectedUnit] = useState(() => {
+    const fromUrl = searchParams.get('unit');
+    if (fromUrl) return fromUrl;
+    if (user?.role?.level >= 100) return '';
+    return user?.org_node_id || '';
+  });
   const tabParam = searchParams.get('tab');
 
   // Staff-specific states
@@ -114,6 +119,7 @@ const DashboardPage = () => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [transferTarget, setTransferTarget] = useState('');
   const [transferReason, setTransferReason] = useState('');
+  const [userSearchQuery, setUserSearchQuery] = useState('');
   const [returnCondition, setReturnCondition] = useState('good');
   const [reportDetails, setReportDetails] = useState('');
 
@@ -122,6 +128,10 @@ const DashboardPage = () => {
     canManageOrg: hasPermission('organization:manage') || hasPermission('dashboard:executive'),
     canViewInventory: hasPermission('inventory:view') || hasPermission('inventory:manage'),
     canViewUsers: hasPermission('user:view') || hasPermission('user:manage'),
+    canViewTransfers: hasPermission('transfer:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
+    canViewRequests: hasPermission('request:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
+    canViewDischarges: hasPermission('discharge:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
+    canViewIssues: hasPermission('issue:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
     isRoot: user?.role?.level >= 100,
     isStaff: user?.role?.level < 30 
   }), [user, hasPermission]);
@@ -133,13 +143,17 @@ const DashboardPage = () => {
   }, [user, tabParam, selectedUnit]);
 
   useEffect(() => {
-    if (transferAsset && users.length === 0) {
-      setLoadingUsers(true);
-      api.get('/users', { params: { limit: 500 } })
-        .then(res => setUsers(Array.isArray(res.data?.data) ? res.data.data : []))
-        .finally(() => setLoadingUsers(false));
+    if (transferAsset) {
+      const delayDebounceFn = setTimeout(() => {
+        setLoadingUsers(true);
+        api.get('/users', { params: { limit: 20, search: userSearchQuery } })
+          .then(res => setUsers(Array.isArray(res.data?.data) ? res.data.data : []))
+          .finally(() => setLoadingUsers(false));
+      }, 300);
+
+      return () => clearTimeout(delayDebounceFn);
     }
-  }, [transferAsset]);
+  }, [transferAsset, userSearchQuery]);
 
   // 1. URL Syncing: Sync selectedUnit state with 'unit' query parameter
   useEffect(() => {
@@ -322,7 +336,7 @@ const DashboardPage = () => {
         </div>
 
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 space-y-16">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-8">
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                {capabilities.isRoot ? (
                  <>
                    <KPITile 
@@ -338,6 +352,7 @@ const DashboardPage = () => {
                      value={metrics.total_companies || 0} 
                      icon={<Building2 />} 
                      gradient="from-emerald-500 to-teal-700" 
+                     onClick={() => navigate('/dashboard?tab=structure')}
                      subLabel="Active Multi-Tenants"
                    />
                    <KPITile 
@@ -345,181 +360,294 @@ const DashboardPage = () => {
                      value={metrics.total_products || 0} 
                      icon={<LayoutGrid />} 
                      gradient="from-amber-500 to-orange-700" 
-                     onClick={() => setSearchParams({ tab: 'products' })}
+                     onClick={() => navigate('/admin/products')}
                      subLabel="Universal Assets"
                    />
+                   
+                   {/* Operational Overlays removed for pure Systems Information View */}
+
                    <KPITile 
                      label="Governance" 
                      value={metrics.total_roles || 0} 
                      icon={<Shield />} 
-                     gradient="from-indigo-600 to-purple-700" 
-                     onClick={() => setSearchParams({ tab: 'roles' })}
+                     gradient="from-slate-700 to-slate-800" 
+                     onClick={() => navigate('/admin/roles')}
                      subLabel="Security Roles"
                    />
                    <KPITile 
                      label="System Users" 
                      value={metrics.total_users || 0} 
                      icon={<Users />} 
-                     gradient="from-slate-700 to-slate-900" 
-                     onClick={() => setSearchParams({ tab: 'users' })}
+                     gradient="from-slate-800 to-slate-950" 
+                     onClick={() => navigate('/admin/users')}
                      subLabel="Total Registry"
                    />
                  </>
                ) : (
                  <>
                     {capabilities.canManageOrg && (
+                      <KPITile label="Sub-Units" value={metrics.total_nodes || 0} icon={<Building2 />} gradient="from-blue-600 to-indigo-700" onClick={() => navigate('/dashboard?tab=structure')} />
+                    )}
+                    
+                    {capabilities.canViewUsers && (
+                      <KPITile 
+                        label="Personnel" 
+                        value={metrics.total_users || 0} 
+                        icon={<Users />} 
+                        gradient="from-emerald-600 to-teal-700" 
+                        onClick={() => setSearchParams({ tab: 'users' })}
+                        subLabel="Registry Size"
+                      />
+                    )}
+
+                    <KPITile 
+                      label="Active Assets" 
+                      value={capabilities.isStaff ? myAssignments.length : (metrics.total_stock || 0)} 
+                      icon={<Box />} 
+                      gradient="from-slate-800 to-slate-950" 
+                      subLabel={capabilities.isStaff ? "Under Personal Custody" : "In Node Inventory"}
+                    />
+
+                    {capabilities.canViewTransfers && (
                       <>
-                        <KPITile label="Nodes" value={metrics.total_nodes || 0} icon={<Building2 />} gradient="from-blue-600 to-indigo-700" onClick={() => navigate('/dashboard?tab=structure')} />
                         <KPITile 
-                          label={capabilities.isRoot ? "Global Registry" : "Branch Team"} 
-                          value={metrics.total_users || 0} 
-                          icon={<Users />} 
-                          gradient="from-emerald-500 to-teal-700" 
-                          onClick={() => setSearchParams({ tab: 'users' })}
-                          subLabel="Active Personnel"
+                          label="Total Transfers" 
+                          value={metrics.total_transfers || 0} 
+                          icon={<ArrowLeftRight />} 
+                          gradient="from-blue-500 to-indigo-600" 
+                          onClick={() => navigate('/requests/inventory')}
+                          subLabel="Movement Ledger"
+                        />
+                        <KPITile 
+                          label="Item Volume" 
+                          value={metrics.total_transferred_items || 0} 
+                          icon={<Activity />} 
+                          gradient="from-indigo-600 to-violet-700" 
+                          onClick={() => navigate('/requests/inventory')}
+                          subLabel="Physical Throughput"
                         />
                       </>
                     )}
-                    <KPITile 
-                      label="Assets" 
-                      value={capabilities.isStaff ? myAssignments.length : (metrics.total_stock || 0)} 
-                      icon={<Box />} 
-                      gradient="from-amber-500 to-orange-700" 
-                    />
-                    <KPITile 
-                      label="Attention" 
-                      value={pendingApprovals.length} 
-                      icon={<ClipboardCheck />} 
-                      gradient="from-rose-600 to-pink-700" 
-                      subLabel="Action Items" 
-                      onClick={pendingApprovals.length > 0 ? () => {} : null}
-                    />
+
+                    {capabilities.canViewRequests && (
+                      <>
+                        <KPITile 
+                          label="Procurement" 
+                          value={metrics.total_procurement || 0} 
+                          icon={<PackagePlus />} 
+                          gradient="from-emerald-500 to-emerald-700" 
+                          onClick={() => navigate('/requests/procurement')}
+                          subLabel="Acquisition Log"
+                        />
+                        <KPITile 
+                          label="Inventory Returns" 
+                          value={metrics.total_returns || 0} 
+                          icon={<RotateCcw />} 
+                          gradient="from-cyan-500 to-blue-700" 
+                          onClick={() => navigate('/requests/inventory-returns')}
+                          subLabel="Decommission Log"
+                        />
+                      </>
+                    )}
+
+                    {capabilities.canViewDischarges && (
+                      <KPITile 
+                        label="Asset Discharges" 
+                        value={metrics.total_discharges || 0} 
+                        icon={<PackageMinus />} 
+                        gradient="from-orange-500 to-amber-700" 
+                        onClick={() => navigate('/requests/discharge')}
+                        subLabel="Release Protocol"
+                      />
+                    )}
+
+                    {capabilities.canViewIssues && (
+                      <KPITile 
+                        label="Incident Reports" 
+                        value={metrics.total_reports || 0} 
+                        icon={<AlertTriangle />} 
+                        gradient="from-rose-500 to-pink-700" 
+                        onClick={() => navigate('/issues')}
+                        subLabel="Compliance Alerts"
+                      />
+                    )}
+
+                    {pendingApprovals.length > 0 && (
+                      <KPITile 
+                        label="Pending Tasks" 
+                        value={pendingApprovals.length} 
+                        icon={<ClipboardCheck />} 
+                        gradient="from-amber-400 to-orange-600" 
+                        subLabel="Awaiting Protocol" 
+                      />
+                    )}
                  </>
                )}
            </div>
 
            <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
-              <div className="xl:col-span-2 space-y-16">
+               <div className="xl:col-span-2 space-y-16">
 
-
-                 {/* PERSONAL VAULT */}
-                 <div className="space-y-8">
-                    <div className="flex items-center justify-between px-2">
-                       <div className="flex items-center gap-4">
-                          <div className="w-2 h-8 bg-blue-600 rounded-full" />
+                 {capabilities.isRoot ? (
+                    <div className="space-y-8">
+                       {/* GLOBAL SYSTEM ACTIVITY LEDGER FOR SUPER ADMINS */}
+                       <div className="flex items-center gap-4 px-2">
+                          <div className="w-2 h-8 bg-indigo-600 rounded-full" />
                           <div>
-                            <h3 className="text-xl font-bold text-slate-900">Personnel Vault</h3>
-                            <p className="text-xs font-medium text-slate-500 mt-1">Resources Under Active Custody</p>
+                             <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">System Audit Log</h3>
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Real-time Global Platform Activity</p>
                           </div>
                        </div>
-                    </div>
-                    <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-white/50 shadow-sm overflow-hidden">
-                       <table className="w-full text-left border-collapse">
-                          <thead>
-                             <tr className="bg-slate-50/50 border-b border-slate-100">
-                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">Asset Detail</th>
-                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">Serial / SKU</th>
-                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">State</th>
-                                <th className="px-8 py-4 text-xs font-semibold text-slate-500">Custody Date</th>
-                                <th className="px-8 py-4 text-xs font-semibold text-slate-500 text-right">Actions</th>
-                             </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                             {myAssignments.map(asset => (
-                                <tr key={asset.id} className="group hover:bg-blue-50/30 transition-colors">
-                                   <td className="px-8 py-6">
-                                      <div className="flex items-center gap-4">
-                                         <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all"><Package size={22} /></div>
-                                         <div>
-                                            <div className="font-black text-slate-900 text-sm italic uppercase">{asset.product?.name}</div>
-                                            <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">{asset.product?.brand || 'ASSET'}</div>
-                                         </div>
+                       <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden p-6 space-y-4">
+                          {(actualStats.recent_activity || []).length > 0 ? (
+                             (actualStats.recent_activity || []).map(log => (
+                                <div key={log.id} className="flex items-start gap-4 p-4 hover:bg-slate-50/50 rounded-2xl transition-colors">
+                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                      log.action === 'CREATE' ? 'bg-emerald-50 text-emerald-600' :
+                                      log.action === 'UPDATE' ? 'bg-blue-50 text-blue-600' :
+                                      log.action === 'DELETE' ? 'bg-rose-50 text-rose-600' :
+                                      'bg-slate-100 text-slate-600'
+                                   }`}>
+                                      <ActivityIcon size={18} />
+                                   </div>
+                                   <div className="flex-1">
+                                      <div className="flex justify-between items-start">
+                                         <span className="font-bold text-sm text-slate-900">{log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}</span>
+                                         <span className="text-[10px] font-black text-slate-400 uppercase">{new Date(log.created_at).toLocaleString()}</span>
                                       </div>
-                                   </td>
-                                   <td className="px-8 py-6">
-                                      <div className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{asset.serial_number}</div>
-                                      <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{asset.product?.sku}</div>
-                                   </td>
-                                   <td className="px-8 py-6">
-                                      <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                                         asset.condition === 'new' ? 'bg-emerald-50 text-emerald-600' : 
-                                         asset.condition === 'good' ? 'bg-blue-50 text-blue-600' : 
-                                         'bg-amber-50 text-amber-600'
-                                      }`}>
-                                         {asset.condition || 'STANDARD'}
-                                      </span>
-                                   </td>
-                                   <td className="px-8 py-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                      {new Date(asset.assigned_at).toLocaleDateString()}
-                                   </td>
-                                   <td className="px-8 py-6 text-right">
-                                      <div className="flex justify-end gap-3">
-                                         <button 
-                                           onClick={() => setTransferAsset(asset)}
-                                           title="Initiate Transfer"
-                                           className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl hover:bg-slate-950 hover:text-blue-400 transition-all"
-                                         >
-                                            <ArrowLeftRight size={16} />
-                                         </button>
-                                         <button 
-                                           onClick={() => setReturnAsset(asset)}
-                                           title="Return to Store"
-                                           className="w-10 h-10 flex items-center justify-center bg-teal-50 text-teal-600 rounded-xl hover:bg-slate-950 hover:text-teal-400 transition-all"
-                                         >
-                                            <RotateCcw size={16} />
-                                         </button>
-                                         <button 
-                                           onClick={() => setReportAsset(asset)}
-                                           title="Report Issue"
-                                           className="w-10 h-10 flex items-center justify-center bg-rose-50 text-rose-600 rounded-xl hover:bg-slate-950 hover:text-rose-400 transition-all"
-                                         >
-                                            <AlertTriangle size={16} />
-                                         </button>
+                                      <div className="text-xs font-medium text-slate-500 mt-1">
+                                         <span className="font-bold text-slate-700">{log.action}</span> on <span className="font-bold text-slate-700 uppercase">{log.resource}</span> {log.resource_id ? `#${log.resource_id}` : ''}
                                       </div>
-                                   </td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                       {myAssignments.length === 0 && (
-                          <div className="p-20 text-center text-slate-400 text-sm font-medium">No assets currently assigned to your account.</div>
-                       )}
-                    </div>
-                 </div>
-
-                 {/* ACTIVITY LEDGER */}
-                 <div className="space-y-8">
-                    <div className="flex items-center gap-4 px-2">
-                       <div className="w-2 h-8 bg-slate-950 rounded-full" />
-                       <div>
-                          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Activity Ledger</h3>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Lifecycle Tracking of Personal Protocols</p>
-                       </div>
-                    </div>
-                    <div className="space-y-4">
-                       {myRequests.slice(0, 5).map(req => (
-                          <div key={req.id} className="bg-white/40 backdrop-blur-md rounded-3xl p-6 border border-white/50 flex items-center justify-between group hover:bg-white transition-all duration-500">
-                             <div className="flex items-center gap-6">
-                                <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all"><ActivityIcon size={20} /></div>
-                                <div>
-                                   <div className="font-black text-slate-900 text-sm uppercase italic">{req.items?.[0]?.product?.name || 'PROTOCOL'}</div>
-                                   <div className="text-[9px] font-black text-slate-400 uppercase mt-1">
-                                      {req.request_type === 'transfer' ? (
-                                        req.status === 'approved' ? `Completed Transfer to ${req.target_user?.first_name || 'Personnel'}` : `Initiating Transfer to ${req.target_user?.first_name || 'Personnel'}`
-                                      ) : req.request_type === 'return' ? (
-                                        req.status === 'approved' ? 'Successfully Returned to Storage' : 'Initiating Return to Storage'
-                                      ) : req.request_type.toUpperCase()} • {req.request_number}
                                    </div>
                                 </div>
-                             </div>
-                             <div className="flex items-center gap-6">
-                                <Badge variant={req.status === 'approved' ? 'success' : 'gray'} className="text-[8px] font-black px-4 py-1.5 rounded-xl">{req.status.toUpperCase()}</Badge>
-                                {req.status === 'approved' && <button onClick={() => handleFulfill(req.id)} className="bg-blue-600 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20">Fulfill</button>}
+                             ))
+                          ) : (
+                             <div className="p-12 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">No Recent System Activity</div>
+                          )}
+                       </div>
+                    </div>
+                 ) : (
+                    <>
+                       {/* PERSONAL VAULT FOR OPERATIONAL STAFF */}
+                       <div className="space-y-8">
+                          <div className="flex items-center justify-between px-2">
+                             <div className="flex items-center gap-4">
+                                <div className="w-2 h-8 bg-blue-600 rounded-full" />
+                                <div>
+                                  <h3 className="text-xl font-bold text-slate-900">Personnel Vault</h3>
+                                  <p className="text-xs font-medium text-slate-500 mt-1">Resources Under Active Custody</p>
+                                </div>
                              </div>
                           </div>
-                       ))}
-                    </div>
-                 </div>
+                          <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-white/50 shadow-sm overflow-hidden">
+                             <table className="w-full text-left border-collapse">
+                                <thead>
+                                   <tr className="bg-slate-50/50 border-b border-slate-100">
+                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">Asset Detail</th>
+                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">Serial / SKU</th>
+                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">State</th>
+                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">Custody Date</th>
+                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500 text-right">Actions</th>
+                                   </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                   {myAssignments.map(asset => (
+                                      <tr key={asset.id} className="group hover:bg-blue-50/30 transition-colors">
+                                         <td className="px-8 py-6">
+                                            <div className="flex items-center gap-4">
+                                               <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all"><Package size={22} /></div>
+                                               <div>
+                                                  <div className="font-black text-slate-900 text-sm italic uppercase">{asset.product?.name}</div>
+                                                  <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">{asset.product?.brand || 'ASSET'}</div>
+                                               </div>
+                                            </div>
+                                         </td>
+                                         <td className="px-8 py-6">
+                                            <div className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{asset.serial_number}</div>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{asset.product?.sku}</div>
+                                         </td>
+                                         <td className="px-8 py-6">
+                                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                                               asset.condition === 'new' ? 'bg-emerald-50 text-emerald-600' : 
+                                               asset.condition === 'good' ? 'bg-blue-50 text-blue-600' : 
+                                               'bg-amber-50 text-amber-600'
+                                            }`}>
+                                               {asset.condition || 'STANDARD'}
+                                            </span>
+                                         </td>
+                                         <td className="px-8 py-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                            {new Date(asset.assigned_at).toLocaleDateString()}
+                                         </td>
+                                         <td className="px-8 py-6 text-right">
+                                            <div className="flex justify-end gap-3">
+                                               <button 
+                                                 onClick={() => setTransferAsset(asset)}
+                                                 title="Initiate Transfer"
+                                                 className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl hover:bg-slate-950 hover:text-blue-400 transition-all"
+                                               >
+                                                  <ArrowLeftRight size={16} />
+                                               </button>
+                                               <button 
+                                                 onClick={() => setReturnAsset(asset)}
+                                                 title="Return to Store"
+                                                 className="w-10 h-10 flex items-center justify-center bg-teal-50 text-teal-600 rounded-xl hover:bg-slate-950 hover:text-teal-400 transition-all"
+                                               >
+                                                  <RotateCcw size={16} />
+                                               </button>
+                                               <button 
+                                                 onClick={() => setReportAsset(asset)}
+                                                 title="Report Issue"
+                                                 className="w-10 h-10 flex items-center justify-center bg-rose-50 text-rose-600 rounded-xl hover:bg-slate-950 hover:text-rose-400 transition-all"
+                                               >
+                                                  <AlertTriangle size={16} />
+                                               </button>
+                                            </div>
+                                         </td>
+                                      </tr>
+                                   ))}
+                                </tbody>
+                             </table>
+                             {myAssignments.length === 0 && (
+                                <div className="p-20 text-center text-slate-400 text-sm font-medium">No assets currently assigned to your account.</div>
+                             )}
+                          </div>
+                       </div>
+
+                       {/* ACTIVITY LEDGER FOR OPERATIONAL STAFF */}
+                       <div className="space-y-8">
+                          <div className="flex items-center gap-4 px-2">
+                             <div className="w-2 h-8 bg-slate-950 rounded-full" />
+                             <div>
+                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Activity Ledger</h3>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Lifecycle Tracking of Personal Protocols</p>
+                             </div>
+                          </div>
+                          <div className="space-y-4">
+                             {myRequests.slice(0, 5).map(req => (
+                                <div key={req.id} className="bg-white/40 backdrop-blur-md rounded-3xl p-6 border border-white/50 flex items-center justify-between group hover:bg-white transition-all duration-500">
+                                   <div className="flex items-center gap-6">
+                                      <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all"><ActivityIcon size={20} /></div>
+                                      <div>
+                                         <div className="font-black text-slate-900 text-sm uppercase italic">{req.items?.[0]?.product?.name || 'PROTOCOL'}</div>
+                                         <div className="text-[9px] font-black text-slate-400 uppercase mt-1">
+                                            {req.request_type === 'transfer' ? (
+                                              req.status === 'approved' ? `Completed Transfer to ${req.target_user?.first_name || 'Personnel'}` : `Initiating Transfer to ${req.target_user?.first_name || 'Personnel'}`
+                                            ) : req.request_type === 'return' ? (
+                                              req.status === 'approved' ? 'Successfully Returned to Storage' : 'Initiating Return to Storage'
+                                            ) : req.request_type.toUpperCase()} • {req.request_number}
+                                         </div>
+                                      </div>
+                                   </div>
+                                   <div className="flex items-center gap-6">
+                                      <Badge variant={req.status === 'approved' ? 'success' : 'gray'} className="text-[8px] font-black px-4 py-1.5 rounded-xl">{req.status.toUpperCase()}</Badge>
+                                      {req.status === 'approved' && <button onClick={() => handleFulfill(req.id)} className="bg-blue-600 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20">Fulfill</button>}
+                                   </div>
+                                </div>
+                             ))}
+                          </div>
+                       </div>
+                    </>
+                 )}
               </div>
 
               <div className="space-y-16">
@@ -534,7 +662,29 @@ const DashboardPage = () => {
       <Modal isOpen={!!transferAsset} onClose={() => setTransferAsset(null)} title="HANDOVER PROTOCOL" onConfirm={executeTransfer} confirmText="COMMIT TRANSFER">
          <div className="space-y-8 p-2">
             <div className="bg-slate-50 p-8 rounded-[2.5rem] flex items-center gap-8"><div className="w-20 h-20 bg-slate-950 rounded-[28px] flex items-center justify-center text-blue-400"><Package size={32} /></div><div><h4 className="text-2xl font-black text-slate-900 uppercase italic">{transferAsset?.product?.name}</h4><div className="text-[9px] font-black text-slate-400 mt-2">SN: {transferAsset?.serial_number}</div></div></div>
-            <select className="w-full h-16 bg-slate-50 border-none rounded-3xl px-8 font-black text-xs uppercase" value={transferTarget} onChange={e => setTransferTarget(e.target.value)}><option value="">Select Personnel...</option>{users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}</select>
+            <div className="space-y-4">
+               <div className="relative">
+                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text" 
+                    placeholder="Search Personnel by Name or ID..."
+                    className="w-full h-16 bg-slate-100 border-2 border-transparent focus:border-blue-500 rounded-3xl pl-16 pr-8 font-bold text-sm transition-all outline-none"
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                  />
+               </div>
+               <select 
+                 className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl px-8 font-black text-xs uppercase focus:border-blue-500 outline-none transition-all" 
+                 value={transferTarget} 
+                 onChange={e => setTransferTarget(e.target.value)}
+               >
+                 <option value="">{loadingUsers ? 'Searching Personnel...' : '-- Select Target Personnel --'}</option>
+                 {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name} ({u.employee_id})</option>)}
+               </select>
+               {users.length === 0 && !loadingUsers && userSearchQuery && (
+                  <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest ml-4 italic">No matching personnel found in registry</p>
+               )}
+            </div>
             <textarea className="w-full h-32 bg-slate-50 border-none rounded-3xl p-8 font-bold text-sm" placeholder="Reason..." value={transferReason} onChange={e => setTransferReason(e.target.value)} />
          </div>
       </Modal>

@@ -47,12 +47,13 @@ const returnController = {
 
             // Hierarchical Scoping
             if (unit_id) {
+                const targetUnitId = Number(unit_id);
                 // Verify specific node requested is within visibility scope
-                if (!allowedNodes.includes(Number(unit_id))) {
+                if (allowedNodes !== null && !allowedNodes.includes(targetUnitId)) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
-                where.to_node_id = unit_id;
-            } else {
+                where.to_node_id = targetUnitId;
+            } else if (allowedNodes !== null) {
                 // Default to all authorized nodes
                 where.to_node_id = { [Op.in]: allowedNodes };
             }
@@ -162,7 +163,7 @@ const returnController = {
             // Security: Check if user is authorized to initiate return for this node
             const permissions = await getEffectivePermissions(req.user);
             const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-            if (!allowedNodes.includes(Number(from_node_id))) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(from_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Source node is outside your visibility scope' });
             }
 
@@ -302,7 +303,12 @@ const returnController = {
             // Scoping check for role reach
             const permissions = await getEffectivePermissions(req.user);
             const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-            if (!allowedNodes.includes(returnRecord.from_node_id) && !allowedNodes.includes(returnRecord.to_node_id)) {
+            
+            const isAuthorized = allowedNodes === null || 
+                                 allowedNodes.includes(Number(returnRecord.from_node_id)) || 
+                                 allowedNodes.includes(Number(returnRecord.to_node_id));
+                                 
+            if (!isAuthorized) {
                 return res.status(403).json({ success: false, message: 'Access denied: Return record is outside your visibility scope' });
             }
 

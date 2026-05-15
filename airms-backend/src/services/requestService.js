@@ -106,24 +106,48 @@ class RequestService {
                 const targetUser = await User.findByPk(targetUserId, { transaction: t });
                 const targetNodeId = request.org_node_id || targetUser?.org_node_id;
 
-                for (const item of request.items) {
-                    const specs = typeof item.specifications === 'string' ? JSON.parse(item.specifications || '{}') : (item.specifications || {});
-                    const sourceNodeId = specs.source_node_id || targetNodeId;
-                    const serialNumber = specs.serial_number || `AUTO-${request.request_number}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+                const allocations = options.allocations || {};
 
-                    // Subtract from inventory
-                    await inventoryService.removeFromInventory(
-                        companyId,
-                        sourceNodeId,
-                        item.product_id,
-                        item.quantity_requested || 1,
-                        { 
-                            userId: effectorUser?.id, 
-                            reference: `REQ-${request.request_number}`,
-                            transaction: t,
-                            serialNumber: specs.serial_number // Use specific serial if provided
-                        }
-                    );
+                for (const item of request.items) {
+                    const allocatedInventoryId = allocations[item.id];
+                    let serialNumber;
+
+                    if (allocatedInventoryId) {
+                        // USE EXPLICIT ALLOCATION
+                        const invItem = await inventoryService.assignInventory(
+                            companyId,
+                            allocatedInventoryId,
+                            targetUserId,
+                            {
+                                actorId: effectorUser?.id,
+                                reference: `REQ-${request.request_number}`,
+                                transaction: t
+                            }
+                        );
+
+                        // Link RequestItem to specific physical inventory
+                        await item.update({ inventory_id: allocatedInventoryId }, { transaction: t });
+                        serialNumber = invItem.serial_number || `SN-${invItem.id}`;
+                    } else {
+                        // FALLBACK: Auto-generate / Subtract from generic pool
+                        const specs = typeof item.specifications === 'string' ? JSON.parse(item.specifications || '{}') : (item.specifications || {});
+                        const sourceNodeId = specs.source_node_id || targetNodeId;
+                        serialNumber = specs.serial_number || `AUTO-${request.request_number}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+
+                        // Subtract from inventory
+                        await inventoryService.removeFromInventory(
+                            companyId,
+                            sourceNodeId,
+                            item.product_id,
+                            item.quantity_requested || 1,
+                            { 
+                                userId: effectorUser?.id, 
+                                reference: `REQ-${request.request_number}`,
+                                transaction: t,
+                                serialNumber: specs.serial_number // Use specific serial if provided
+                            }
+                        );
+                    }
 
                     // Create Assignment
                     await Assignment.create({
@@ -135,7 +159,7 @@ class RequestService {
                         assigned_at: new Date(),
                         status: 'active',
                         condition_at_assignment: 'good',
-                        notes: `Automatically assigned via request #${request.request_number}`
+                        notes: `Assigned via request #${request.request_number}`
                     }, { transaction: t });
                 }
             }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useFetch';
 import Card from '../components/ui/Card';
@@ -13,8 +13,13 @@ import {
   PackagePlus, FileText, Plus, Trash2,
   Search, Upload, Info, AlertCircle,
   ArrowRight, CheckCircle2, ChevronDown, ChevronUp,
-  ScanLine, Box, Warehouse, Tag, HelpCircle
+  ScanLine, Box, Warehouse, Tag, HelpCircle,
+  Layers
 } from 'lucide-react';
+
+// New Components
+import BlueprintModal from '../components/modals/BlueprintModal';
+import CatalogSidebar from '../components/dashboard/CatalogSidebar';
 
 const EMPTY_ITEM = {
   product_id: '',
@@ -25,32 +30,85 @@ const EMPTY_ITEM = {
   batch_number: '',
   location_details: '',
   condition: 'new',
-  notes: '',
-  is_new_product: false,
-  new_product: {
-    name: '',
-    sku: '',
-    category: 'General',
-    unit: 'Unit'
-  }
+  notes: ''
 };
 
 const StorePage = () => {
   const navigate = useNavigate();
   const [selectedNode, setSelectedNode] = useState('');
   const [storeForm, setStoreForm] = useState({
-    store_number: `ST-${Date.now().toString().slice(-6)}`,
-    date: new Date().toISOString().split('T')[0],
     notes: ''
   });
+  const [selectedNodeData, setSelectedNodeData] = useState(null);
 
   const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showImportHelp, setShowImportHelp] = useState(false);
+  const [batchProduct, setBatchProduct] = useState('');
+  
+  // UI State for Catalog & Blueprints
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [blueprintModalOpen, setBlueprintModalOpen] = useState(false);
+  const [activeItemIndex, setActiveItemIndex] = useState(null); // Track which item is being edited from sidebar
 
-  const { data: products, loading: productsLoading } = useFetch('/products', {
-    params: { limit: 1000 }
+  const { data: products, loading: productsLoading, refetch: refetchProducts } = useFetch('/products', {
+    params: { limit: 50, order_by: 'updated_at', order_direction: 'DESC' }
   });
+
+  const updateItem = useCallback((idx, field, value) => {
+    setItems(prev => {
+      const newItems = [...prev];
+      if (field.includes('.')) {
+        const [parent, child] = field.split('.');
+        newItems[idx][parent] = { ...newItems[idx][parent], [child]: value };
+      } else {
+        newItems[idx][field] = value;
+      }
+      return newItems;
+    });
+  }, []);
+
+  const applyBatchProduct = useCallback((productId) => {
+    const idToApply = productId || batchProduct;
+    if (!idToApply) return toast.error('Please select a batch product first');
+    setItems(prev => prev.map(item => ({
+      ...item,
+      product_id: idToApply
+    })));
+    toast.success('Linked all manifest items to official catalog blueprint');
+  }, [batchProduct]);
+
+  // Handle new blueprint creation
+  const handleBlueprintCreated = useCallback((newProduct) => {
+    refetchProducts(); // Refresh the list
+    
+    // If we were editing a specific item, auto-select it
+    if (activeItemIndex !== null) {
+      updateItem(activeItemIndex, 'product_id', newProduct.id);
+      setActiveItemIndex(null);
+    } else {
+      // If no specific index (e.g. batch), auto-select for ALL items
+      setBatchProduct(newProduct.id);
+      applyBatchProduct(newProduct.id);
+    }
+    
+    setBlueprintModalOpen(false);
+  }, [activeItemIndex, refetchProducts, updateItem, applyBatchProduct]);
+
+  const handleSelectFromCatalog = (product) => {
+    if (activeItemIndex !== null) {
+      updateItem(activeItemIndex, 'product_id', product.id);
+    } else {
+      setBatchProduct(product.id);
+      applyBatchProduct(product.id); // Apply to all items at once
+    }
+    setActiveItemIndex(null);
+  };
+
+  const openCatalogForItem = (idx) => {
+    setActiveItemIndex(idx);
+    setCatalogOpen(true);
+  };
 
   // Smart header matching helper
   const findHeader = (headers, targets) => {
@@ -81,6 +139,8 @@ const StorePage = () => {
       const batchIdx = findHeader(headers, ['batch', 'lot']);
       const locIdx = findHeader(headers, ['location', 'storage', 'aisle']);
       const condIdx = findHeader(headers, ['condition', 'state']);
+      const catIdx = findHeader(headers, ['category', 'type', 'group']);
+      const unitIdx = findHeader(headers, ['unit', 'uom', 'measure']);
 
       const newItems = [];
       for (let i = 1; i < lines.length; i++) {
@@ -88,16 +148,15 @@ const StorePage = () => {
         if (!cols[skuIdx]) continue;
 
         const sku = cols[skuIdx];
-        const existingProduct = products?.find(p => p.sku === sku);
+        const existingProduct = products?.find(p => p.sku.toLowerCase() === sku.toLowerCase());
 
         const baseItem = JSON.parse(JSON.stringify(EMPTY_ITEM));
 
         if (existingProduct) {
           baseItem.product_id = existingProduct.id;
         } else {
-          baseItem.is_new_product = true;
-          baseItem.new_product.sku = sku;
-          baseItem.new_product.name = `${sku} (Auto-Generated from CSV)`;
+          // No auto-generation of products. Item stays unlinked for manual catalog mapping.
+          baseItem.product_id = '';
         }
 
         if (qtyIdx > -1 && cols[qtyIdx]) baseItem.quantity = parseInt(cols[qtyIdx]) || 1;
@@ -108,7 +167,13 @@ const StorePage = () => {
           baseItem.is_serialized = true;
         }
         if (batchIdx > -1 && cols[batchIdx]) baseItem.batch_number = cols[batchIdx];
-        if (locIdx > -1 && cols[locIdx]) baseItem.location_details = cols[locIdx];
+        
+        // Use CSV location if present, otherwise fallback to selected node name
+        if (locIdx > -1 && cols[locIdx]) {
+          baseItem.location_details = cols[locIdx];
+        } else if (selectedNodeData) {
+          baseItem.location_details = selectedNodeData.name;
+        }
 
         if (condIdx > -1 && cols[condIdx]) {
           const c = cols[condIdx].toLowerCase();
@@ -127,41 +192,35 @@ const StorePage = () => {
     e.target.value = null;
   };
 
-  const addItem = () => setItems([...items, { ...EMPTY_ITEM }]);
+  const addItem = () => {
+    const newItem = { ...EMPTY_ITEM };
+    if (selectedNodeData) {
+      newItem.location_details = selectedNodeData.name;
+    }
+    setItems([...items, newItem]);
+  };
+
   const removeItem = (idx) => {
     if (items.length === 1) return;
     setItems(items.filter((_, i) => i !== idx));
   };
 
-  const updateItem = (idx, field, value) => {
-    const newItems = [...items];
-    if (field.includes('.')) {
-      const [parent, child] = field.split('.');
-      newItems[idx][parent][child] = value;
-    } else {
-      newItems[idx][field] = value;
-    }
-    setItems(newItems);
-  };
-
-  const toggleNewProduct = (idx) => {
-    const newItems = [...items];
-    newItems[idx].is_new_product = !newItems[idx].is_new_product;
-    setItems(newItems);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedNode) return toast.error('Please select an organizational node');
+    
+    // Validation: Ensure all items are linked to a blueprint
+    if (items.some(it => !it.product_id)) {
+      return toast.error('Validation Error: All manifest items must be linked to a product blueprint.');
+    }
 
     setIsSubmitting(true);
     try {
       const payload = {
         ...storeForm,
-        org_node_id: selectedNode,
+        org_node_id: parseInt(selectedNode),
         items: items.map(it => ({
-          product_id: it.is_new_product ? null : it.product_id,
-          new_product: it.is_new_product ? it.new_product : null,
+          product_id: parseInt(it.product_id),
           quantity: parseInt(it.quantity),
           is_serialized: it.is_serialized,
           serial_number: it.serial_number,
@@ -199,13 +258,19 @@ const StorePage = () => {
         </div>
 
         <div className="flex gap-3">
+          <button 
+            onClick={() => {
+              setActiveItemIndex(null);
+              setCatalogOpen(true);
+            }}
+            className="bg-white border-2 border-slate-200 text-slate-600 font-black px-6 py-4 rounded-2xl uppercase text-[10px] tracking-widest flex items-center gap-3 hover:bg-slate-50 hover:border-blue-500 hover:text-blue-600 transition-all shadow-lg active:scale-95"
+          >
+            <Layers size={18} /> Browse Catalog
+          </button>
           <label className="bg-white border-2 border-slate-950 text-slate-950 font-black px-8 py-4 rounded-2xl uppercase text-[10px] tracking-widest flex items-center gap-3 cursor-pointer hover:bg-slate-50 transition-all shadow-lg active:scale-95">
             <Upload size={18} /> Import Batch (CSV)
             <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
           </label>
-          <button onClick={() => setShowImportHelp(!showImportHelp)} className="p-4 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all">
-            <HelpCircle size={20} />
-          </button>
         </div>
       </div>
 
@@ -236,11 +301,75 @@ const StorePage = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Arrival Node</label>
-              <CascadingUnitSelector value={selectedNode} onChange={setSelectedNode} />
+              <CascadingUnitSelector 
+                value={selectedNode} 
+                onChange={(id, node) => {
+                  setSelectedNode(id);
+                  setSelectedNodeData(node);
+                  
+                  // Auto-fill Location Details for all items when a node is selected
+                  if (node) {
+                    setItems(prev => prev.map(item => ({
+                      ...item,
+                      location_details: item.location_details || node.name
+                    })));
+                  }
+                }} 
+              />
             </div>
             <Input label="Store Form #" value={storeForm.store_number} readOnly />
             <Input label="Intake Date" type="date" value={storeForm.date} onChange={e => setStoreForm({ ...storeForm, date: e.target.value })} />
           </div>
+          
+          {selectedNodeData && !selectedNodeData.can_store_inventory && (
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-2xl flex items-start gap-4 animate-in slide-in-from-left-4 duration-500">
+               <AlertCircle className="text-amber-600 shrink-0" size={20} />
+               <div>
+                  <h4 className="text-[10px] font-black text-amber-900 uppercase tracking-widest mb-1">Administrative Node Warning</h4>
+                  <p className="text-xs text-amber-700 font-medium">
+                    The selected node ({selectedNodeData.name}) is not officially marked for inventory storage. 
+                    Recording stock here is allowed, but it might not show up in storage-only reports.
+                  </p>
+               </div>
+            </div>
+          )}
+
+          <div className="pt-4 border-t border-slate-50">
+             <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Batch Product (Blueprint)</label>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setActiveItemIndex(null);
+                      setBlueprintModalOpen(true);
+                    }}
+                    className="text-[9px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 flex items-center gap-1"
+                  >
+                    <Plus size={12} /> New Blueprint
+                  </button>
+                </div>
+                <div className="flex gap-4">
+                  <select 
+                    value={batchProduct} 
+                    onChange={e => setBatchProduct(e.target.value)}
+                    className="flex-1 h-14 bg-slate-50 border border-slate-100 rounded-2xl px-6 text-sm font-bold outline-none focus:ring-2 ring-blue-500/10"
+                  >
+                    <option value="">Select from Master Catalog</option>
+                    {products?.map(p => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
+                  </select>
+                  <button 
+                    type="button"
+                    onClick={() => applyBatchProduct()}
+                    className="h-14 px-8 bg-blue-600 text-white font-black rounded-2xl uppercase text-[10px] tracking-widest hover:bg-slate-950 transition-all shadow-lg active:scale-95 shrink-0"
+                  >
+                    Apply to Manifest
+                  </button>
+                </div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase italic ml-1">Instantly link all manifest items to this blueprint</p>
+             </div>
+          </div>
+
           <Input label="Batch Notes" value={storeForm.notes} onChange={e => setStoreForm({ ...storeForm, notes: e.target.value })} placeholder="General arrival context..." />
         </div>
 
@@ -260,33 +389,61 @@ const StorePage = () => {
             {items.map((it, idx) => (
               <div key={idx} className="bg-white p-10 rounded-[45px] border border-slate-100 shadow-xl shadow-slate-100/50 space-y-8 animate-in slide-in-from-right-4 duration-500" style={{ animationDelay: `${idx * 100}ms` }}>
                 <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-xl italic">{idx + 1}</div>
-                    <div className="flex-1 min-w-[300px]">
-                      {!it.is_new_product ? (
-                        <div className="space-y-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Existing Product Link</label>
-                          <select value={it.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)} className="w-full h-14 bg-slate-50 border border-slate-100 rounded-2xl px-6 text-sm font-bold outline-none focus:ring-2 ring-blue-500/10">
-                            <option value="">Select from Master Catalog</option>
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-xl italic shrink-0">{idx + 1}</div>
+                    <div className="flex-1">
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center px-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Linked Blueprint</label>
+                          <div className="flex gap-4">
+                             <button 
+                              type="button" 
+                              onClick={() => openCatalogForItem(idx)}
+                              className="text-[9px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 flex items-center gap-1"
+                            >
+                              <Layers size={12} /> Catalog
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setActiveItemIndex(idx);
+                                setBlueprintModalOpen(true);
+                              }}
+                              className="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700 flex items-center gap-1"
+                            >
+                              <Plus size={12} /> New
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex gap-4">
+                          <select 
+                            value={it.product_id} 
+                            onChange={e => updateItem(idx, 'product_id', e.target.value)} 
+                            className={`flex-1 h-14 bg-slate-50 border-2 rounded-2xl px-6 text-sm font-bold outline-none focus:ring-2 ring-blue-500/10 transition-all ${!it.product_id ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'}`}
+                          >
+                            <option value="">-- Link to Catalog Blueprint --</option>
                             {products?.map(p => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
                           </select>
+                          <button
+                            type="button"
+                            onClick={() => openCatalogForItem(idx)}
+                            className="h-14 px-6 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg shadow-slate-200"
+                          >
+                            <Search size={18} />
+                          </button>
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-4">
-                          <Input label="New Item Name" value={it.new_product.name} onChange={e => updateItem(idx, 'new_product.name', e.target.value)} />
-                          <Input label="New Item SKU" value={it.new_product.sku} onChange={e => updateItem(idx, 'new_product.sku', e.target.value)} />
-                        </div>
-                      )}
+                        {!it.product_id && (
+                          <div className="flex items-center gap-2 mt-2 px-2">
+                             <AlertCircle size={12} className="text-amber-500" />
+                             <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Unlinked Entry: Asset will not be traceable until linked to a blueprint</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => toggleNewProduct(idx)} className={`p-3 rounded-xl transition-all ${it.is_new_product ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`} title="Toggle New Asset Entry">
-                      <Tag size={18} />
-                    </button>
-                    <button type="button" onClick={() => removeItem(idx)} className="p-3 bg-red-50 text-red-400 rounded-xl hover:bg-red-100 hover:text-red-600 transition-all">
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
+                  <button type="button" onClick={() => removeItem(idx)} className="p-3 bg-red-50 text-red-400 rounded-xl hover:bg-red-100 hover:text-red-600 transition-all ml-6">
+                    <Trash2 size={18} />
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -338,6 +495,21 @@ const StorePage = () => {
           </div>
         </div>
       </form>
+
+      {/* Slide-out Catalog Browser */}
+      <CatalogSidebar 
+        isOpen={catalogOpen} 
+        onClose={() => setCatalogOpen(false)} 
+        onSelectProduct={handleSelectFromCatalog}
+        onNewBlueprint={() => setBlueprintModalOpen(true)}
+      />
+
+      {/* Blueprint Quick-Creation Modal */}
+      <BlueprintModal 
+        isOpen={blueprintModalOpen} 
+        onClose={() => setBlueprintModalOpen(false)} 
+        onCreated={handleBlueprintCreated}
+      />
     </div>
   );
 };

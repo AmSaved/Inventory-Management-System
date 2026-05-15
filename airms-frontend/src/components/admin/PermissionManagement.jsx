@@ -95,13 +95,6 @@ const PermissionManagement = () => {
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">System Function Registry</p>
            </div>
         </div>
-        <Button 
-          onClick={() => handleOpenModal()} 
-          className="flex items-center space-x-3 bg-blue-600 hover:bg-blue-500 text-white px-10 h-16 rounded-[28px] font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 transition-all active:scale-95"
-        >
-          <Plus size={18} strokeWidth={3} />
-          <span>New Protocol</span>
-        </Button>
       </div>
 
       {/* Filter & Search Bar */}

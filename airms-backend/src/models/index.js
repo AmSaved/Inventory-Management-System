@@ -251,7 +251,7 @@ Transfer.belongsTo(User, { as: 'fromUser', foreignKey: 'from_user_id' });
 Transfer.belongsTo(OrganizationNode, { as: 'fromNode', foreignKey: 'from_node_id' });
 Transfer.belongsTo(User, { as: 'toUser', foreignKey: 'to_user_id' });
 Transfer.belongsTo(OrganizationNode, { as: 'toNode', foreignKey: 'to_node_id' });
-Transfer.belongsTo(User, { as: 'requester', foreignKey: 'created_by' });
+Transfer.belongsTo(User, { as: 'requester', foreignKey: 'requested_by' });
 
 Transfer.belongsTo(Workflow, { foreignKey: 'workflow_id', as: 'workflow' });
 Transfer.belongsTo(WorkflowStep, { foreignKey: 'current_step_id', as: 'currentStep' });

@@ -47,3 +47,13 @@ export const getErrorMessage = (error) => {
   if (error.message) return error.message;
   return 'An unexpected error occurred';
 };
+
+/**
+ * Safely parses polymorphic JSONB specifications which can be a string or an object.
+ * Returns an object with 'specs' (the original object or empty) and 'notes' (the primary text description).
+ */
+export const parseSpecifications = (specifications) => {
+  const specs = typeof specifications === 'object' && specifications !== null ? specifications : {};
+  const notes = typeof specifications === 'string' ? specifications : (specs.notes || '');
+  return { specs, notes };
+};

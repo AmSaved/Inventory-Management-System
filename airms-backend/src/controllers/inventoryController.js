@@ -17,18 +17,20 @@ const inventoryController = {
                 low_stock,
                 search,
                 serial_number,
-                batch_number
+                batch_number,
+                status,
+                category
             } = req.query;
             
             const company_id = req.user.company_id;
             const where = { company_id };
             
-            // PERFORMANCE SCOPING: Use the lazy-loading authorized nodes getter
             const allowedNodes = await req.getAuthorizedNodes();
             
             if (req.query.org_node_id) {
                 const targetNodeId = Number(req.query.org_node_id);
-                if (!allowedNodes.includes(targetNodeId)) {
+                // If allowedNodes is null, it means the user has global access
+                if (allowedNodes !== null && !allowedNodes.includes(targetNodeId)) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
                 
@@ -43,15 +45,15 @@ const inventoryController = {
                         attributes: ['id']
                     });
                     const nodeIds = descendantNodes.map(n => n.id);
-                    // Filter by these nodes, but ensure they are still within the user's allowed scope
-                    const scopedNodeIds = nodeIds.filter(id => allowedNodes.includes(id));
-                    where.org_node_id = { [Op.in]: scopedNodeIds };
+                    where.org_node_id = { [Op.in]: nodeIds };
                 } else {
                     where.org_node_id = targetNodeId;
                 }
-            } else {
+            } else if (allowedNodes !== null) {
+                // Only filter by allowed nodes if NOT a global admin (null means global)
                 where.org_node_id = { [Op.in]: allowedNodes };
             }
+            // If global admin and no node requested, we naturally filter by company_id only (line 26)
 
             if (product_id) where.product_id = product_id;
             if (low_stock === 'true') {
@@ -62,6 +64,13 @@ const inventoryController = {
             }
             if (serial_number) where.serial_number = serial_number;
             if (batch_number) where.batch_number = batch_number;
+            if (status) where.status = status;
+            
+            // Ensure we only return items with quantity > 0 by default, 
+            // unless specifically searching for a serial number or batch
+            if (!serial_number && !batch_number && !where.quantity) {
+                where.quantity = { [Op.gt]: 0 };
+            }
 
             const offset = (page - 1) * limit;
             
@@ -71,12 +80,16 @@ const inventoryController = {
                     {
                         model: Product,
                         as: 'product',
-                        where: search ? {
-                            [Op.or]: [
-                                { name: { [Op.iLike]: `%${search}%` } },
-                                { sku: { [Op.iLike]: `%${search}%` } }
-                            ]
-                        } : undefined
+                        attributes: ['id', 'name', 'sku', 'category', 'sub_category', 'brand', 'model'],
+                        where: {
+                            ...(category ? { category } : {}),
+                            ...(search ? {
+                                [Op.or]: [
+                                    { name: { [Op.iLike]: `%${search}%` } },
+                                    { sku: { [Op.iLike]: `%${search}%` } }
+                                ]
+                            } : {})
+                        }
                     },
                     {
                         model: OrganizationNode,
@@ -125,7 +138,8 @@ const inventoryController = {
 
             // Scoping check
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(inventory.org_node_id)) {
+            const isAuthorized = allowedNodes === null || allowedNodes.includes(Number(inventory.org_node_id));
+            if (!isAuthorized) {
                 return res.status(403).json({ success: false, message: 'Access denied: Inventory item is outside your visibility scope' });
             }
 
@@ -181,7 +195,7 @@ const inventoryController = {
 
             // Scope check: Can only create inventory in authorized nodes
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(Number(org_node_id))) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Cannot initialize inventory in nodes outside your visibility scope' });
             }
 
@@ -196,6 +210,12 @@ const inventoryController = {
                 });
             }
 
+            let finalLocation = location_details;
+            if (!finalLocation) {
+                const node = await OrganizationNode.findByPk(org_node_id);
+                if (node) finalLocation = node.name;
+            }
+
             const inventory = await Inventory.create({
                 product_id,
                 org_node_id,
@@ -203,9 +223,9 @@ const inventoryController = {
                 quantity,
                 minimum_quantity,
                 maximum_quantity,
-                location_details,
+                location_details: finalLocation,
                 serial_number,
-                batch_number,
+                batch_number: batch_number || `MANUAL-${Date.now()}`,
                 unit_cost,
                 status: status || 'available',
                 current_value,
@@ -220,7 +240,8 @@ const inventoryController = {
                 last_counted_at: new Date()
             });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'CREATE',
@@ -229,7 +250,7 @@ const inventoryController = {
                 details: { product_id, org_node_id, quantity },
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for inventory creation:`, err));
 
             res.status(201).json({
                 success: true,
@@ -257,13 +278,14 @@ const inventoryController = {
 
             // Scope check
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(inventory.org_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(inventory.org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Item is outside your visibility scope' });
             }
 
             await inventory.update(updates);
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'UPDATE',
@@ -272,7 +294,7 @@ const inventoryController = {
                 details: updates,
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
-            });
+            }).catch(err => logger.error(`Background activity logging failed for inventory update:`, err));
 
             res.json({ success: true, message: 'Inventory updated successfully', data: inventory });
         } catch (error) {
@@ -297,7 +319,7 @@ const inventoryController = {
             // Deep Scoping Check
             
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(inventory.org_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(inventory.org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Target unit is outside your visibility scope' });
             }
 
@@ -330,14 +352,20 @@ const inventoryController = {
             
             // Respect role-based visibility scoping
             const allowedNodes = await req.getAuthorizedNodes();
-            const scopeId = org_node_id || (allowedNodes.length === 1 ? allowedNodes[0] : null);
             
-            if (org_node_id && !allowedNodes.includes(Number(org_node_id))) {
-                return res.status(403).json({ success: false, message: 'Access denied' });
-            }
-
-            const items = await inventoryService.getLowStockItems(company_id, scopeId, (scopeId ? null : allowedNodes));
-
+            if (org_node_id) {
+                const targetNodeId = Number(org_node_id);
+                // Null allowedNodes means global visibility
+                if (allowedNodes !== null && !allowedNodes.includes(targetNodeId)) {
+                    return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
+                }
+                // Fetch low stock for this specific node
+                const items = await inventoryService.getLowStockItems(company_id, targetNodeId, null);
+                return res.json({ success: true, data: items });
+            } 
+            
+            // If no node specified, use the allowedNodes filter
+            const items = await inventoryService.getLowStockItems(company_id, null, allowedNodes);
             res.json({ success: true, data: items });
         } catch (error) {
             next(error);
@@ -358,7 +386,8 @@ const inventoryController = {
 
             // Deep Scoping Check
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(Number(org_node_id))) {
+            const targetNodeId = Number(org_node_id);
+            if (allowedNodes !== null && !allowedNodes.includes(targetNodeId)) {
                 return res.status(403).json({ success: false, message: 'Access denied: Target unit is outside your visibility scope' });
             }
 
@@ -392,7 +421,7 @@ const inventoryController = {
             // Deep Scoping Check
             
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(inventory.org_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(inventory.org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Target unit is outside your visibility scope' });
             }
 
@@ -425,7 +454,10 @@ const inventoryController = {
 
             // Strict Scope enforcement for both ends
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(Number(from_node_id)) || !allowedNodes.includes(Number(to_node_id))) {
+            const fromAuthorized = allowedNodes === null || allowedNodes.includes(Number(from_node_id));
+            const toAuthorized = allowedNodes === null || allowedNodes.includes(Number(to_node_id));
+            
+            if (!fromAuthorized || !toAuthorized) {
                 return res.status(403).json({ success: false, message: 'Access denied: Transfer involves nodes outside your visibility scope' });
             }
 
@@ -461,12 +493,12 @@ const inventoryController = {
 
             // Scope check: Source node must be authorized
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(inventory.org_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(inventory.org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Source node is outside visibility' });
             }
 
             // Scope check: Target node (if provided) must be authorized
-            if (org_node_id && !allowedNodes.includes(Number(org_node_id))) {
+            if (org_node_id && allowedNodes !== null && !allowedNodes.includes(Number(org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Destination node is outside visibility' });
             }
 
@@ -493,8 +525,8 @@ const inventoryController = {
 
             // Scope check
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(target.org_node_id)) {
-                return res.status(403).json({ success: false, message: 'Access denied' });
+            if (allowedNodes !== null && !allowedNodes.includes(Number(target.org_node_id))) {
+                return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
             }
 
             const result = await inventoryService.mergeInventory(company_id, source_ids, target_id, { userId: req.user.id });
@@ -518,7 +550,7 @@ const inventoryController = {
 
             // Scope check: Org Admin check
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(inventory.org_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(inventory.org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Asset is outside your node visibility' });
             }
 
@@ -545,7 +577,7 @@ const inventoryController = {
 
             // Scope check: User must have access to the node
             const allowedNodes = await req.getAuthorizedNodes();
-            if (!allowedNodes.includes(Number(org_node_id))) {
+            if (allowedNodes !== null && !allowedNodes.includes(Number(org_node_id))) {
                 return res.status(403).json({ success: false, message: 'Access denied: Targeted node is outside your visibility' });
             }
 
@@ -558,13 +590,14 @@ const inventoryController = {
                 transaction
             });
 
-            await ActivityLog.create({
+            // Background logging
+            ActivityLog.create({
                 company_id,
                 user_id: req.user.id,
                 action: 'INVENTORY_BULK_DELETE',
                 resource: 'inventory',
                 details: { product_id, org_node_id, count: deletedCount }
-            }, { transaction });
+            }).catch(err => logger.error(`Background activity logging failed for inventory bulk delete:`, err));
 
             await transaction.commit();
             res.json({ success: true, message: `Successfully deleted ${deletedCount} inventory records` });

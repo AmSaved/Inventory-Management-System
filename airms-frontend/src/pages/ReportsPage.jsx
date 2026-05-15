@@ -88,7 +88,10 @@ const ReportsPage = () => {
     }
   };
 
-  if (!canGenerate) {
+  // Soft permission check: only block page if user has NO report permissions at all
+  const canViewReports = hasPermission('report:view');
+  
+  if (!canViewReports) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6 bg-slate-50/50 rounded-[40px] m-10 border-4 border-dashed border-slate-200">
          <div className="w-24 h-24 bg-red-100 rounded-[35px] flex items-center justify-center mb-6 rotate-6 shadow-2xl shadow-red-100/50">
@@ -201,9 +204,14 @@ const ReportsPage = () => {
                     <Button 
                       onClick={handleGenerate} 
                       loading={generating} 
-                      className="w-full bg-slate-950 h-20 rounded-[35px] text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-4 group"
+                      disabled={!canGenerate}
+                      className={`w-full h-20 rounded-[35px] font-black text-xs uppercase tracking-[0.2em] shadow-2xl transition-all flex items-center justify-center gap-4 group ${!canGenerate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-950 text-white hover:bg-blue-600'}`}
                     >
-                      Process Generation <ArrowRight className="group-hover:translate-x-2 transition-transform" />
+                      {canGenerate ? (
+                        <>Process Generation <ArrowRight className="group-hover:translate-x-2 transition-transform" /></>
+                      ) : (
+                        <>Generation Locked <ShieldCheck size={18} /></>
+                      )}
                     </Button>
                  </div>
               </CardContent>
