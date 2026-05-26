@@ -63,14 +63,14 @@ const Assignment = sequelize.define('Assignment', {
         type: DataTypes.DATE
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'active'
     },
     condition_at_assignment: {
-        type: DataTypes.STRING(20)
+        type: DataTypes.STRING(100)
     },
     condition_at_return: {
-        type: DataTypes.STRING(20)
+        type: DataTypes.STRING(100)
     },
     notes: {
         type: DataTypes.TEXT

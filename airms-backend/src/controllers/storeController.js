@@ -133,9 +133,12 @@ const storeController = {
 
             // Process dynamic product generation and prepare final items
             const finalItems = [];
+            const productMap = {}; // Maps product ID to product name for checking
+
             if (items && items.length > 0) {
                 for (const item of items) {
                     let finalProductId = item.product_id;
+                    let productName = '';
                     
                     if (!finalProductId && item.new_product) {
                         const existingProduct = await Product.findOne({
@@ -145,6 +148,7 @@ const storeController = {
                         
                         if (existingProduct) {
                             finalProductId = existingProduct.id;
+                            productName = existingProduct.name;
                         } else {
                             const newProduct = await Product.create({
                                 ...item.new_product,
@@ -152,6 +156,7 @@ const storeController = {
                                 created_by: req.user.id
                             }, { transaction });
                             finalProductId = newProduct.id;
+                            productName = newProduct.name;
                             
                             await ActivityLog.create({
                                 company_id, user_id: req.user.id, action: 'CREATE', resource: 'products',
@@ -166,7 +171,82 @@ const storeController = {
                         store_form_id: storeForm.id,
                         total_price: 0 // financials removed
                     });
+
+                    if (productName && finalProductId) {
+                        productMap[finalProductId] = productName;
+                    }
                 }
+            }
+
+            // Fetch names of existing products to populate productMap
+            const productIdsToFetch = finalItems.map(it => it.product_id).filter(id => id && !productMap[id]);
+            if (productIdsToFetch.length > 0) {
+                const fetchedProducts = await Product.findAll({
+                    where: { id: { [Op.in]: productIdsToFetch }, company_id },
+                    transaction
+                });
+                fetchedProducts.forEach(p => {
+                    productMap[p.id] = p.name;
+                });
+            }
+
+            // Uniqueness check: Identify duplicates based on product name and serial number
+            const serialsToCheck = finalItems
+                .map(it => it.serial_number)
+                .filter(sn => typeof sn === 'string' && sn.trim().length > 0);
+
+            const databaseDuplicates = new Set();
+            if (serialsToCheck.length > 0) {
+                const existingInventory = await Inventory.findAll({
+                    where: {
+                        company_id,
+                        serial_number: { [Op.in]: serialsToCheck },
+                        quantity: { [Op.gt]: 0 }
+                    },
+                    include: [{
+                        model: Product,
+                        as: 'product',
+                        attributes: ['id', 'name']
+                    }],
+                    transaction
+                });
+                existingInventory.forEach(inv => {
+                    const pName = inv.product?.name || '';
+                    const key = `${pName.trim().toLowerCase()}|${inv.serial_number.trim().toLowerCase()}`;
+                    databaseDuplicates.add(key);
+                });
+            }
+
+            const processedKeys = new Set();
+            const itemsToStore = [];
+            const skippedItems = [];
+
+            for (const item of finalItems) {
+                const pName = productMap[item.product_id] || '';
+                const sn = item.serial_number;
+
+                if (typeof sn === 'string' && sn.trim().length > 0) {
+                    const key = `${pName.trim().toLowerCase()}|${sn.trim().toLowerCase()}`;
+                    if (databaseDuplicates.has(key) || processedKeys.has(key)) {
+                        skippedItems.push({
+                            name: pName,
+                            serial_number: sn
+                        });
+                        continue;
+                    }
+                    processedKeys.add(key);
+                }
+                itemsToStore.push(item);
+            }
+
+            // If all items are duplicates, fail with 400 Bad Request
+            if (finalItems.length > 0 && itemsToStore.length === 0) {
+                await transaction.rollback();
+                const skippedList = skippedItems.map(si => `${si.name} (SN: ${si.serial_number})`).join(', ');
+                return res.status(400).json({
+                    success: false,
+                    message: `Cannot complete intake. All items already exist: ${skippedList} (this item is already exist).`
+                });
             }
 
             // ---------------------------------------------------------
@@ -181,10 +261,10 @@ const storeController = {
 
             const inventoryResults = [];
             // Legacy/Direct path (No Workflow)
-            if (finalItems.length > 0) {
-                await StoreItem.bulkCreate(finalItems, { transaction });
+            if (itemsToStore.length > 0) {
+                await StoreItem.bulkCreate(itemsToStore, { transaction });
 
-                for (const item of finalItems) {
+                for (const item of itemsToStore) {
                     if (item.is_serialized && item.quantity > 1) {
                         for (let i = 0; i < item.quantity; i++) {
                             const serializedSN = item.serial_number ? `${item.serial_number}-${String(i + 1).padStart(3, '0')}` : `SN-${Date.now()}-${i}`;
@@ -200,7 +280,9 @@ const storeController = {
                                     serialNumber: serializedSN,
                                     batchNumber: item.batch_number || storeForm.store_number,
                                     locationDetails: item.location_details,
-                                    transaction
+                                    customFields: item.custom_fields,
+                                    transaction,
+                                    skipLogging: true
                                 }
                             );
                             if (item.product_id) newInv.product = { name: 'Item', sku: item.product_id }; 
@@ -219,7 +301,9 @@ const storeController = {
                                 serialNumber: item.serial_number,
                                 batchNumber: item.batch_number || storeForm.store_number,
                                 locationDetails: item.location_details,
-                                transaction
+                                customFields: item.custom_fields,
+                                transaction,
+                                skipLogging: true
                             }
                         );
                         if (item.product_id) newInv.product = { name: 'Item', sku: item.product_id };
@@ -234,17 +318,23 @@ const storeController = {
                 action: 'CREATE_DIRECT',
                 resource: 'store_forms',
                 resource_id: storeForm.id,
-                details: { store_number: storeForm.store_number, items_count: finalItems.length }
+                details: { store_number: storeForm.store_number, items_count: itemsToStore.length }
             }, { transaction });
 
             await transaction.commit();
 
             const result = await StoreForm.findByPk(storeForm.id, { include: ['items'] });
             
+            let message = 'Store form created and inventory instantly updated';
+            if (skippedItems.length > 0) {
+                const skippedList = skippedItems.map(si => `${si.name} (SN: ${si.serial_number})`).join(', ');
+                message = `Successfully stored ${itemsToStore.length} new items. Warning: ${skippedList} was skipped because this item is already exist.`;
+            }
+
             // To support the auto-print modal on the frontend, we send back the items
             res.status(201).json({ 
                 success: true, 
-                message: 'Store form created and inventory instantly updated', 
+                message, 
                 data: result,
                 inventoryItems: inventoryResults 
             });
@@ -296,6 +386,7 @@ const storeController = {
                                     serialNumber: serializedSN,
                                     batchNumber: item.batch_number || storeForm.store_number,
                                     locationDetails: item.location_details,
+                                    customFields: item.custom_fields,
                                     transaction
                                 }
                             );
@@ -313,6 +404,7 @@ const storeController = {
                                 serialNumber: item.serial_number,
                                 batchNumber: item.batch_number || storeForm.store_number,
                                 locationDetails: item.location_details,
+                                customFields: item.custom_fields,
                                 transaction
                             }
                         );

@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import AuthLayout from '../layouts/AuthLayout';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
+import { Mail, Lock } from 'lucide-react';
 
 const schema = yup.object({
   email: yup.string().email('Invalid email').required('Email is required'),
@@ -39,20 +40,22 @@ const LoginPage = () => {
   };
 
   return (
-    <AuthLayout title="Sign in to your account" subtitle="Welcome back!">
-      <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
+    <AuthLayout title="Inventory management system" subtitle>
+      <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
         <Input
-          label="Email address"
+          label="Enter your email"
           type="email"
-          placeholder="Enter your email"
+          placeholder="email"
+          icon={<Mail className="h-5 w-5 text-slate-400" />}
           error={errors.email?.message}
           {...register('email')}
         />
 
         <Input
-          label="Password"
+          label="Enter your password"
           type="password"
-          placeholder="Enter your password"
+          placeholder=" *********"
+          icon={<Lock className="h-5 w-5 text-slate-400" />}
           error={errors.password?.message}
           {...register('password')}
         />
@@ -63,26 +66,30 @@ const LoginPage = () => {
               id="remember-me"
               name="remember-me"
               type="checkbox"
-              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-200 rounded"
             />
-            <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+            <label htmlFor="remember-me" className="ml-2 block text-xs text-slate-600 font-medium select-none">
               Remember me
             </label>
           </div>
 
-          <div className="text-sm">
-            <Link to="/forgot-password" className="font-medium text-primary-600 hover:text-primary-500">
-              Forgot your password?
+          <div className="text-xs">
+            <Link to="/forgot-password" className="font-semibold text-blue-600 hover:text-blue-500">
+              Forgot password?
             </Link>
           </div>
         </div>
 
-        <Button type="submit" loading={loading} className="w-full">
-          Sign in
+        <Button
+          type="submit"
+          loading={loading}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 rounded-lg shadow-sm hover:shadow transition-all"
+        >
+          Login
         </Button>
 
-        <p className="text-center text-sm text-gray-500 italic">
-          Need an account? Please contact your Super Administrator.
+        <p className="text-center text-xs text-slate-400 italic">
+          Need access? Contact your system Super Administrator.
         </p>
       </form>
     </AuthLayout>

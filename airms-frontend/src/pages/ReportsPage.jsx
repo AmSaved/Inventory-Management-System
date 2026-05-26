@@ -113,37 +113,37 @@ const ReportsPage = () => {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-12 py-12 px-6">
+    <div className="max-w-[1600px] mx-auto space-y-8 py-8 px-4 lg:px-6">
       {/* Premium Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b-2 border-slate-50 pb-12">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-100 pb-6">
         <div className="space-y-2">
            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-slate-900 rounded-[28px] flex items-center justify-center shadow-2xl rotate-3">
-                 <FileBox className="text-blue-500" size={32} />
+              <div className="w-12 h-12 bg-slate-900 rounded-[22px] flex items-center justify-center shadow-lg rotate-3">
+                 <FileBox className="text-blue-500" size={26} />
               </div>
               <div>
-                <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic">Reports Engine</h1>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">Enterprise Analytics — {user?.company?.name || 'AIRMS Global'}</p>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Company Reports</h1>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">Data Analytics — {user?.company?.name || 'AIRMS Global'}</p>
               </div>
            </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* Configuration Panel */}
-        <div className="xl:col-span-4 space-y-8">
-           <Card className="rounded-[40px] border-none shadow-2xl bg-white p-1 overflow-hidden ring-1 ring-slate-100">
-              <div className="bg-slate-950 p-10 space-y-8">
+        <div className="xl:col-span-5 space-y-4">
+           <Card className="rounded-[28px] border-none shadow-lg bg-white p-1 overflow-hidden ring-1 ring-slate-100">
+              <div className="bg-blue-50/50 p-5 border-b border-blue-100 space-y-4">
                  <div className="flex items-center gap-3">
-                    <Settings2 className="text-blue-500" size={18} />
-                    <h3 className="font-black text-white text-[10px] uppercase tracking-widest">Parameter Configuration</h3>
+                    <Settings2 className="text-blue-600" size={16} />
+                    <h3 className="font-black text-slate-900 text-[10px] uppercase tracking-widest">Report Settings</h3>
                  </div>
 
-                 <div className="space-y-6">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Report Vector</label>
+                 <div className="space-y-4">
+                    <div className="space-y-1.5">
+                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Report Type</label>
                        <select 
-                         className="w-full h-14 bg-slate-900 border-2 border-slate-800 rounded-2xl px-4 font-black text-white outline-none focus:border-blue-500 transition-all cursor-pointer"
+                         className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 font-bold text-slate-900 outline-none focus:border-blue-500 transition-all cursor-pointer text-sm"
                          value={selectedReport}
                          onChange={(e) => setSelectedReport(e.target.value)}
                        >
@@ -151,21 +151,21 @@ const ReportsPage = () => {
                        </select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Temporal Start</label>
+                    <div className="grid grid-cols-2 gap-3">
+                       <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Start Date</label>
                           <Input 
                             type="date" 
-                            className="h-14 bg-slate-900 border-2 border-slate-800 rounded-2xl font-bold text-white text-xs" 
+                            className="h-10 bg-white border border-slate-200 rounded-xl font-bold text-slate-900 text-xs" 
                             value={dateRange.from_date}
                             onChange={(e) => setDateRange({...dateRange, from_date: e.target.value})}
                           />
                        </div>
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Temporal End</label>
+                       <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">End Date</label>
                           <Input 
                             type="date" 
-                            className="h-14 bg-slate-900 border-2 border-slate-800 rounded-2xl font-bold text-white text-xs" 
+                            className="h-10 bg-white border border-slate-200 rounded-xl font-bold text-slate-900 text-xs" 
                             value={dateRange.to_date}
                             onChange={(e) => setDateRange({...dateRange, to_date: e.target.value})}
                           />
@@ -174,9 +174,9 @@ const ReportsPage = () => {
                  </div>
               </div>
 
-              <CardContent className="p-10 space-y-8">
-                 <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Infrastructure Focus (Unit Scope)</label>
+              <CardContent className="p-5 space-y-5">
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Select Branch (Optional)</label>
                     <CascadingUnitSelector 
                       value={unitId}
                       onChange={setUnitId}
@@ -184,33 +184,32 @@ const ReportsPage = () => {
                     />
                  </div>
 
-                 <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Export Methodology</label>
-                    <div className="grid grid-cols-1 gap-2">
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Format</label>
+                    <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
                        {formatOptions.map(opt => (
                          <button
                            key={opt.value}
                            onClick={() => setFormat(opt.value)}
-                           className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all font-black text-[10px] uppercase tracking-widest ${format === opt.value ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-50 text-slate-400 hover:border-slate-200'}`}
+                           className={`flex-1 flex justify-center py-2 rounded-lg transition-all font-black text-[9px] uppercase tracking-widest ${format === opt.value ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                          >
                            {opt.label}
-                           <div className={`w-2 h-2 rounded-full ${format === opt.value ? 'bg-white' : 'bg-slate-100'}`} />
                          </button>
                        ))}
                     </div>
                  </div>
 
-                 <div className="pt-6">
+                 <div className="pt-1">
                     <Button 
                       onClick={handleGenerate} 
                       loading={generating} 
                       disabled={!canGenerate}
-                      className={`w-full h-20 rounded-[35px] font-black text-xs uppercase tracking-[0.2em] shadow-2xl transition-all flex items-center justify-center gap-4 group ${!canGenerate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-950 text-white hover:bg-blue-600'}`}
+                      className={`w-full h-11 rounded-xl font-black text-[11px] uppercase tracking-[0.1em] shadow-md transition-all flex items-center justify-center gap-2 ${!canGenerate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                     >
                       {canGenerate ? (
-                        <>Process Generation <ArrowRight className="group-hover:translate-x-2 transition-transform" /></>
+                        <>Generate Report <ArrowRight size={14} /></>
                       ) : (
-                        <>Generation Locked <ShieldCheck size={18} /></>
+                        <>Access Denied <ShieldCheck size={14} /></>
                       )}
                     </Button>
                  </div>
@@ -219,28 +218,28 @@ const ReportsPage = () => {
         </div>
 
         {/* Preview Panel */}
-        <div className="xl:col-span-8 space-y-6">
-           <div className="flex items-center gap-2 mb-2">
+        <div className="xl:col-span-7 space-y-3">
+           <div className="flex items-center gap-2">
               <Eye size={16} className="text-slate-400" />
-              <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-[0.3em]">Interative Preview</h3>
+              <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-[0.3em]">Report Preview</h3>
            </div>
 
-           <Card className="rounded-[40px] border-none shadow-2xl bg-white min-h-[700px] flex flex-col ring-1 ring-slate-100 overflow-hidden">
+           <Card className="rounded-[28px] border-none shadow-lg bg-white min-h-[620px] flex flex-col ring-1 ring-slate-100 overflow-hidden">
               <CardContent className="flex-1 p-0">
                 {generating ? (
-                  <div className="flex h-[700px] items-center justify-center">
+                  <div className="flex h-[620px] items-center justify-center">
                     <LoadingSpinner />
                   </div>
                 ) : reportData ? (
                   <ReportRenderer data={reportData} type={selectedReport} />
                 ) : (
-                  <div className="flex flex-col h-[700px] items-center justify-center text-slate-300 p-20 space-y-8">
-                     <div className="w-32 h-32 bg-slate-50 rounded-[50px] flex items-center justify-center shadow-inner">
-                        <BarChart3 size={64} className="opacity-20" />
+                  <div className="flex flex-col h-[620px] items-center justify-center text-slate-300 p-12 space-y-6">
+                     <div className="w-24 h-24 bg-slate-50 rounded-[32px] flex items-center justify-center shadow-inner">
+                        <BarChart3 size={48} className="opacity-20" />
                      </div>
                      <div className="text-center space-y-2">
-                        <p className="text-xl font-black text-slate-900 uppercase italic">Awaiting Parameters</p>
-                        <p className="text-xs font-bold opacity-60 leading-relaxed uppercase tracking-widest">Define report vector and scope to generate infrastructure analytics.</p>
+                        <p className="text-lg font-black text-slate-900 uppercase italic">Ready to Generate</p>
+                        <p className="text-xs font-bold opacity-60 leading-relaxed uppercase tracking-widest">Choose your settings on the left and click Generate Report to see your data.</p>
                      </div>
                   </div>
                 )}
@@ -258,28 +257,28 @@ const ReportRenderer = ({ data, type }) => {
       <div className="space-y-0">
         <div className="bg-slate-950 p-10 flex justify-between items-end border-b border-white/10">
            <div>
-              <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2">Inventory Ledger Summary</div>
-              <h4 className="text-3xl font-black text-white tracking-tighter italic">Consolidated Valuation</h4>
+              <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2">Inventory Summary</div>
+              <h4 className="text-3xl font-black text-white tracking-tighter italic">Total Valuation</h4>
            </div>
            <div className="text-right">
               <div className="text-4xl font-black text-white tracking-tighter italic">{formatCurrency(data.summary?.total_value || 0)}</div>
-              <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Cumulative Asset Value (USD)</div>
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Asset Value (USD)</div>
            </div>
         </div>
 
         <div className="p-10 space-y-8">
            <div className="grid grid-cols-3 gap-8">
-              <SummaryStat label="Infrastructure Units" value={data.summary?.total_items} color="blue" />
-              <SummaryStat label="Deployment Quantity" value={data.summary?.total_quantity} color="emerald" />
-              <SummaryStat label="Compliance Rating" value="98.2%" color="amber" />
+              <SummaryStat label="Total Items" value={data.summary?.total_items} color="blue" />
+              <SummaryStat label="Total Quantity" value={data.summary?.total_quantity} color="emerald" />
+              <SummaryStat label="Health Score" value="98.2%" color="amber" />
            </div>
 
            <div className="overflow-hidden rounded-3xl border-2 border-slate-50">
              <table className="min-w-full">
                 <thead className="bg-slate-50 border-b-2 border-slate-100">
                   <tr>
-                    <th className="px-8 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit Vector</th>
-                    <th className="px-8 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Asset Instance</th>
+                    <th className="px-8 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Location</th>
+                    <th className="px-8 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</th>
                     <th className="px-8 py-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Quantity</th>
                     <th className="px-8 py-5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Valuation</th>
                   </tr>
@@ -317,7 +316,7 @@ const ReportRenderer = ({ data, type }) => {
 
   return (
     <div className="p-10 italic text-slate-400 font-bold text-xs uppercase tracking-widest">
-       Technical Preview: Structured data format detected. System is refining the visual layer for this specific report vector.
+       Report generated successfully. The layout for this specific report type is still under construction.
     </div>
   );
 };

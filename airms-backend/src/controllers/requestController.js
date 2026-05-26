@@ -47,11 +47,22 @@ const requestController = {
                 }
                 where.org_node_id = targetNode;
             } else if (allowedNodes !== null) {
-                // Only filter by allowed nodes if NOT a global admin (null means global)
-                where.org_node_id = { [Op.in]: allowedNodes };
+                // Always include requests where the current user is the requester or target recipient,
+                // even if those requests belong to a different org node.
+                where[Op.or] = [
+                    { org_node_id: { [Op.in]: allowedNodes } },
+                    { target_user_id: req.user.id },
+                    { requester_id: req.user.id }
+                ];
             }
 
-            if (status) where.status = status;
+            if (status) {
+                if (status === 'pending') {
+                    where.status = { [Op.in]: ['pending', 'pending_acknowledgment'] };
+                } else {
+                    where.status = status;
+                }
+            }
             if (priority) where.priority = priority;
             if (requester_id) where.requester_id = requester_id;
             
@@ -116,6 +127,35 @@ const requestController = {
                 order: [['created_at', 'DESC']]
             });
 
+            // Pre-fetch shared workflow and approval data for the current page of requests to avoid N+1 queries
+            let userApprovals = null;
+            let allSteps = null;
+            let allRoutes = null;
+            const hasActionableItems = rows.some(r => {
+                const status = (r.status || '').toLowerCase();
+                return !['fulfilled', 'completed', 'rejected', 'cancelled'].includes(status);
+            });
+
+            if (hasActionableItems) {
+                const models = require('../models');
+                const [fetchedApprovals, fetchedSteps, fetchedRoutes] = await Promise.all([
+                    models.Approval.findAll({ where: { approver_id: req.user.id }, raw: true }),
+                    models.WorkflowStep.findAll({ include: [{ model: models.Workflow, as: 'workflow', where: { company_id: company_id } }] }),
+                    models.WorkflowRoute.findAll({
+                        include: [{
+                            model: models.Workflow,
+                            as: 'workflow',
+                            where: { company_id: company_id },
+                            attributes: []
+                        }],
+                        raw: true
+                    })
+                ]);
+                userApprovals = fetchedApprovals;
+                allSteps = fetchedSteps;
+                allRoutes = fetchedRoutes;
+            }
+
             // Dynamic Action Tagging: Check if user can approve/reject each item
             const taggedRows = await Promise.all(rows.map(async (row) => {
                 const plain = row.get({ plain: true });
@@ -123,6 +163,15 @@ const requestController = {
                 // Show buttons for ANY active status (not finished/rejected/cancelled)
                 const isActionable = !['fulfilled', 'completed', 'rejected', 'cancelled'].includes(status);
                 
+                // Pending acknowledgment: show Acknowledge Receipt button to recipient only
+                if (status === 'pending_acknowledgment' || status === 'pending acknowledgment') {
+                    const targetId = plain.target_user_id || plain.requester_id;
+                    plain.can_acknowledge = Number(targetId) === Number(req.user.id);
+                    plain.can_action = false;
+                    plain.is_pending_acknowledgment = true;
+                    return plain;
+                }
+
                 if (isActionable) {
                     // AUTO-REPAIR: If currentStep is missing but it's an active return, try to initialize it once
                     if (!plain.currentStep && (plain.request_type === 'return' || plain.request_type === 'returns')) {
@@ -141,9 +190,9 @@ const requestController = {
                     }
 
                     if (plain.currentStep) {
-                        plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions);
+                        plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions, allowedNodes, userApprovals);
                         if (plain.can_action) {
-                            plain.is_final_step = await workflowService.isFinalStep(row, plain.current_step_id);
+                            plain.is_final_step = await workflowService.isFinalStep(row, plain.current_step_id, allRoutes, allSteps);
                         }
                     }
                 } else {
@@ -211,12 +260,16 @@ const requestController = {
                 
             const isAuthorized = isSuperAdmin || allowedNodes === null || allowedNodes.includes(Number(request.org_node_id));
 
-            if (!isAuthorized && request.requester_id !== req.user.id) {
+            if (!isAuthorized && request.requester_id !== req.user.id && request.target_user_id !== req.user.id) {
                 return res.status(403).json({ success: false, message: 'Access denied: Request is outside your visibility scope' });
             }
 
             const plain = request.get({ plain: true });
-            if (plain.currentStep) {
+            if (plain.status === 'pending_acknowledgment') {
+                const targetId = plain.target_user_id || plain.requester_id;
+                plain.can_acknowledge = Number(targetId) === Number(req.user.id);
+                plain.can_action = false;
+            } else if (plain.currentStep) {
                 plain.can_action = await workflowService.userCanApproveStep(req.user, request, plain.currentStep, permissions);
                 if (plain.can_action) {
                     plain.is_final_step = await workflowService.isFinalStep(request, plain.current_step_id);
@@ -420,7 +473,8 @@ const requestController = {
             const workflowType = request.request_type === 'new' ? 'request' : (request.request_type || 'request');
 
             if (action === 'approve') {
-                const result = await workflowService.advanceWorkflow(request, workflowType, req.user, comments);
+                const { allocations } = req.body;
+                const result = await workflowService.advanceWorkflow(request, workflowType, req.user, comments, 'approve', { allocations });
                 
                 // Transfer workflows will now pause at 'approved'
                 // so the Target Custodian MUST manually 'Acknowledge Receipt' 
@@ -457,6 +511,62 @@ const requestController = {
 
             await t.commit();
             res.json({ success: true, message: 'Request fulfilled successfully' });
+        } catch (error) {
+            await t.rollback();
+            next(error);
+        }
+    },
+
+    /**
+     * Acknowledge physical receipt of assets.
+     * Only the target user (recipient) may call this.
+     * Triggers the actual inventory assignment.
+     */
+    async acknowledge(req, res, next) {
+        const t = await sequelize.transaction();
+        try {
+            const { id } = req.params;
+            const company_id = req.user.company_id;
+
+            const request = await Request.findOne({
+                where: { id, company_id, status: 'pending_acknowledgment' }
+            });
+
+            if (!request) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Request not found or not awaiting acknowledgment' });
+            }
+
+            // Security: Only the designated recipient may acknowledge
+            const targetUserId = request.target_user_id || request.requester_id;
+            if (Number(targetUserId) !== Number(req.user.id)) {
+                await t.rollback();
+                return res.status(403).json({ success: false, message: 'Only the designated recipient can acknowledge receipt' });
+            }
+
+            // Retrieve allocations saved during final approval
+            let savedNotes = {};
+            try { savedNotes = JSON.parse(request.notes || '{}'); } catch(e) {}
+            const allocations = savedNotes._pending_allocations || {};
+
+            // Execute the physical fulfillment now
+            await requestService.fulfillRequest(id, company_id, req.user, {
+                transaction: t,
+                allocations,
+                workflowStatus: 'Fulfilled'
+            });
+
+            await ActivityLog.create({
+                company_id,
+                user_id: req.user.id,
+                action: 'ACKNOWLEDGE_RECEIPT',
+                resource: 'requests',
+                resource_id: id,
+                details: { acknowledged_at: new Date() }
+            }, { transaction: t });
+
+            await t.commit();
+            res.json({ success: true, message: 'Receipt acknowledged. Assets have been assigned to your account.' });
         } catch (error) {
             await t.rollback();
             next(error);

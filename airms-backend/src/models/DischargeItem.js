@@ -35,7 +35,7 @@ const DischargeItem = sequelize.define('DischargeItem', {
         type: DataTypes.STRING(100)
     },
     condition: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'new'
     },
     to_node_id: {

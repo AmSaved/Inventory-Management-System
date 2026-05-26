@@ -39,26 +39,29 @@ class InventoryService {
                 status: options.status || (inventory.quantity + quantity > 0 ? 'available' : inventory.status),
                 location_details: locationDetails,
                 unit_cost: options.unitCost || inventory.unit_cost,
+                custom_fields: options.customFields || inventory.custom_fields,
                 ...options.metadata
             }, { transaction: options.transaction });
 
             // Log activity
             // Background logging (off-transaction)
-            ActivityLog.create({
-                company_id: companyId,
-                user_id: options.userId,
-                action: 'INVENTORY_ADD',
-                resource: 'inventory',
-                resource_id: inventory.id,
-                details: {
-                    org_node_id: nodeId,
-                    product_id: productId,
-                    quantity_added: quantity,
-                    new_quantity: inventory.quantity,
-                    reference: options.reference,
-                    notes: options.notes
-                }
-            }).catch(err => logger.error('Background inventory log failed:', err));
+            if (!options.skipLogging) {
+                ActivityLog.create({
+                    company_id: companyId,
+                    user_id: options.userId,
+                    action: 'INVENTORY_ADD',
+                    resource: 'inventory',
+                    resource_id: inventory.id,
+                    details: {
+                        org_node_id: nodeId,
+                        product_id: productId,
+                        quantity_added: quantity,
+                        new_quantity: inventory.quantity,
+                        reference: options.reference,
+                        notes: options.notes
+                    }
+                }).catch(err => logger.error('Background inventory log failed:', err));
+            }
 
             return inventory;
         } catch (error) {
@@ -102,21 +105,23 @@ class InventoryService {
 
             // Log activity
             // Background logging
-            ActivityLog.create({
-                company_id: companyId,
-                user_id: options.userId,
-                action: 'INVENTORY_REMOVE',
-                resource: 'inventory',
-                resource_id: inventory.id,
-                details: {
-                    org_node_id: nodeId,
-                    product_id: productId,
-                    quantity_removed: quantity,
-                    new_quantity: inventory.quantity,
-                    reference: options.reference,
-                    notes: options.notes
-                }
-            }).catch(err => logger.error('Background inventory log failed:', err));
+            if (!options.skipLogging) {
+                ActivityLog.create({
+                    company_id: companyId,
+                    user_id: options.userId,
+                    action: 'INVENTORY_REMOVE',
+                    resource: 'inventory',
+                    resource_id: inventory.id,
+                    details: {
+                        org_node_id: nodeId,
+                        product_id: productId,
+                        quantity_removed: quantity,
+                        new_quantity: inventory.quantity,
+                        reference: options.reference,
+                        notes: options.notes
+                    }
+                }).catch(err => logger.error('Background inventory log failed:', err));
+            }
 
             return inventory;
         } catch (error) {

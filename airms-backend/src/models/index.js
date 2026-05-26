@@ -28,6 +28,8 @@ const Workflow = require('./Workflow');
 const WorkflowStep = require('./WorkflowStep');
 const WorkflowStatus = require('./WorkflowStatus');
 const WorkflowRoute = require('./WorkflowRoute');
+const FormTemplate = require('./FormTemplate');
+const UserNode = require('./UserNode');
 
 // ============================================
 // Company Associations (Multi-Tenancy)
@@ -50,6 +52,9 @@ Product.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasMany(Inventory, { foreignKey: 'company_id', as: 'inventory' });
 Inventory.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
+Company.hasMany(FormTemplate, { foreignKey: 'company_id', as: 'formTemplates' });
+FormTemplate.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+
 // ============================================
 // Organization Hierarchy Associations
 // ============================================
@@ -61,6 +66,20 @@ OrganizationNode.belongsTo(OrganizationNode, { foreignKey: 'parent_id', as: 'par
 
 OrganizationNode.hasMany(User, { foreignKey: 'org_node_id', as: 'users' });
 User.belongsTo(OrganizationNode, { foreignKey: 'org_node_id', as: 'organizationNode' });
+
+// Many-to-Many User-Node Associations
+User.belongsToMany(OrganizationNode, {
+    through: UserNode,
+    foreignKey: 'user_id',
+    otherKey: 'org_node_id',
+    as: 'authorizedNodes'
+});
+OrganizationNode.belongsToMany(User, {
+    through: UserNode,
+    foreignKey: 'org_node_id',
+    otherKey: 'user_id',
+    as: 'authorizedUsers'
+});
 
 OrganizationNode.hasMany(Inventory, { foreignKey: 'org_node_id', as: 'inventory' });
 Inventory.belongsTo(OrganizationNode, { foreignKey: 'org_node_id', as: 'organizationNode' });
@@ -151,6 +170,11 @@ TransferItem.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 
 Product.hasMany(Issue, { foreignKey: 'product_id', as: 'issues' });
 Issue.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+
+Product.belongsTo(FormTemplate, { foreignKey: 'form_template_id', as: 'intakeTemplate' });
+Product.belongsTo(FormTemplate, { foreignKey: 'blueprint_template_id', as: 'blueprintTemplate' });
+FormTemplate.hasMany(Product, { foreignKey: 'form_template_id', as: 'intakeProducts' });
+FormTemplate.hasMany(Product, { foreignKey: 'blueprint_template_id', as: 'blueprintProducts' });
 
 // ============================================
 // Request & Approval Associations
@@ -306,5 +330,7 @@ module.exports = {
     Workflow,
     WorkflowStep,
     WorkflowStatus,
-    WorkflowRoute
+    WorkflowRoute,
+    FormTemplate,
+    UserNode
 };

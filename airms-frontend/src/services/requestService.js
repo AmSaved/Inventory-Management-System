@@ -56,8 +56,8 @@ const requestService = {
   },
 
   // Approve request
-  approveRequest: async (id, comments) => {
-    const response = await api.post(`/requests/${id}/workflow-action`, { action: 'approve', comments });
+  approveRequest: async (id, comments, allocations = {}) => {
+    const response = await api.post(`/requests/${id}/workflow-action`, { action: 'approve', comments, allocations });
     return response.data;
   },
 
@@ -71,6 +71,12 @@ const requestService = {
   getRequestStatistics: async (params = {}) => {
     const response = await api.get('/requests/statistics', { params });
     return response.data.data;
+  },
+
+  // Acknowledge physical receipt of assets (called by the recipient)
+  acknowledgeRequest: async (id) => {
+    const response = await api.post(`/requests/${id}/acknowledge`);
+    return response.data;
   },
 };
 

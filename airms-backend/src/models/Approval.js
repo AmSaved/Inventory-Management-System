@@ -26,7 +26,7 @@ const Approval = sequelize.define('Approval', {
         allowNull: false
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(50),
         allowNull: false
     },
     comments: {

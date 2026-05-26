@@ -8,6 +8,8 @@ import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Modal from '../components/common/Modal';
+import Badge from '../components/ui/Badge';
+import Pagination from '../components/ui/Pagination';
 import CascadingUnitSelector from '../components/common/CascadingUnitSelector';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -86,6 +88,7 @@ const DischargePage = () => {
   const [view, setView] = useState(searchParams.get('view') || 'new'); // 'new' or 'list'
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   
   // Physical Selection State
   const [selectionModalOpen, setSelectionModalOpen] = useState(false);
@@ -93,7 +96,25 @@ const DischargePage = () => {
   const [availablePhysicalItems, setAvailablePhysicalItems] = useState([]);
   const [loadingPhysical, setLoadingPhysical] = useState(false);
 
-  const { data: dischargeForms, loading: listLoading, refetch: refetchList } = useFetch(`/discharge?search=${search}`);
+  const { data: dischargeForms, pagination, loading: listLoading, refetch: refetchList } = useFetch(`/discharge`, {
+    params: {
+      page,
+      limit: 10,
+      search: search || undefined,
+      node_id: fromUnitId || undefined
+    }
+  });
+
+  // Listen for workflow changes to refresh the list automatically
+  useEffect(() => {
+    const handler = () => {
+      refetchList();
+    };
+    window.addEventListener('workflowUpdated', handler);
+    return () => {
+      window.removeEventListener('workflowUpdated', handler);
+    };
+  }, []);
   const { data: productsData } = useFetch('/products');
   const { data: usersData } = useFetch('/users');
   const { data: treeData, loading: treeLoading, refetch: refetchTree } = useFetch('/organization/nodes/tree?scope=distribution');
@@ -101,6 +122,11 @@ const DischargePage = () => {
   const products = Array.isArray(productsData) ? productsData : (productsData?.products || productsData?.data || []);
   const fullTree = Array.isArray(treeData) ? treeData : (treeData?.data || []);
   
+  // Reset page when search or branch filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [search, fromUnitId]);
+
   useEffect(() => {
     const v = searchParams.get('view');
     if (v) setView(v);
@@ -348,7 +374,7 @@ const DischargePage = () => {
            to_user_id: null
         }))
       });
-      toast.success('Asset Issue Form Created Successfully');
+      toast.success('Discharged successfully');
       navigate('/dashboard');
     } catch (error) {
       const errorData = error.response?.data;
@@ -372,18 +398,18 @@ const DischargePage = () => {
 
   if (!canDischarge) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6 bg-slate-50/50 rounded-[40px] m-10 border-4 border-dashed border-slate-200">
-         <div className="w-24 h-24 bg-red-100 rounded-[35px] flex items-center justify-center mb-6 rotate-6 shadow-2xl shadow-red-100/50">
-            <ShieldAlert size={40} className="text-red-500" />
+      <div className="min-h-[50vh] flex flex-col items-center justify-center text-center p-6 bg-slate-50/50 rounded-2xl m-4 border-2 border-dashed border-slate-200">
+         <div className="w-16 h-16 bg-red-100 rounded-xl flex items-center justify-center mb-4 shadow-sm">
+            <ShieldAlert size={28} className="text-red-500" />
          </div>
-         <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic mb-2">Protocol Violation</h1>
-         <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] max-w-sm leading-relaxed">
+         <h1 className="text-lg font-bold text-slate-900 tracking-tight mb-1">Protocol Violation</h1>
+         <p className="text-xs font-semibold text-slate-400 max-w-sm leading-relaxed">
             Your assigned access level does not permit entry into the <span className="text-red-500">Asset Issuance Ledger</span>. Contact your administrator to request functional clearance.
          </p>
          <Button 
            variant="ghost" 
            onClick={() => navigate('/dashboard')}
-           className="mt-10 h-14 px-10 rounded-2xl bg-white border border-slate-200 text-slate-900 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100"
+           className="mt-6 h-10 px-4 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100"
          >
            Return to Secure Hub
          </Button>
@@ -392,49 +418,46 @@ const DischargePage = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12 py-10 px-4">
+    <div className="max-w-[1600px] mx-auto space-y-6 py-6 px-4 lg:px-6">
       {/* Dynamic Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b border-slate-100 pb-10">
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-             <div className="w-16 h-16 bg-slate-950 rounded-[32px] flex items-center justify-center shadow-2xl rotate-6 transition-transform hover:rotate-0">
-               <Zap className="text-blue-500 fill-blue-500" size={32} />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between border-b border-slate-100 pb-4">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+             <div className="w-11 h-11 bg-slate-900 rounded-xl flex items-center justify-center shadow-sm">
+               <Zap className="text-blue-500 fill-blue-500" size={20} />
              </div>
              <div>
-               <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Asset Distribution</h1>
-               <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">
-                 Oversight & Logistics Pipeline
-               </div>
+               <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Discharge Inventories to Branches</h1>
              </div>
           </div>
-          
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
+
+          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
              <button 
                onClick={() => setView('new')}
-               className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${view === 'new' ? 'bg-white text-blue-600 shadow-xl' : 'text-slate-500 hover:text-slate-800'}`}
+               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === 'new' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'}`}
              >
-               Initiate Issue
+               Discharge
              </button>
              <button 
                onClick={() => setView('list')}
-               className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${view === 'list' ? 'bg-white text-blue-600 shadow-xl' : 'text-slate-500 hover:text-slate-800'}`}
+               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === 'list' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'}`}
              >
-               Operational Ledger
+               Discharge History
              </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv" />
           
-          <div className="flex bg-slate-100 p-1.5 rounded-[22px]">
-             <button type="button" onClick={handleDownloadTemplate} className="p-3 hover:bg-white rounded-xl text-slate-400 hover:text-blue-600 transition-all group relative">
-               <Download size={18} />
-               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Template</span>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+             <button type="button" onClick={handleDownloadTemplate} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all group relative">
+               <Download size={16} />
+               <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Template</span>
              </button>
-             <button type="button" onClick={() => fileInputRef.current.click()} className="p-3 hover:bg-white rounded-xl text-slate-400 hover:text-blue-600 transition-all group relative">
-               <Upload size={18} />
-               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Bulk CSV</span>
+             <button type="button" onClick={() => fileInputRef.current.click()} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all group relative">
+               <Upload size={16} />
+               <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Bulk CSV</span>
              </button>
           </div>
 
@@ -442,101 +465,96 @@ const DischargePage = () => {
             <Button 
               type="button" 
               onClick={handleAddItem}
-              className="bg-slate-950 hover:bg-black text-white font-black px-10 h-16 rounded-[28px] transition-all shadow-xl flex items-center gap-4 uppercase text-[10px] tracking-[0.2em]"
+              className="bg-slate-950 hover:bg-black text-white font-bold h-10 px-4 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-xs"
             >
-              <Plus size={18} strokeWidth={3} /> Add manual item
+              <Plus size={14} strokeWidth={2.5} /> Add manual item
             </Button>
           )}
         </div>
       </div>
       
       {view === 'new' ? (
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-12">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           {/* Logistics Panel */}
-          <div className="xl:col-span-4 space-y-10">
-             <Card className="rounded-[40px] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-slate-100">
-                 <div className="bg-slate-950 p-10 relative overflow-hidden h-full flex flex-col justify-center">
-                  <div className="absolute -right-4 -top-4 w-32 h-32 bg-blue-600/20 rounded-full blur-3xl opacity-50" />
-                  <div className="flex items-center gap-2 mb-4">
-                     <Building2 className="text-blue-500" size={16} />
-                     <h2 className="text-blue-500 font-black uppercase tracking-[0.3em] text-[10px]">Extraction Source</h2>
-                  </div>
-                  <h3 className="text-white text-3xl font-black tracking-tighter leading-none mb-8 italic uppercase">Inventory Origin</h3>
-                  
-                  <div className="space-y-6 relative z-10">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Centralized Registry Node</label>
-                        <CascadingUnitSelector 
-                          value={fromUnitId}
-                          onChange={setFromUnitId}
-                          initialTree={fullTree}
-                          loading={treeLoading}
-                          className="bg-white"
-                        />
-                    </div>
-                  </div>
-                </div>
-             </Card>
+          <div className="xl:col-span-4 space-y-6">
+             <Card className="rounded-2xl border-none shadow-sm bg-white overflow-hidden ring-1 ring-slate-100">
+                  <div className="bg-gradient-to-br from-slate-50 via-slate-100 to-white p-5 relative overflow-hidden h-full flex flex-col justify-center">
+                   <div className="absolute -right-4 -top-4 w-32 h-32 bg-blue-600/20 rounded-full blur-3xl opacity-50" />
+                   <h3 className="text-slate-900 text-base font-bold tracking-tight leading-tight mb-4">Inventory Origin</h3>
+                    
+                   <div className="space-y-4 relative z-10">
+                     <div className="space-y-1">
+                         <label className="text-xs font-semibold text-slate-500 ml-1"></label>
+                         <CascadingUnitSelector 
+                           value={fromUnitId}
+                           onChange={setFromUnitId}
+                           initialTree={fullTree}
+                           loading={treeLoading}
+                           className="bg-white"
+                         />
+                     </div>
+                   </div>
+                 </div>
+              </Card>
 
-             <div className="bg-slate-950 rounded-[50px] p-10 ring-8 ring-slate-100 flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-2">Issue Payload</div>
-                  <div className="text-7xl font-black text-white tracking-tighter italic">
-                    {items.length}
-                  </div>
-                </div>
-                <div className="w-20 h-20 bg-blue-600 rounded-[30px] flex items-center justify-center shadow-2xl shadow-blue-500/20">
-                  <CheckCircle2 className="text-white" size={40} />
-                </div>
-             </div>
+              <div className="bg-white rounded-2xl p-5 ring-1 ring-slate-200 flex items-center justify-between shadow-sm">
+                 <div>
+                   <div className="text-xs font-bold text-blue-600 mb-1">Issue Payload</div>
+                   <div className="text-3xl font-bold text-slate-900 tracking-tight">
+                     {items.length}
+                   </div>
+                 </div>
+                 <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm">
+                   <CheckCircle2 className="text-white" size={24} />
+                 </div>
+              </div>
           </div>
 
           {/* Assets Processing Panel */}
-          <div className="xl:col-span-8 space-y-10">
-             <div className="space-y-8">
+          <div className="xl:col-span-8 space-y-6">
+             <div className="space-y-6">
                 {items.map((item, index) => (
-                  <Card key={index} className="rounded-[50px] border-none bg-white shadow-2xl hover:shadow-blue-900/5 transition-all duration-700 overflow-hidden ring-1 ring-slate-100 group">
-                     <div className="flex flex-col lg:flex-row">
-                        <div className="lg:w-28 bg-slate-950 flex lg:flex-col items-center justify-center p-6 gap-10">
-                           <div className="text-4xl font-black text-blue-500/30 italic group-hover:text-blue-500 transition-colors">
+                  <Card key={index} className="relative rounded-2xl border-none bg-white shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden ring-1 ring-slate-100 group">
+                     <div className="flex flex-col">
+                        <div className="absolute right-4 top-1/2 hidden lg:flex flex-col items-center gap-2 -translate-y-1/2">
+                           <div className="w-8 h-8 rounded-lg bg-slate-900 text-blue-500 flex items-center justify-center text-xs font-bold italic">
                               0{index + 1}
                            </div>
                            <button 
                               type="button" 
                               onClick={() => handleRemoveItem(index)}
-                              className="text-slate-700 hover:text-red-500 transition-colors p-4 hover:bg-slate-900 rounded-3xl"
+                              className="w-8 h-8 rounded-lg bg-white text-slate-600 hover:text-red-500 hover:bg-slate-100 transition-colors shadow-sm grid place-items-center border border-slate-100"
                            >
-                             <Trash2 size={24} />
+                             <Trash2 size={14} />
                            </button>
                         </div>
-                        
-                        <div className="flex-1 p-10 space-y-10">
-                           <div className="flex flex-col lg:flex-row justify-between items-start gap-8">
-                              <div className="space-y-4 flex-1 w-full max-w-lg">
-                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Registry Category</label>
+                        <div className="flex-1 p-5 space-y-6">
+                           <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+                              <div className="space-y-1 flex-1 w-full max-w-lg">
+                                 <label className="text-xs font-semibold text-slate-500 ml-1">Category</label>
                                  <select
-                                   className="w-full h-14 bg-slate-50 border-none rounded-2xl px-6 font-black text-xs uppercase text-slate-900 focus:bg-white shadow-inner transition-all appearance-none outline-none"
+                                   className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-4 font-semibold text-sm text-slate-900 focus:bg-white transition-all outline-none"
                                    value={item.product_id}
                                    onChange={(e) => updateItem(index, 'product_id', e.target.value)}
                                    required
                                  >
-                                   <option value="">Catalogue Selection</option>
+                                   <option value="">Select product</option>
                                    {products?.map(p => <option key={p.id} value={p.id.toString()}>{p.name} — [{p.sku}]</option>)}
                                  </select>
                               </div>
 
-                              <div className="space-y-4 w-full lg:w-auto text-right">
-                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2 block">Discharge Amount</label>
-                                 <div className="flex items-center justify-end gap-4">
+                              <div className="space-y-1 w-full lg:w-auto text-right">
+                                 <label className="text-xs font-semibold text-slate-500 ml-1 block">Discharge Amount</label>
+                                 <div className="flex items-center justify-end gap-2">
                                     <LiveStockBadge productId={item.product_id} nodeId={fromUnitId} />
-                                    <button type="button" onClick={() => handleSplitItem(index)} className="p-3 bg-slate-50 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-white transition-all shadow-sm border border-slate-100">
+                                    <button type="button" onClick={() => handleSplitItem(index)} className="p-2.5 bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-white transition-all shadow-sm border border-slate-100">
                                        <Split size={14} />
                                     </button>
                                     <Input 
                                       type="number" 
                                       value={item.quantity} 
                                       onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                                      className="w-32 h-14 border-none bg-slate-50 rounded-2xl font-black text-xl text-blue-600 text-center shadow-inner"
+                                      className="w-20 h-10 border border-slate-200 bg-slate-50 rounded-lg font-bold text-sm text-blue-600 text-center shadow-inner"
                                       required 
                                     />
                                  </div>
@@ -547,29 +565,29 @@ const DischargePage = () => {
                              const selectedP = products?.find(p => p.id.toString() === item.product_id);
                              if (!selectedP) return null;
                              return (
-                                <div className="p-6 bg-slate-50/50 rounded-3xl border border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in duration-300">
-                                   <div className="space-y-1">
-                                      <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Architectural DNA</div>
-                                      <div className="text-[10px] font-bold text-slate-900 truncate uppercase">{selectedP.category} / {selectedP.sub_category}</div>
-                                   </div>
-                                   <div className="space-y-1">
-                                      <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Brand / Model</div>
-                                      <div className="text-[10px] font-bold text-slate-900 truncate uppercase">{selectedP.brand} {selectedP.model}</div>
-                                   </div>
-                                   <div className="space-y-1">
-                                      <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">UOM Unit</div>
-                                      <div className="text-[10px] font-bold text-slate-900 uppercase">{selectedP.unit}</div>
-                                   </div>
-                                   <div className="space-y-1 text-right">
-                                      <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">State SKU</div>
-                                      <div className="text-[10px] font-mono font-bold text-blue-500">{selectedP.sku}</div>
-                                   </div>
-                                </div>
-                             );
+                                 <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in duration-300">
+                                    <div className="space-y-0.5">
+                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Category</div>
+                                       <div className="text-[10px] font-bold text-slate-900 truncate uppercase">{selectedP.category} / {selectedP.sub_category}</div>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Brand / Model</div>
+                                       <div className="text-[10px] font-bold text-slate-900 truncate uppercase">{selectedP.brand} {selectedP.model}</div>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">UOM Unit</div>
+                                       <div className="text-[10px] font-bold text-slate-900 uppercase">{selectedP.unit}</div>
+                                    </div>
+                                    <div className="space-y-0.5 text-right">
+                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">SKU</div>
+                                       <div className="text-[10px] font-mono font-bold text-blue-500">{selectedP.sku}</div>
+                                    </div>
+                                 </div>
+                              );
                            })()}
 
-                           <div className="bg-blue-50 p-6 rounded-[35px] border border-blue-100 flex flex-col gap-4">
-                              <label className="text-[9px] font-black text-blue-600 uppercase tracking-widest ml-4">Target Destination (Peer or Descendant Branch)</label>
+                           <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex flex-col gap-2">
+                              <label className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider ml-1">Target Destination</label>
                               <CascadingUnitSelector 
                                 key={`target-node-${index}-${fromUnitId}`}
                                 value={item.to_unit_id}
@@ -577,47 +595,46 @@ const DischargePage = () => {
                                 initialTree={fullTree}
                                 loading={treeLoading}
                                 onChange={(val) => updateItem(index, 'to_unit_id', val)}
-                                className="bg-white rounded-[24px]"
+                                className="bg-white rounded-lg"
                               />
                            </div>
 
-                           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
-                              <div className="space-y-2">
-                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Condition State</label>
-                                 <select className="w-full h-12 bg-slate-50 border-none rounded-xl px-4 font-black text-[10px] uppercase text-slate-600 outline-none focus:ring-2 focus:ring-blue-100" value={item.condition} onChange={(e) => updateItem(index, 'condition', e.target.value)}>
-                                    <option value="new">Operational Alpha (New)</option>
-                                    <option value="good">Operational Beta (Used)</option>
-                                    <option value="fair">Degraded (Fair)</option>
-                                    <option value="damaged">Critical (Damaged)</option>
-                                 </select>
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-semibold text-slate-500 ml-1">Condition State</label>
+                                  <select className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 font-semibold text-xs text-slate-600 outline-none" value={item.condition} onChange={(e) => updateItem(index, 'condition', e.target.value)}>
+                                     <option value="new">New</option>
+                                     <option value="good">Used</option>
+                                     <option value="damaged">Damaged</option>
+                                  </select>
                               </div>
-                              <div className="space-y-2 md:col-span-2">
-                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Physical Asset Selection</label>
-                                 <button
-                                   type="button"
-                                   onClick={() => openSelectionModal(index)}
-                                   className={`w-full h-12 rounded-xl font-black px-6 text-[10px] uppercase tracking-widest transition-all flex items-center justify-between ${
-                                     item.serial_numbers?.length === parseInt(item.quantity) 
-                                       ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' 
-                                       : 'bg-blue-600 text-white shadow-lg shadow-blue-200'
-                                   }`}
-                                 >
-                                   <span>
-                                     {item.serial_numbers?.length === parseInt(item.quantity) 
-                                       ? `✓ ${item.serial_numbers.length} ITEMS ALLOCATED` 
-                                       : `SELECT ${item.quantity} PHYSICAL ITEMS`}
-                                   </span>
-                                   <Layers size={16} />
-                                 </button>
-                                 {item.serial_numbers?.length > 0 && (
-                                   <div className="mt-2 flex flex-wrap gap-1 px-2">
-                                      {item.serial_numbers.map(sn => (
-                                        <span key={sn} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-bold">
-                                          {sn}
-                                        </span>
-                                      ))}
-                                   </div>
-                                 )}
+                              <div className="space-y-1 md:col-span-2">
+                                  <label className="text-[10px] font-semibold text-slate-500 ml-1"></label>
+                                  <button
+                                    type="button"
+                                    onClick={() => openSelectionModal(index)}
+                                    className={`w-full h-10 rounded-lg font-bold px-4 text-xs transition-all flex items-center justify-between ${
+                                      item.serial_numbers?.length === parseInt(item.quantity) 
+                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' 
+                                        : 'bg-blue-600 text-white shadow-sm'
+                                    }`}
+                                  >
+                                    <span>
+                                      {item.serial_numbers?.length === parseInt(item.quantity) 
+                                        ? `✓ ${item.serial_numbers.length} ITEMS ALLOCATED` 
+                                        : `SELECT ${item.quantity} PHYSICAL ITEMS`}
+                                    </span>
+                                    <Layers size={14} />
+                                  </button>
+                                  {item.serial_numbers?.length > 0 && (
+                                    <div className="mt-1.5 flex flex-wrap gap-1 px-1">
+                                       {item.serial_numbers.map(sn => (
+                                         <span key={sn} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-bold">
+                                           {sn}
+                                         </span>
+                                       ))}
+                                    </div>
+                                  )}
                               </div>
                            </div>
                         </div>
@@ -626,150 +643,162 @@ const DischargePage = () => {
                 ))}
              </div>
 
-             <div className="pt-10 flex flex-col gap-6">
+             <div className="pt-4">
                 <Button 
                   disabled={submitting}
                   type="submit" 
-                  className="w-full bg-slate-950 h-28 rounded-[55px] shadow-2xl hover:bg-black text-white font-black text-3xl tracking-tighter uppercase transition-all flex items-center justify-center gap-8 group scale-95 hover:scale-100"
+                  className="w-full bg-slate-950 h-12 rounded-lg hover:bg-black text-white font-bold text-sm transition-all flex items-center justify-center gap-3 shadow-md"
                 >
                   {submitting ? 'Authenticating Issue...' : (
-                    <>Issue Assets <ArrowRight className="group-hover:translate-x-4 transition-all" size={32} /> </>
+                    <>Submit Manifest <ArrowRight size={16} /> </>
                   )}
                 </Button>
              </div>
           </div>
         </form>
       ) : (
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
            {/* Filtering Interface */}
-           <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-xl flex flex-col md:flex-row items-center gap-6">
+           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-4">
               <div className="relative flex-1 w-full">
-                 <Package className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                 <Input 
-                   placeholder="Registry Search (Discharge Number / ID)..." 
-                   value={search}
-                   onChange={(e) => setSearch(e.target.value)}
-                   className="pl-16 h-16 border-none bg-slate-50 font-black rounded-3xl text-sm uppercase tracking-widest"
-                 />
+                  <Package className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                  <Input 
+                    placeholder="Search Discharge Number / ID..." 
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-10 h-10 border border-slate-200 bg-slate-50 font-semibold rounded-lg text-xs"
+                  />
               </div>
-              <Button onClick={() => refetchList()} className="h-16 px-10 rounded-3xl bg-slate-900 border-none font-black uppercase text-[10px] tracking-[0.3em] hover:bg-black transition-colors w-full md:w-auto">
-                 Sync Record Ledger
+              <Button onClick={() => refetchList()} className="h-10 px-4 rounded-lg bg-slate-900 border-none font-bold text-xs hover:bg-black transition-colors w-full md:w-auto">
+                 refresh
               </Button>
            </div>
+           {(() => {
+              const dischargeList = Array.isArray(dischargeForms) ? dischargeForms : (dischargeForms?.data || []);
+              return (
+                <div className="space-y-6">
+                   <div className="grid grid-cols-1 gap-6">
+                      {dischargeList.map(form => (
+                        <Card key={form.id} className="rounded-xl border-none shadow-sm bg-white overflow-hidden ring-1 ring-slate-100 hover:shadow-md transition-all duration-300">
+                           <div className="flex flex-col xl:flex-row">
+                              <div className="p-5 flex-1 flex flex-col md:flex-row items-start md:items-center gap-4">
+                                 <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-blue-500 font-bold text-xs shadow-sm">
+                                    #{form.id}
+                                 </div>
+                                 <div className="space-y-2">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                       <h3 className="text-base font-bold text-slate-900 tracking-tight">{form.discharge_number}</h3>
+                                       <Badge className={`rounded-full px-2.5 py-0.5 font-semibold text-[10px] border shadow-sm ${
+                                         form.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                         form.status === 'approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                         form.status.startsWith('pending') ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+                                       }`}>
+                                         {form.status.replace('_', ' ')}
+                                       </Badge>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                                          <Building2 size={12} className="text-blue-500" /> {form.fromNode?.name}
+                                        </div>
+                                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                                          <ArrowRight size={12} className="text-slate-300" /> {form.discharge_type === 'user' ? `${form.toUser?.first_name} ${form.toUser?.last_name}` : form.toNode?.name}
+                                       </div>
+                                    </div>
+                                 </div>
+                              </div>
+        
+                              <div className="bg-slate-50/50 p-5 flex items-center justify-center gap-3 border-l border-slate-100">
+                                 {(() => {
+                                    const userCanApprove = form.can_action && !form.approvals?.some(a => Number(a.user_id) === Number(user?.id));
 
-           {/* Results Grid */}
-           <div className="grid grid-cols-1 gap-8">
-              {dischargeForms?.data?.map(form => (
-                <Card key={form.id} className="rounded-[50px] border-none shadow-2xl bg-white overflow-hidden group hover:scale-[1.01] transition-transform duration-500 ring-1 ring-slate-100">
-                   <div className="flex flex-col xl:flex-row">
-                      <div className="p-10 flex-1 flex flex-col md:flex-row items-start md:items-center gap-10">
-                         <div className="w-24 h-24 bg-slate-950 rounded-[35px] flex items-center justify-center text-blue-500 font-black text-xl italic shadow-2xl">
-                            ID#{form.id}
-                         </div>
-                         <div className="space-y-4">
-                            <div className="flex flex-wrap items-center gap-4">
-                               <h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">{form.discharge_number}</h3>
-                               <Badge className={`rounded-[20px] px-5 py-2 font-black uppercase tracking-[0.3em] text-[8px] shadow-sm ${
-                                 form.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                                 form.status === 'approved' ? 'bg-blue-100 text-blue-700' :
-                                 form.status.startsWith('pending') ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
-                               }`}>
-                                 {form.status.replace('_', ' ')}
-                               </Badge>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-2">
-                               <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                  <Building2 size={12} className="text-blue-500" /> {form.fromNode?.name}
-                               </div>
-                               <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                  <ArrowRight size={12} className="text-slate-300" /> {form.discharge_type === 'user' ? `${form.toUser?.first_name} ${form.toUser?.last_name}` : form.toNode?.name}
-                               </div>
-                            </div>
-                         </div>
-                      </div>
-
-                      <div className="bg-slate-50 p-10 flex items-center justify-center gap-4 border-l border-slate-100">
-                         {(() => {
-                            const canAction = form.can_action && 
-                                            !form.approvals?.some(a => Number(a.user_id) === Number(user?.id));
-
-                            if (!canAction) return null;
-
-                            return (
-                               <div className="flex gap-4">
-                                  <Button 
-                                    onClick={async () => {
-                                      try {
-                                        const res = await api.post(`/discharge/${form.id}/approve`, { notes: 'Authorized via Ledger' });
-                                        toast.success(res.data.message);
-                                        refetchList();
-                                      } catch (err) {
-                                        toast.error(err.response?.data?.message || 'Approval failed');
-                                      }
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 h-16 rounded-3xl shadow-xl uppercase text-[10px] tracking-[0.2em] transition-all"
-                                  >
-                                    Approve Phase
-                                  </Button>
-                                  <Button 
-                                    onClick={async () => {
-                                      const reason = window.prompt("Reason for rejection:");
-                                      if (reason === null) return;
-                                      try {
-                                        await api.post(`/discharge/${form.id}/reject`, { notes: reason });
-                                        toast.success("Discharge protocol rejected.");
-                                        refetchList();
-                                      } catch (err) {
-                                        toast.error(err.response?.data?.message || 'Rejection failed');
-                                      }
-                                    }}
-                                    className="bg-red-500 hover:bg-red-400 text-white font-black px-8 h-16 rounded-3xl shadow-xl uppercase text-[10px] tracking-[0.2em] transition-all"
-                                  >
-                                    Reject
-                                  </Button>
-                               </div>
-                            );
-                         })()}
-
-                         {form.status === 'approved' && (
-                           <Button 
-                             onClick={async () => {
-                               try {
-                                 const res = await api.post(`/discharge/${form.id}/execute`, {});
-                                 toast.success(res.data.message);
-                                 refetchList();
-                                } catch (err) {
-                                  const errorData = err.response?.data;
-                                  if (errorData?.errors && Array.isArray(errorData.errors)) {
-                                    errorData.errors.forEach(e => {
-                                      const field = e.path || e.field || 'Error';
-                                      const msg = e.msg || e.message || 'Validation failed';
-                                      toast.error(`${field}: ${msg}`);
-                                    });
-                                  } else {
-                                    toast.error(errorData?.message || 'Physical issue failed');
-                                  }
-                                }
-                             }}
-                             className="bg-blue-600 hover:bg-blue-500 text-white font-black px-10 h-16 rounded-3xl shadow-xl shadow-blue-200 uppercase text-[10px] tracking-[0.2em] transition-all"
-                           >
-                             Execute Issue
-                           </Button>
-                         )}
-                         <Button variant="ghost" className="h-16 px-8 rounded-3xl bg-white text-slate-900 font-black uppercase text-[9px] tracking-widest shadow-sm hover:translate-y-[-2px] transition-all">
-                            Manifest Details
-                         </Button>
-                      </div>
+                                    if (!userCanApprove) return null;
+        
+                                    return (
+                                       <div className="flex gap-2">
+                                          <Button 
+                                            onClick={async () => {
+                                              try {
+                                                const res = await api.post(`/discharge/${form.id}/approve`, { notes: 'Authorized via Ledger' });
+                                                toast.success(res.data.message);
+                                                refetchList();
+                                                window.dispatchEvent(new Event('workflowUpdated'));
+                                              } catch (err) {
+                                                toast.error(err.response?.data?.message || 'Approval failed');
+                                              }
+                                            }}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 h-10 rounded-lg text-xs transition-all"
+                                          >
+                                            Approve
+                                          </Button>
+                                          <Button 
+                                            onClick={async () => {
+                                              const reason = window.prompt("Reason for rejection:");
+                                              if (reason === null) return;
+                                              try {
+                                                await api.post(`/discharge/${form.id}/reject`, { notes: reason });
+                                                toast.success("Discharge protocol rejected.");
+                                                refetchList();
+                                                window.dispatchEvent(new Event('workflowUpdated'));
+                                              } catch (err) {
+                                                toast.error(err.response?.data?.message || 'Rejection failed');
+                                              }
+                                            }}
+                                            className="bg-red-500 hover:bg-red-400 text-white font-bold px-4 h-10 rounded-lg text-xs transition-all"
+                                          >
+                                            Reject
+                                          </Button>
+                                       </div>
+                                    );
+                                 })()}
+        
+                                 {form.status === 'approved' && (
+                                   <Button 
+                                     onClick={async () => {
+                                       try {
+                                         const res = await api.post(`/discharge/${form.id}/execute`, {});
+                                         toast.success(res.data.message);
+                                         refetchList();
+                                         window.dispatchEvent(new Event('workflowUpdated'));
+                                        } catch (err) {
+                                          const errorData = err.response?.data;
+                                          if (errorData?.errors && Array.isArray(errorData.errors)) {
+                                            errorData.errors.forEach(e => {
+                                              const field = e.path || e.field || 'Error';
+                                              const msg = e.msg || e.message || 'Validation failed';
+                                              toast.error(`${field}: ${msg}`);
+                                            });
+                                          } else {
+                                            toast.error(errorData?.message || 'Physical issue failed');
+                                          }
+                                        }
+                                     }}
+                                     className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 h-10 rounded-lg text-xs transition-all"
+                                   >
+                                     Execute discharge
+                                   </Button>
+                                 )}
+                                 <Button variant="ghost" className="h-10 px-4 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-all">Details
+                                 </Button>
+                              </div>
+                           </div>
+                        </Card>
+                      ))}
+                      {dischargeList.length === 0 && (
+                        <div className="py-16 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-3 opacity-50">
+                           <Zap size={40} className="text-slate-300" />
+                           <p className="font-bold text-xs text-slate-400">Distribution Ledger Empty</p>
+                        </div>
+                      )}
                    </div>
-                </Card>
-              ))}
-              {dischargeForms?.data?.length === 0 && (
-                <div className="py-32 bg-slate-50 rounded-[60px] border-4 border-dashed border-slate-200 flex flex-col items-center justify-center gap-6 opacity-40">
-                   <Zap size={60} className="text-slate-300" />
-                   <p className="font-black uppercase tracking-[0.4em] text-sm text-slate-400">Distribution Ledger Empty</p>
+                   
+                   {pagination && pagination.pages > 1 && (
+                     <div className="flex justify-center pt-4">
+                        <Pagination pagination={pagination} onPageChange={setPage} />
+                     </div>
+                   )}
                 </div>
-              )}
-           </div>
+              );
+           })()}
         </div>
       )}
 
@@ -779,27 +808,27 @@ const DischargePage = () => {
         onClose={() => setSelectionModalOpen(false)}
         title="Physical Asset Registry Allocation"
       >
-        <div className="space-y-6 p-2">
-          <div className="bg-slate-950 p-6 rounded-[30px] border border-slate-800 flex justify-between items-center">
+        <div className="space-y-4 p-2">
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
             <div>
-              <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-1">Target Quantity</p>
-              <p className="text-3xl font-black text-white italic tracking-tighter">
+              <p className="text-xs font-semibold text-blue-400 mb-0.5">Target Quantity</p>
+              <p className="text-lg font-bold text-white">
                 {items[activeItemIndex]?.serial_numbers?.length || 0} / {items[activeItemIndex]?.quantity || 0}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Catalog Unit</p>
-              <p className="text-sm font-bold text-slate-300 uppercase">
+              <p className="text-xs font-semibold text-slate-500 mb-0.5">Catalog Unit</p>
+              <p className="text-xs font-bold text-slate-300">
                 {products.find(p => p.id.toString() === items[activeItemIndex]?.product_id)?.name || 'N/A'}
               </p>
             </div>
           </div>
 
-          <div className="max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+          <div className="max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar space-y-2">
             {loadingPhysical ? (
-              <div className="py-10 text-center text-slate-400 font-black uppercase text-[10px] animate-pulse">Scanning Registry...</div>
+              <div className="py-10 text-center text-slate-400 font-semibold text-xs animate-pulse">Scanning Registry...</div>
             ) : availablePhysicalItems.length === 0 ? (
-              <div className="py-10 text-center text-slate-400 font-black uppercase text-[10px]">No available items found at origin unit</div>
+              <div className="py-10 text-center text-slate-400 font-semibold text-xs">No available items found at origin unit</div>
             ) : (
               <div className="grid grid-cols-1 gap-2">
                 {availablePhysicalItems.map((inv) => {
@@ -814,24 +843,24 @@ const DischargePage = () => {
                       type="button"
                       disabled={isPickedInOtherLine}
                       onClick={() => togglePhysicalItem(inv.serial_number)}
-                      className={`w-full p-4 rounded-2xl border flex items-center justify-between transition-all ${
+                      className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all ${
                         isSelected 
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-lg' 
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
                           : isPickedInOtherLine 
                             ? 'bg-slate-50 border-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
                             : 'bg-white border-slate-100 text-slate-600 hover:border-blue-200'
                       }`}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-3 h-3 rounded-full ${isSelected ? 'bg-white animate-pulse' : 'bg-slate-200'}`} />
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-white animate-pulse' : 'bg-slate-200'}`} />
                         <div className="text-left">
-                          <p className="text-xs font-black tracking-tight">{inv.serial_number || `ITEM-${inv.id}`}</p>
-                          <p className={`text-[8px] font-bold uppercase tracking-widest ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
+                          <p className="text-xs font-bold tracking-tight">{inv.serial_number || `ITEM-${inv.id}`}</p>
+                          <p className={`text-[9px] font-semibold uppercase tracking-wider ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
                             ID: {inv.id} {inv.batch_number ? `• BATCH: ${inv.batch_number}` : ''}
                           </p>
                         </div>
                       </div>
-                      {isPickedInOtherLine && <span className="text-[8px] font-black uppercase">ALREADY ALLOCATED</span>}
+                      {isPickedInOtherLine && <span className="text-[9px] font-bold">ALREADY ALLOCATED</span>}
                     </button>
                   );
                 })}
@@ -841,7 +870,7 @@ const DischargePage = () => {
 
           <Button
             onClick={() => setSelectionModalOpen(false)}
-            className="w-full bg-slate-950 text-white h-16 rounded-[24px] font-black uppercase text-[10px] tracking-widest shadow-xl"
+            className="w-full bg-slate-950 text-white h-10 rounded-lg font-bold text-xs shadow-sm hover:bg-black transition-colors"
           >
             Confirm Allocation Selection
           </Button>

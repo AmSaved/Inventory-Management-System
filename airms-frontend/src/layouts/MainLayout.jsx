@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import Navbar from '../components/common/Navbar';
+import Header from '../components/common/Header';
 import Sidebar from '../components/common/Sidebar';
 import Footer from '../components/common/Footer';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import { Menu, X } from 'lucide-react';
 
 const MainLayout = () => {
   const { isAuthenticated, loading } = useAuth();
@@ -47,18 +46,11 @@ const MainLayout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* GLOBAL SIDEBAR TOGGLE (The 3-Line Hyphens) */}
-      <button 
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed top-6 left-6 z-[60] w-12 h-12 bg-slate-950 text-white rounded-2xl shadow-2xl flex items-center justify-center transition-all hover:bg-blue-600 active:scale-90 lg:hidden"
-      >
-        {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
-
-      <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+    <div className="min-h-screen bg-slate-50/50 flex flex-col">
+      {/* Top Navigation Bar Header - Spans full width of the screen */}
+      <Header setSidebarOpen={setSidebarOpen} />
       
-      <div className="flex relative">
+      <div className="flex flex-grow relative pt-20">
         {/* Mobile Overlay (Darkens background when sidebar is open) */}
         {sidebarOpen && (
           <div 
@@ -67,12 +59,15 @@ const MainLayout = () => {
           />
         )}
         
+        {/* Sidebar Navigation - positioned below the header */}
         <Sidebar open={sidebarOpen} />
         
-        <main className={`flex-1 transition-all duration-500 ease-in-out ${sidebarOpen ? 'lg:ml-64' : 'ml-0'} flex flex-col min-h-screen`}>
-          <div className="p-4 lg:p-10 flex-grow">
+        {/* Main Content Area - positioned below the header */}
+        <main className={`flex-1 transition-all duration-500 ease-in-out ${sidebarOpen ? 'lg:ml-64' : 'ml-0'} flex flex-col min-h-[calc(100vh-80px)]`}>
+          <div className="p-4 lg:px-8 lg:pt-2 lg:pb-8 flex-grow">
             <Outlet />
           </div>
+          
           <Footer />
         </main>
       </div>

@@ -24,6 +24,11 @@ router.get('/:id', checkPermission(['product:read', 'request:create', 'item:requ
 router.get('/sku/:sku', checkPermission('product:read'), productController.getAll);
 router.get('/barcode/:barcode', checkPermission('product:read'), productController.getAll);
 
+router.post('/bulk', 
+    checkPermission('product:create'), 
+    productController.bulkCreate
+);
+
 router.post('/', 
     checkPermission('product:create'), 
     validate(createProductValidation), 

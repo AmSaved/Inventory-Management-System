@@ -1,449 +1,381 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import QRCode from 'react-qr-code';
 import { useFetch } from '../hooks/useFetch';
 import { usePermissions } from '../hooks/usePermissions';
-import Card, { CardContent } from '../components/ui/Card';
+import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import Table, { TableHead, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/Table';
-import Badge from '../components/ui/Badge';
 import Modal from '../components/common/Modal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import CascadingUnitSelector from '../components/common/CascadingUnitSelector';
-import { formatNumber, formatDate } from '../utils/formatters';
 import inventoryService from '../services/inventoryService';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import Pagination from '../components/ui/Pagination';
-import { 
-  Package, 
-  Search, 
-  Filter, 
-  Plus, 
-  Settings2, 
-  History, 
-  ArrowRight,
-  ShieldCheck,
-  Building2,
-  Box,
-  AlertTriangle,
-  Fingerprint,
-  QrCode,
-  Printer,
-  Eye
+import {
+  Box, Search, GitFork, Trash2, Info, X,
+  AlertTriangle, PackagePlus, PackageMinus, Layers, QrCode,
+  Edit3, ArrowRight, ArrowLeftRight, MessageSquareWarning, RefreshCw,
+  Menu, Filter, ChevronDown, History, Plus
 } from 'lucide-react';
-import QRLabel from '../components/inventory/QRLabel';
+import UnitLedgerModal from '../components/inventory/UnitLedgerModal';
 import ActivityLogPanel from '../components/inventory/ActivityLogPanel';
 
+// ─── IDENTITY CARD MODAL ─────────────────────────────────────────────────────
+const IdentityCard = ({ item, onClose }) => {
+  if (!item) return null;
+  const p = item.product || {};
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-md w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-slate-950 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Box className="text-white" size={16} />
+            </div>
+            <div>
+              <h2 className="text-white font-bold text-sm tracking-tight">{p.name || 'Unknown Item'}</h2>
+              <div className="text-blue-400 text-xs font-semibold">{p.sku}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-all text-white">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+           <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-slate-50 rounded-lg">
+                 <p className="text-xs font-semibold text-slate-500 mb-0.5">Stock Status</p>
+                 <p className="text-base font-bold text-slate-900 tracking-tight">{item.quantity} Units Available</p>
+              </div>
+              <div className="p-3 bg-blue-50 rounded-lg">
+                 <p className="text-xs font-semibold text-blue-500 mb-0.5">Catalog Entry</p>
+                 <p className="text-xs font-bold text-blue-900 tracking-wide">{p.category || 'General'}</p>
+              </div>
+           </div>
+           <div className="space-y-3">
+              <DetailRow label="Condition" value={item.condition} />
+              <DetailRow label="Latest Location" value={item.location_details || item.organizationNode?.name} />
+              <DetailRow label="Batch Identity" value={item.batch_number} />
+              <DetailRow label="Storage Node" value={item.organizationNode?.name} />
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DetailRow = ({ label, value }) => (
+  <div className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
+    <span className="text-xs font-semibold text-slate-400">{label}</span>
+    <span className="text-xs font-semibold text-slate-800">{value || 'N/A'}</span>
+  </div>
+);
+
+// ─── MAIN COCKPIT COMPONENT ──────────────────────────────────────────────────
 const InventoryPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { canAdjustInventory } = usePermissions();
-  
+
   const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
-  const [adjusting, setAdjusting] = useState(false);
+  const [identityItem, setIdentityItem] = useState(null);
+  const [unitLedgerItem, setUnitLedgerItem] = useState(null);
+  const [qrItem, setQrItem] = useState(null);
+
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [activityPanelOpen, setActivityPanelOpen] = useState(false);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
-  const [adjustmentData, setAdjustmentData] = useState({
-    adjustment: 0,
-    type: 'add',
-    reason: ''
+  const [decommissionModalOpen, setDecommissionModalOpen] = useState(false);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+
+  const [adjustmentData, setAdjustmentData] = useState({ adjustment: 0, type: 'add', reason: '' });
+
+  const { data: rawItems, loading, refetch } = useFetch('/inventory', {
+    params: { search, org_node_id: selectedUnit, limit: 1000 }
   });
 
-  const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [itemForQr, setItemForQr] = useState(null);
-  const [page, setPage] = useState(1);
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // Auto-set the user's unit for filtering if not already set
-  useEffect(() => {
-    if (user?.role?.level < 100 && user?.org_node_id && !selectedUnit) {
-      // setSelectedUnit(user.org_node_id); 
-      // Note: We might want "All" by default for admins, but for others, auto-select is better.
-    }
-  }, [user, selectedUnit]);
-
-  const { data: inventoryData, pagination, loading, refetch } = useFetch('/inventory', {
-    params: {
-      search,
-      org_node_id: selectedUnit,
-      page,
-      limit: 15
-    }
-  });
-
-  // Reset to page 1 when search or unit changes
-  useEffect(() => {
-    setPage(1);
-  }, [search, selectedUnit]);
+  const groupedItems = useMemo(() => {
+    if (!rawItems) return [];
+    const groups = {};
+    rawItems.forEach(item => {
+      const key = item.product?.sku || item.product_id || 'unlinked';
+      if (!groups[key]) {
+        groups[key] = { ...item, quantity: 0, records: [] };
+      }
+      groups[key].quantity += item.quantity;
+      groups[key].records.push(item);
+    });
+    return Object.values(groups);
+  }, [rawItems]);
 
   const handleAdjust = async () => {
-    if (!adjustmentData.adjustment && adjustmentData.type !== 'set') {
-        toast.error('Please enter a valid adjustment value');
-        return;
-    }
-    setAdjusting(true);
     try {
-      await inventoryService.adjustQuantity(
-        selectedItem.id,
-        adjustmentData.adjustment,
-        adjustmentData.type,
-        adjustmentData.reason
-      );
-      toast.success('Inventory state updated across system');
+      await inventoryService.adjustQuantity(selectedItem.id, adjustmentData.adjustment, adjustmentData.type, adjustmentData.reason);
+      toast.success('Inventory state adjusted');
       setAdjustModalOpen(false);
       refetch();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Update failed');
-    } finally {
-      setAdjusting(false);
-    }
+    } catch (e) { toast.error('Adjustment failed'); }
   };
 
-  const getStockStatus = (quantity, minimum) => {
-    if (quantity <= 0) return { label: 'DELETED/EMPTY', color: 'danger', icon: <AlertTriangle size={12} /> };
-    if (quantity <= minimum) return { label: 'CRITICAL LOW', color: 'warning', icon: <History size={12} /> };
-    return { label: 'SECURE STOCK', color: 'success', icon: <ShieldCheck size={12} /> };
+  const handleBulkDelete = async () => {
+    try {
+      await inventoryService.bulkDelete(selectedItem.product_id, selectedItem.org_node_id);
+      toast.success(`Registry Wipe: All ${selectedItem.quantity} units removed.`);
+      setBulkDeleteModalOpen(false);
+      refetch();
+    } catch (e) { toast.error('Bulk delete failed'); }
   };
 
-  // We remove the full-page loading return to keep the UI static during fetch
-  // if (loading) return <LoadingSpinner />;
+  if (loading && !rawItems) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-10 py-10 px-6 print:hidden">
+    <div className="max-w-[1600px] mx-auto py-6 px-4 lg:px-6 space-y-6 animate-in fade-in duration-700">
+      {identityItem && <IdentityCard item={identityItem} onClose={() => setIdentityItem(null)} />}
+      {unitLedgerItem && (
+        <UnitLedgerModal 
+          item={unitLedgerItem} 
+          onClose={() => setUnitLedgerItem(null)} 
+          onAdjust={(u) => { setSelectedItem(u); setAdjustModalOpen(true); }}
+          onDecommission={(u) => { setSelectedItem(u); setDecommissionModalOpen(true); }}
+          onTransfer={(u) => navigate(`/transfers?product_id=${u.product_id}&from_node_id=${u.org_node_id}`)}
+          onQr={(u) => setQrItem(u)}
+          onReport={(u) => navigate(`/report-problem?inventory_id=${u.id}`)}
+          onIdentity={(u) => setIdentityItem(u)}
+          onReplenish={(u) => navigate(`/requests/new?product_id=${u.product_id}`)}
+          onSplit={(u) => navigate(`/inventory/split?inventory_id=${u.id}`)}
+        />
+      )}
+
       {/* Dynamic Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-2">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-             <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center shadow-2xl">
-                <Box className="text-blue-400" size={24} />
+             <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-sm">
+                <Box className="text-blue-400" size={20} />
              </div>
-             <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Inventory Assets</h1>
+             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Inventories</h1>
           </div>
-          <p className="text-slate-400 font-bold text-[10px] tracking-[0.2em] uppercase ml-1">
+          <p className="text-slate-400 font-semibold text-xs ml-1">
             Global Infrastructure Ledger — {user?.company?.name || 'Authorized Entity'}
           </p>
         </div>
         
-         <div className="flex gap-3">
+         <div className="flex flex-wrap gap-3 w-full md:w-auto">
            <Button 
             variant="outline"
-            className="border-2 border-slate-200 rounded-2xl px-6 h-14 font-black text-slate-600 hover:bg-slate-50 uppercase text-[10px] tracking-widest"
+            className="flex-1 md:flex-none border border-slate-200 rounded-lg px-4 h-10 font-semibold text-xs text-slate-600 hover:bg-slate-50 transition-all"
             onClick={() => setActivityPanelOpen(true)}
            >
-             <History size={16} className="mr-2" /> View Logs
+             <History size={14} className="mr-1.5" /> View Logs
            </Button>
-            {canAdjustInventory && (
+           <button onClick={() => navigate('/discharge')} className="flex-1 md:flex-none bg-slate-950 hover:bg-black text-white font-semibold px-4 h-10 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm">
+             <PackageMinus size={14} /> Distribution
+           </button>
+           {canAdjustInventory && (
               <Button 
                 onClick={() => navigate('/store')}
-                className="bg-blue-600 border-b-4 border-blue-800 hover:bg-blue-700 text-white font-black px-8 h-14 rounded-2xl transition-all shadow-xl shadow-blue-100 flex items-center gap-2 uppercase text-[10px] tracking-[0.15em]"
+                className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 h-10 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-xs border-none"
               >
-                <Plus size={18} /> Add New Stock
+                <Plus size={16} /> New Intake
               </Button>
             )}
-        </div>
+         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
-        {/* Left Sidebar: Advanced Filters */}
-        <div className="lg:col-span-1 space-y-8">
-           <div className="p-8 bg-white border border-slate-100 rounded-[40px] shadow-sm space-y-8">
-              <div className="flex items-center justify-between">
-                 <div className="flex items-center gap-2">
-                    <Filter size={16} className="text-blue-600" />
-                    <h3 className="font-black text-slate-900 text-xs uppercase tracking-widest">Scope filtering</h3>
-                 </div>
-                 <Settings2 size={16} className="text-slate-300" />
-              </div>
-
-              <div className="space-y-4">
-                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Organizational Unit</label>
-                  <CascadingUnitSelector 
-                    value={selectedUnit}
-                    onChange={setSelectedUnit}
-                    className="bg-white"
-                  />
-                 <p className="text-[9px] text-slate-400 px-2 italic leading-tight">
-                    * Results include current unit and all child-level assets.
-                 </p>
-              </div>
-
-              <div className="space-y-4">
-                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Universal Search</label>
-                  <div className="relative group">
-                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 transition-colors" size={16} />
-                     <Input
-                       placeholder="Search by ID or Name..."
-                       value={searchValue}
-                       onChange={(e) => setSearchValue(e.target.value)}
-                       onKeyDown={(e) => {
-                         if (e.key === 'Enter') {
-                           setSearch(searchValue);
-                         }
-                       }}
-                       className="pl-12 h-14 rounded-2xl border-2 border-slate-50 font-bold text-sm bg-slate-50/30"
-                     />
-                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-2 ml-1">Enter to Search</p>
-                  </div>
-              </div>
-
-              <div className="bg-slate-900 rounded-3xl p-6 relative overflow-hidden">
-                 <div className="absolute top-0 right-0 p-2">
-                   <div className="w-8 h-8 rounded-full bg-blue-500/10 blur-xl" />
-                 </div>
-                 <div className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-4">Quick Stats</div>
-                 <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <div className="text-2xl font-black text-white italic tracking-tighter">{inventoryData?.length || 0}</div>
-                       <div className="text-[8px] font-bold text-slate-500 uppercase">Records</div>
+      {/* Responsive Filter Bar */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:flex-row">
+         
+         {/* Filter Section */}
+         <div className="flex-1 border-b lg:border-b-0 lg:border-r border-slate-100">
+              {/* Mobile Toggle Button */}
+              <div className="md:hidden flex items-center justify-between p-4 bg-slate-50 border-b border-slate-100">
+                 <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-slate-950 rounded-lg flex items-center justify-center text-white">
+                       <Filter size={14} />
                     </div>
-                    <div>
-                       <div className="text-2xl font-black text-white italic tracking-tighter">
-                          {inventoryData?.reduce((acc, curr) => acc + (curr.quantity <= curr.minimum_quantity ? 1 : 0), 0)}
+                    <span className="text-xs font-semibold text-slate-950 uppercase tracking-wider">Protocol Filters</span>
+                 </div>
+                 <button 
+                    onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
+                    className="w-8 h-8 bg-white rounded-lg shadow-sm border border-slate-100 flex items-center justify-center text-slate-400"
+                 >
+                    {mobileFiltersOpen ? <X size={18} /> : <Menu size={18} />}
+                 </button>
+              </div>
+
+              <div className={`${mobileFiltersOpen ? 'block' : 'hidden'} md:block p-4 animate-in slide-in-from-top duration-300`}>
+                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                    <div className="md:col-span-4 space-y-1.5">
+                       <label className="text-xs font-semibold text-slate-500 ml-1">Global Search</label>
+                       <div className="relative">
+                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                         <input 
+                           value={searchValue} 
+                           onChange={e => setSearchValue(e.target.value)} 
+                           onKeyDown={e => e.key === 'Enter' && setSearch(searchValue)}
+                           className="w-full h-10 pl-9 pr-4 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-blue-300 transition-all text-slate-800"
+                           placeholder="SKU or Name..."
+                         />
                        </div>
-                       <div className="text-[8px] font-bold text-slate-500 uppercase">Critical</div>
+                    </div>
+                    <div className="md:col-span-5 space-y-1.5">
+                       <label className="text-xs font-semibold text-slate-500 ml-1">Select Branch</label>
+                       <CascadingUnitSelector value={selectedUnit} onChange={setSelectedUnit} />
+                    </div>
+                    <div className="md:col-span-3">
+                       <button onClick={refetch} className="w-full h-10 bg-slate-950 text-white rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-slate-900 transition-all shadow-sm">
+                         <RefreshCw size={12} /> Refresh Registry
+                       </button>
                     </div>
                  </div>
               </div>
-           </div>
-        </div>
+         </div>
 
-        {/* Right Main Content: Ledger */}
-        <div className="lg:col-span-3">
-          <Card className="rounded-[40px] border-none bg-white shadow-2xl shadow-slate-100 overflow-hidden">
-            <CardContent className="p-0">
-              <Table>
-                <TableHead>
-                  <TableRow className="bg-slate-50/50 border-b-2 border-slate-50">
-                    <TableHeader className="py-6 px-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Asset Details</TableHeader>
-                    <TableHeader className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global Unit</TableHeader>
-                    <TableHeader className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</TableHeader>
-                    <TableHeader className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right px-8">Actions</TableHeader>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {loading ? (
-                    // Skeleton Rows for high-end perceived performance
-                    Array.from({ length: 8 }).map((_, i) => (
-                      <TableRow key={`skeleton-${i}`} className="animate-pulse">
-                        <TableCell className="py-6 px-8">
-                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-slate-100 rounded-2xl" />
-                              <div className="space-y-2">
-                                 <div className="h-4 w-32 bg-slate-100 rounded-lg" />
-                                 <div className="h-2 w-20 bg-slate-50 rounded-lg" />
-                              </div>
-                           </div>
-                        </TableCell>
-                        <TableCell><div className="h-8 w-24 bg-slate-50 rounded-xl" /></TableCell>
-                        <TableCell><div className="h-8 w-32 bg-slate-50 rounded-xl" /></TableCell>
-                        <TableCell className="px-8 text-right"><div className="h-10 w-32 bg-slate-50 rounded-xl ml-auto" /></TableCell>
-                      </TableRow>
-                    ))
-                  ) : inventoryData?.map((item) => {
-                    const stockStatus = getStockStatus(item.quantity, item.minimum_quantity);
-                    return (
-                      <TableRow key={item.id} className="hover:bg-slate-50/30 transition-colors group">
-                        <TableCell className="py-6 px-8">
-                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-white rounded-2xl border-2 border-slate-50 flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                                 <Package className="text-slate-200 group-hover:text-blue-400 transition-colors" size={24} />
-                              </div>
-                              <div>
-                                 <div className="font-black text-slate-900 text-sm tracking-tight">{item.product?.name}</div>
-                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                                    <span className="text-blue-500">{item.product?.sku}</span>
-                                    <span> — </span>
-                                    <span>{item.product?.category}</span>
-                                 </div>
-                              </div>
-                           </div>
-                        </TableCell>
-                        <TableCell>
-                           <div className="flex items-center gap-2">
-                             <div className="p-2 bg-slate-50 rounded-xl">
-                               <Building2 size={12} className="text-slate-400" />
-                             </div>
-                             <div>
-                               <div className="text-xs font-black text-slate-700">{item.organizationNode?.name}</div>
-                               <div className="text-[9px] font-bold text-slate-400 uppercase">{item.organizationNode?.code}</div>
-                             </div>
-                           </div>
-                        </TableCell>
-                        <TableCell>
-                           <div className="space-y-1.5">
-                              <div className="flex items-center gap-4">
-                                 <div className="text-2xl font-black text-slate-900 tracking-tighter italic">{formatNumber(item.quantity)}</div>
-                                 <Badge variant={stockStatus.color} className="rounded-lg px-2.5 py-1 text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 border-none shadow-sm">
-                                    {stockStatus.icon}
-                                    {stockStatus.label}
-                                 </Badge>
-                              </div>
-                              <div className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Level: {formatNumber(item.minimum_quantity)} Min</div>
-                           </div>
-                        </TableCell>
-                        <TableCell className="px-8 text-right">
-                          <div className="flex items-center justify-end gap-2 transition-all">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => navigate(`/inventory/${item.id}`)}
-                              className="w-10 h-10 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-blue-600 shadow-sm"
-                              title="View Asset Profile"
-                            >
-                              <Eye size={14} />
-                            </Button>
-                             <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setItemForQr(item);
-                                  setQrModalOpen(true);
-                                }}
-                                className="w-10 h-10 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-indigo-600 shadow-sm"
-                                title="Print Asset Label"
-                              >
-                                <QrCode size={14} />
-                              </Button>
-                              {canAdjustInventory && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedItem(item);
-                                  setAdjustmentData({ adjustment: 0, type: 'add', reason: '' });
-                                  setAdjustModalOpen(true);
-                                }}
-                                className="w-10 h-10 rounded-xl bg-white border border-slate-100 text-slate-400 hover:text-emerald-600 shadow-sm"
-                              >
-                                <Plus size={14} />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              {inventoryData?.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-32 text-slate-400 space-y-4">
-                   <div className="w-20 h-20 bg-slate-50 rounded-[30px] flex items-center justify-center">
-                      <Box size={40} className="text-slate-100" />
-                   </div>
-                   <div className="text-center">
-                     <p className="font-black uppercase tracking-[0.2em] text-[10px]">No infrastructure records</p>
-                     <p className="text-[10px] font-bold opacity-60">Adjust criteria or expand unit scope.</p>
-                   </div>
-                </div>
+         {/* Quick Stats */}
+         <div className="lg:w-72 p-4 bg-slate-50/50 flex flex-col justify-center border-t lg:border-t-0 border-slate-200">
+            <div className="bg-slate-900 rounded-xl p-4 relative overflow-hidden shadow-sm shadow-slate-900/10">
+               <div className="text-[10px] font-bold text-blue-400 mb-3 uppercase tracking-[0.2em]">Quick Stats</div>
+               <div className="grid grid-cols-2 gap-4">
+                  <div>
+                     <div className="text-lg font-bold text-white tracking-tight">{rawItems?.length || 0}</div>
+                     <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Records</div>
+                  </div>
+                  <div>
+                     <div className="text-lg font-bold text-amber-400 tracking-tight">
+                        {rawItems?.reduce((acc, curr) => acc + (curr.quantity <= curr.minimum_quantity ? 1 : 0), 0) || 0}
+                     </div>
+                     <div className="text-[10px] font-semibold text-slate-400 uppercase">Critical Low</div>
+                  </div>
+               </div>
+            </div>
+         </div>
+
+      </div>
+
+      {/* Catalog Display */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 tracking-wider">Product / SKU</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 tracking-wider">Total Qty</th>
+                <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-semibold text-slate-500 tracking-wider">Global State</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 tracking-wider">Protocol Controls</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {groupedItems.map(group => (
+                <tr key={group.product?.sku || group.id} className="group hover:bg-slate-50/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                         <Box className="text-slate-400 group-hover:text-blue-600 transition-colors" size={18} />
+                      </div>
+                      <div>
+                         <div className="font-semibold text-slate-900 text-sm tracking-tight break-words max-w-[200px] lg:max-w-none">
+                           {group.product?.name || 'CSV Auto-Generated Item'}
+                         </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                     <div className="text-sm font-bold text-slate-900 tracking-tight">{group.quantity}</div>
+                     <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Units</div>
+                  </td>
+                  <td className="hidden md:table-cell px-4 py-3">
+                     <span className="bg-white text-slate-800 border border-slate-200 rounded px-2 py-0.5 text-xs font-normal capitalize">
+                        {group.condition || 'Factory New'}
+                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                     <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => { setSelectedItem(group); setBulkDeleteModalOpen(true); }} title="Wipe Entire Group" className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 shadow-sm flex items-center justify-center transition-colors">
+                           <Trash2 size={15} />
+                        </button>
+                        <button onClick={() => navigate(`/transfers?product_id=${group.product_id}&from_node_id=${group.org_node_id}`)} title="Transfer Stock" className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-200 shadow-sm flex items-center justify-center transition-colors">
+                           <ArrowLeftRight size={15} />
+                        </button>
+                        <button onClick={() => navigate(`/discharge?product_id=${group.product_id}&org_node_id=${group.org_node_id}`)} title="Discharge Stock" className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 shadow-sm flex items-center justify-center transition-colors">
+                           <PackageMinus size={15} />
+                        </button>
+                        <button onClick={() => setUnitLedgerItem(group)} className="px-3 h-8 bg-slate-950 text-white text-xs font-semibold rounded-lg hover:bg-slate-900 shadow-sm transition-colors flex items-center gap-1.5">
+                           <Layers size={14} /> <span className="hidden sm:inline">Open Ledger</span>
+                        </button>
+                     </div>
+                  </td>
+                </tr>
+              ))}
+              {groupedItems.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="py-16 text-center">
+                    <Box size={40} className="mx-auto text-slate-200 mb-2" />
+                    <h2 className="text-base font-bold text-slate-400 tracking-tight">Master Registry Empty</h2>
+                  </td>
+                </tr>
               )}
-            </CardContent>
-            <Pagination 
-              pagination={pagination} 
-              onPageChange={setPage} 
-            />
-          </Card>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Adjust Modal: High-End Refactor */}
-      <Modal
-        isOpen={adjustModalOpen}
-        onClose={() => setAdjustModalOpen(false)}
-        title="Asset State Adjustment"
-        onConfirm={handleAdjust}
-        confirmText="Push System Update"
-        cancelText="Discard"
-      >
-        <div className="space-y-8 p-2">
-          <div className="flex items-center gap-6 p-6 bg-slate-50 rounded-[30px] border border-slate-100">
-             <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center">
-                <Box className="text-blue-600" size={32} />
+      {/* QR MODAL */}
+      {qrItem && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setQrItem(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-xl shadow-md overflow-hidden animate-in zoom-in-95 duration-500">
+             <div className="p-4 text-center bg-slate-50 border-b border-slate-100">
+                <QrCode size={32} className="mx-auto mb-2 text-slate-900" />
+                <h3 className="text-sm font-bold text-slate-900 tracking-tight">Physical Identity Tag</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">{qrItem.product?.name}</p>
              </div>
-             <div>
-                <h4 className="text-lg font-black text-slate-900 tracking-tight leading-none mb-1">{selectedItem?.product?.name}</h4>
-                <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{selectedItem?.product?.sku}</div>
-                <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase mt-1">
-                  <Building2 size={10} /> {selectedItem?.organizationNode?.name}
+             <div className="p-4 flex flex-col items-center gap-3 bg-white">
+                <div className="p-3 bg-white rounded-xl shadow-sm ring-1 ring-slate-100">
+                   <QRCode value={JSON.stringify({ id: qrItem.id, sku: qrItem.product?.sku, serial: qrItem.serial_number })} size={200} level="H" />
+                </div>
+                <div className="text-center">
+                   <p className="text-xs font-semibold text-slate-400 mb-1">Unique Identity Binding</p>
+                   <p className="font-mono text-sm font-bold text-slate-900 uppercase">{qrItem.serial_number || `REG-ID-${qrItem.id}`}</p>
                 </div>
              </div>
+             <div className="p-4 bg-slate-50 flex flex-col gap-3">
+                <button onClick={() => window.print()} className="w-full h-10 bg-slate-950 text-white font-semibold rounded-lg text-xs hover:bg-slate-900 transition-all">Print Tag</button>
+                <button onClick={() => setQrItem(null)} className="text-xs font-semibold text-slate-400 hover:text-slate-600 text-center">Dismiss</button>
+             </div>
           </div>
+        </div>
+      )}
 
-          <div className="grid grid-cols-2 gap-6">
-             <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Transformation Type</label>
-                <select
-                  className="w-full h-14 bg-white border-2 border-slate-100 rounded-2xl px-4 font-bold text-slate-900 focus:border-blue-500 outline-none transition-all cursor-pointer"
-                  value={adjustmentData.type}
-                  onChange={(e) => setAdjustmentData({ ...adjustmentData, type: e.target.value })}
-                >
-                  <option value="add">Quantity Increment (+)</option>
-                  <option value="subtract">Quantity Reduction (-)</option>
-                  <option value="set">Absolute Override (=)</option>
-                </select>
-             </div>
-             <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Movement Value</label>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  value={adjustmentData.adjustment}
-                  onChange={(e) => setAdjustmentData({ ...adjustmentData, adjustment: parseInt(e.target.value) || 0 })}
-                  className="h-14 rounded-2xl border-2 border-slate-100 font-black text-xl text-blue-600"
-                />
-             </div>
-          </div>
-
-          <div className="space-y-2">
-             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Justification Reason</label>
-             <Input
-               placeholder="Audit trial documentation..."
-               value={adjustmentData.reason}
-               onChange={(e) => setAdjustmentData({ ...adjustmentData, reason: e.target.value })}
-               className="h-14 rounded-2xl border-2 border-slate-100 font-medium"
-             />
-          </div>
-
-          <div className="p-6 bg-slate-900 rounded-[30px] flex items-center justify-between group">
-             <div>
-                <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Projected Stock Level</div>
-                <div className="text-3xl font-black text-white italic tracking-tighter">
-                    {adjustmentData.type === 'add' && (selectedItem?.quantity || 0) + adjustmentData.adjustment}
-                    {adjustmentData.type === 'subtract' && (selectedItem?.quantity || 0) - adjustmentData.adjustment}
-                    {adjustmentData.type === 'set' && adjustmentData.adjustment}
-                </div>
-             </div>
-             <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center group-hover:bg-blue-600/20 transition-colors">
-                <ArrowRight className="text-white opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all" size={24} />
-             </div>
-          </div>
+      {/* Bulk Delete Modal */}
+      <Modal isOpen={bulkDeleteModalOpen} onClose={() => setBulkDeleteModalOpen(false)} title="Confirm Registry Wipe" onConfirm={handleBulkDelete} confirmText="Wipe Group">
+        <div className="p-4 text-center space-y-4">
+           <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
+              <AlertTriangle size={24} />
+           </div>
+           <p className="text-sm text-slate-600">
+              This action will permanently delete <span className="font-semibold text-red-600">{selectedItem?.quantity} units</span> of <span className="font-bold underline">{selectedItem?.product?.name}</span> from this node. 
+           </p>
+           <div className="bg-red-50 p-3 rounded-lg text-xs font-semibold text-red-700">
+              Action is irreversible. Audit trail will be logged.
+           </div>
         </div>
       </Modal>
 
-      {/* QR Label Modal */}
-      <Modal
-        isOpen={qrModalOpen}
-        onClose={() => setQrModalOpen(false)}
-        title="Asset Label Preview"
-        onConfirm={handlePrint}
-        confirmText="Print Label"
-      >
-        <div className="py-4 flex flex-col items-center space-y-6">
-          <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100">
-            <QRLabel item={itemForQr} organizationName={user?.company?.name || 'AIRMS'} />
-          </div>
-          <div className="text-center space-y-2">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Printer Optimization</p>
-            <p className="text-xs text-slate-500 max-w-xs">
-              Labels are formatted for 50mm x 30mm thermal printers or standard A4 sticker sheets.
-            </p>
-          </div>
+      {/* Simple Adjust Modal */}
+      <Modal isOpen={adjustModalOpen} onClose={() => setAdjustModalOpen(false)} title="Quick Adjust" onConfirm={handleAdjust}>
+        <div className="space-y-4 p-2">
+           <div className="grid grid-cols-2 gap-4">
+              <select value={adjustmentData.type} onChange={e => setAdjustmentData({...adjustmentData, type: e.target.value})} className="h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 font-semibold text-xs outline-none">
+                 <option value="add">Add (+)</option>
+                 <option value="subtract">Subtract (-)</option>
+              </select>
+              <input type="number" value={adjustmentData.adjustment} onChange={e => setAdjustmentData({...adjustmentData, adjustment: parseInt(e.target.value) || 0})} className="h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 font-semibold text-sm text-center outline-none focus:border-blue-500" />
+           </div>
+           <Input placeholder="Justification for adjustment..." value={adjustmentData.reason} onChange={e => setAdjustmentData({...adjustmentData, reason: e.target.value})} />
         </div>
       </Modal>
 
@@ -452,6 +384,7 @@ const InventoryPage = () => {
         isOpen={activityPanelOpen} 
         onClose={() => setActivityPanelOpen(false)} 
       />
+
     </div>
   );
 };

@@ -10,8 +10,9 @@ class ApprovalService {
      * Replacing hardcoded roles (Chairman/Storage) with dynamic Processing Design.
      */
     async processAction(companyId, requestId, resourceType, user, action, comments = '', options = {}) {
+        const models = require('../models');
+        const t = await models.sequelize.transaction();
         try {
-            const models = require('../models');
             const modelMap = {
                 'request': models.Request,
                 'transfer': models.Transfer,
@@ -24,21 +25,27 @@ class ApprovalService {
 
             const Model = modelMap[resourceType] || models.Request;
             const resource = await Model.findOne({
-                where: { id: requestId, company_id: companyId }
+                where: { id: requestId, company_id: companyId },
+                transaction: t
             });
             
             if (!resource) {
                 throw new Error(`${resourceType || 'Resource'} not found`);
             }
 
+            let result;
             if (action === 'approve') {
-                return await workflowService.advanceWorkflow(resource, resourceType || 'request', user, comments, 'approve', options);
+                result = await workflowService.advanceWorkflow(resource, resourceType || 'request', user, comments, 'approve', { ...options, transaction: t });
             } else if (action === 'reject') {
-                return await workflowService.rejectWorkflow(resource, resourceType || 'request', user, comments);
+                result = await workflowService.rejectWorkflow(resource, resourceType || 'request', user, comments, { transaction: t });
             } else {
                 throw new Error('Invalid workflow action');
             }
+
+            await t.commit();
+            return result;
         } catch (error) {
+            await t.rollback();
             logger.error(`Workflow process action error (${action}):`, error);
             throw error;
         }
@@ -57,18 +64,38 @@ class ApprovalService {
 
             if (authorizedStepIds.length === 0) return [];
 
+            const models = require('../models');
+            const [userApprovals, allSteps, allRoutes] = await Promise.all([
+                models.Approval.findAll({ where: { approver_id: user.id }, raw: true }),
+                models.WorkflowStep.findAll({ include: [{ model: models.Workflow, as: 'workflow', where: { company_id: companyId } }] }),
+                models.WorkflowRoute.findAll({
+                    include: [{
+                        model: models.Workflow,
+                        as: 'workflow',
+                        where: { company_id: companyId },
+                        attributes: []
+                    }],
+                    raw: true
+                })
+            ]);
+
             // PHASE 2: Parallel Fetch using shared context (Optimization)
+            const requestsWhere = {
+                company_id: companyId,
+                status: 'pending',
+                current_step_id: { [Op.in]: authorizedStepIds },
+                org_node_id: allowedNodes === null ? { [Op.ne]: null } : { [Op.in]: allowedNodes },
+                request_type: { [Op.notIn]: ['discharge', 'issue', 'transfer', 'return'] }
+            };
+
+            const requestsCount = await Request.count({ where: requestsWhere });
+
             const [requests, discharges, transfers, returns, inventoryReturns] = await Promise.all([
-                Request.findAll({
-                    where: {
-                        company_id: companyId,
-                        status: 'pending',
-                        current_step_id: { [Op.in]: authorizedStepIds },
-                        org_node_id: allowedNodes === null ? { [Op.ne]: null } : { [Op.in]: allowedNodes },
-                        request_type: { [Op.notIn]: ['discharge', 'issue', 'transfer', 'return'] }
-                    },
+                requestsCount === 0 ? [] : Request.findAll({
+                    where: requestsWhere,
                     include: [
                         { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
+                        { model: User, as: 'targetUser', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
                         { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code', 'path'] },
                         { model: WorkflowStep, as: 'currentStep', include: [{ model: WorkflowStatus, as: 'statusLabel' }] },
                         { model: RequestItem, as: 'items', include: ['product'] },
@@ -76,10 +103,10 @@ class ApprovalService {
                     ],
                     order: [['priority', 'DESC'], ['created_at', 'ASC']]
                 }),
-                this.getDischargeApprovals(companyId, user, false, permissions, authorizedStepIds, allowedNodes),
-                this.getTransferApprovals(companyId, user, 'all', false, permissions, authorizedStepIds, allowedNodes),
-                this.getReturnApprovals(companyId, user, false, 'returns', permissions, authorizedStepIds, allowedNodes),
-                this.getReturnApprovals(companyId, user, false, 'inventory-returns', permissions, authorizedStepIds, allowedNodes)
+                this.getDischargeApprovals(companyId, user, false, permissions, authorizedStepIds, allowedNodes, userApprovals, allRoutes, allSteps),
+                this.getTransferApprovals(companyId, user, 'all', false, permissions, authorizedStepIds, allowedNodes, userApprovals, allRoutes, allSteps),
+                this.getReturnApprovals(companyId, user, false, 'returns', permissions, authorizedStepIds, allowedNodes, userApprovals, allRoutes, allSteps),
+                this.getReturnApprovals(companyId, user, false, 'inventory-returns', permissions, authorizedStepIds, allowedNodes, userApprovals, allRoutes, allSteps)
             ]);
 
             // 3. Process standard requests into plain objects (Optimized)
@@ -87,9 +114,9 @@ class ApprovalService {
                 const plain = item.get({ plain: true });
                 plain.resource_origin = 'request';
                 // Pass cached security values to avoid N+1 queries inside userCanApproveStep
-                plain.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                plain.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
                 if (plain.can_action) {
-                    plain.is_final_step = await workflowService.isFinalStep(item, plain.current_step_id);
+                    plain.is_final_step = await workflowService.isFinalStep(item, plain.current_step_id, allRoutes, allSteps);
                 }
                 return plain;
             }));
@@ -113,12 +140,33 @@ class ApprovalService {
      * Get discharge forms that require approval or are visible to the user.
      * Merges DischargeForm table and legacy Request table (type='discharge' or 'issue').
      */
-    async getDischargeApprovals(companyId, user, includeAll = false, providedPermissions = null, providedStepIds = null, providedNodes = null) {
+        async getDischargeApprovals(companyId, user, includeAll = false, providedPermissions = null, providedStepIds = null, providedNodes = undefined, userApprovals = null, allRoutes = null, allSteps = null) {
         try {
             const { DischargeForm, DischargeItem, Request, RequestItem } = require('../models');
             const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
             const authorizedStepIds = providedStepIds || await workflowService.getAuthorizedStepIds(companyId, user, permissions);
-            const allowedNodes = providedNodes || await hierarchyService.getAllowedNodes(user, permissions);
+            const allowedNodes = providedNodes !== undefined ? providedNodes : await hierarchyService.getAllowedNodes(user, permissions);
+
+            // Pre-fetch shared workflow and approval data if not provided (avoids N+1 query loops)
+            const models = require('../models');
+            if (userApprovals === null || allSteps === null || allRoutes === null) {
+                const [fetchedApprovals, fetchedSteps, fetchedRoutes] = await Promise.all([
+                    models.Approval.findAll({ where: { approver_id: user.id }, raw: true }),
+                    models.WorkflowStep.findAll({ include: [{ model: models.Workflow, as: 'workflow', where: { company_id: companyId } }] }),
+                    models.WorkflowRoute.findAll({
+                        include: [{
+                            model: models.Workflow,
+                            as: 'workflow',
+                            where: { company_id: companyId },
+                            attributes: []
+                        }],
+                        raw: true
+                    })
+                ]);
+                userApprovals = userApprovals || fetchedApprovals;
+                allSteps = allSteps || fetchedSteps;
+                allRoutes = allRoutes || fetchedRoutes;
+            }
 
             const where = {
                 company_id: companyId,
@@ -129,6 +177,21 @@ class ApprovalService {
             if (!includeAll) {
                 where.status = 'pending';
                 where.current_step_id = { [Op.in]: authorizedStepIds };
+
+                // Pre-flight lightweight count check
+                const pendingCount = await DischargeForm.count({ where });
+                const legacyCount = await Request.count({
+                    where: {
+                        company_id: companyId,
+                        request_type: { [Op.in]: ['discharge', 'issue'] },
+                        ...(allowedNodes !== null ? { org_node_id: { [Op.in]: allowedNodes } } : {}),
+                        status: 'pending',
+                        current_step_id: { [Op.in]: authorizedStepIds }
+                    }
+                });
+                if (pendingCount === 0 && legacyCount === 0) {
+                    return [];
+                }
             }
 
             // 1. Fetch from DischargeForm table
@@ -208,14 +271,14 @@ class ApprovalService {
                     const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
                     
                     if (item.status?.startsWith('pending') && isAuthorized) {
-                        item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                        item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
                     } else {
                         item.can_action = false;
                     }
                 }
 
                 if (item.can_action) {
-                    item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id);
+                    item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id, allRoutes, allSteps);
                 }
                 return item;
             }));
@@ -231,12 +294,33 @@ class ApprovalService {
      * Get transfers (Inventory or Item) awaiting approval.
      * Merges results from Transfer table and legacy Request table (type='transfer').
      */
-    async getTransferApprovals(companyId, user, transferTypeFilter = 'all', includeAll = false, providedPermissions = null, providedStepIds = null, providedNodes = null) {
+        async getTransferApprovals(companyId, user, transferTypeFilter = 'all', includeAll = false, providedPermissions = null, providedStepIds = null, providedNodes = undefined, userApprovals = null, allRoutes = null, allSteps = null) {
         try {
             const { Transfer, TransferItem, Request, RequestItem } = require('../models');
             const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
             const authorizedStepIds = providedStepIds || await workflowService.getAuthorizedStepIds(companyId, user, permissions);
-            const allowedNodes = providedNodes || await hierarchyService.getAllowedNodes(user, permissions);
+            const allowedNodes = providedNodes !== undefined ? providedNodes : await hierarchyService.getAllowedNodes(user, permissions);
+
+            // Pre-fetch shared workflow and approval data if not provided (avoids N+1 query loops)
+            const models = require('../models');
+            if (userApprovals === null || allSteps === null || allRoutes === null) {
+                const [fetchedApprovals, fetchedSteps, fetchedRoutes] = await Promise.all([
+                    models.Approval.findAll({ where: { approver_id: user.id }, raw: true }),
+                    models.WorkflowStep.findAll({ include: [{ model: models.Workflow, as: 'workflow', where: { company_id: companyId } }] }),
+                    models.WorkflowRoute.findAll({
+                        include: [{
+                            model: models.Workflow,
+                            as: 'workflow',
+                            where: { company_id: companyId },
+                            attributes: []
+                        }],
+                        raw: true
+                    })
+                ]);
+                userApprovals = userApprovals || fetchedApprovals;
+                allSteps = allSteps || fetchedSteps;
+                allRoutes = allRoutes || fetchedRoutes;
+            }
 
             const where = {
                 company_id: companyId,
@@ -259,6 +343,24 @@ class ApprovalService {
             if (!includeAll) {
                 where.status = 'pending';
                 where.current_step_id = { [Op.in]: authorizedStepIds };
+
+                // Pre-flight lightweight count check
+                const pendingCount = await Transfer.count({ where });
+                let legacyCount = 0;
+                if (transferTypeFilter === 'all' || (Array.isArray(transferTypeFilter) && transferTypeFilter.includes('user_to_node'))) {
+                    legacyCount = await Request.count({
+                        where: {
+                            company_id: companyId,
+                            request_type: 'transfer',
+                            ...(allowedNodes !== null ? { org_node_id: { [Op.in]: allowedNodes } } : {}),
+                            status: 'pending',
+                            current_step_id: { [Op.in]: authorizedStepIds }
+                        }
+                    });
+                }
+                if (pendingCount === 0 && legacyCount === 0) {
+                    return [];
+                }
             }
 
             // 1. Fetch from Transfers table
@@ -268,6 +370,7 @@ class ApprovalService {
                     { model: OrganizationNode, as: 'fromNode', attributes: ['id', 'name', 'code'] },
                     { model: OrganizationNode, as: 'toNode', attributes: ['id', 'name', 'code'] },
                     { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
+                    { model: User, as: 'toUser', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
                     { 
                         model: WorkflowStep, 
                         as: 'currentStep', 
@@ -331,9 +434,9 @@ class ApprovalService {
                     item.can_action = false;
                 } else {
                     // Optimized check with pre-calculated values
-                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
                     if (item.can_action) {
-                        item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id);
+                        item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id, allRoutes, allSteps);
                     }
                 }
                 return item;
@@ -347,12 +450,33 @@ class ApprovalService {
     /**
      * Get return requests awaiting approval.
      */
-    async getReturnApprovals(companyId, user, includeAll = false, type = 'returns', providedPermissions = null, providedStepIds = null, providedNodes = null) {
+        async getReturnApprovals(companyId, user, includeAll = false, type = 'returns', providedPermissions = null, providedStepIds = null, providedNodes = undefined, userApprovals = null, allRoutes = null, allSteps = null) {
         try {
             const { Return, ReturnItem, Request, RequestItem } = require('../models');
             const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
             const authorizedStepIds = providedStepIds || await workflowService.getAuthorizedStepIds(companyId, user, permissions);
-            const allowedNodes = providedNodes || await hierarchyService.getAllowedNodes(user, permissions);
+            const allowedNodes = providedNodes !== undefined ? providedNodes : await hierarchyService.getAllowedNodes(user, permissions);
+
+            // Pre-fetch shared workflow and approval data if not provided (avoids N+1 query loops)
+            const models = require('../models');
+            if (userApprovals === null || allSteps === null || allRoutes === null) {
+                const [fetchedApprovals, fetchedSteps, fetchedRoutes] = await Promise.all([
+                    models.Approval.findAll({ where: { approver_id: user.id }, raw: true }),
+                    models.WorkflowStep.findAll({ include: [{ model: models.Workflow, as: 'workflow', where: { company_id: companyId } }] }),
+                    models.WorkflowRoute.findAll({
+                        include: [{
+                            model: models.Workflow,
+                            as: 'workflow',
+                            where: { company_id: companyId },
+                            attributes: []
+                        }],
+                        raw: true
+                    })
+                ]);
+                userApprovals = userApprovals || fetchedApprovals;
+                allSteps = allSteps || fetchedSteps;
+                allRoutes = allRoutes || fetchedRoutes;
+            }
 
             const returnWhere = {
                 company_id: companyId,
@@ -376,6 +500,16 @@ class ApprovalService {
                 returnWhere.current_step_id = { [Op.in]: authorizedStepIds };
                 requestWhere.status = 'pending';
                 requestWhere.current_step_id = { [Op.in]: authorizedStepIds };
+
+                // Pre-flight lightweight count check
+                const pendingCount = await Return.count({ where: returnWhere });
+                let legacyCount = 0;
+                if (type !== 'inventory-returns') {
+                    legacyCount = await Request.count({ where: requestWhere });
+                }
+                if (pendingCount === 0 && legacyCount === 0) {
+                    return [];
+                }
             }
 
             // 1. Fetch from Return table (Uses fromNode/toNode and user)
@@ -440,9 +574,9 @@ class ApprovalService {
                     item.can_action = false;
                 } else {
                     // Optimized check with pre-calculated values
-                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes);
+                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
                     if (item.can_action) {
-                        item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id);
+                        item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id, allRoutes, allSteps);
                     }
                 }
                 return item;

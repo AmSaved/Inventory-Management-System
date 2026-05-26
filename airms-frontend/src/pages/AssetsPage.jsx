@@ -151,7 +151,6 @@ const AssetsPage = () => {
     return new Date(expectedReturnDate) < new Date();
   };
 
-  if (loading) return <LoadingSpinner />;
 
   return (
     <div className="space-y-6">
@@ -161,7 +160,7 @@ const AssetsPage = () => {
           <p className="text-gray-500 mt-1">Manage and track items assigned to you personally.</p>
         </div>
         <div className="flex items-center gap-3">
-           <Button variant="outline" onClick={() => navigate('/assets/history')} className="border-2 font-semibold hover:bg-gray-50">
+           <Button variant="outline" onClick={() => setStatusFilter('returned')} className="border-2 font-semibold hover:bg-gray-50">
             Usage History
           </Button>
            <Button variant="primary" onClick={() => navigate('/requests/new')} className="shadow-lg shadow-primary-200">
@@ -225,17 +224,24 @@ const AssetsPage = () => {
         <CardContent className="p-0">
           <Table overflowVisible={activeMenu !== null || transferAsset !== null || returnModalOpen || reportAsset !== null}>
             <TableHead className="bg-gray-50/50">
-              <TableRow>
-                <TableHeader className="pl-6 uppercase text-[10px] tracking-tighter">Asset Information</TableHeader>
-                <TableHeader className="uppercase text-[10px] tracking-tighter">Identity</TableHeader>
-                <TableHeader className="uppercase text-[10px] tracking-tighter">Condition</TableHeader>
-                <TableHeader className="uppercase text-[10px] tracking-tighter">Ownership</TableHeader>
-                <TableHeader className="uppercase text-[10px] tracking-tighter">Custody Period</TableHeader>
-                <TableHeader className="pr-6 uppercase text-[10px] tracking-tighter text-right">Actions</TableHeader>
-              </TableRow>
+              <TableHeader className="pl-6 uppercase text-[10px] tracking-tighter">Asset Information</TableHeader>
+              <TableHeader className="uppercase text-[10px] tracking-tighter">Identity</TableHeader>
+              <TableHeader className="uppercase text-[10px] tracking-tighter">Condition</TableHeader>
+              <TableHeader className="uppercase text-[10px] tracking-tighter">Ownership</TableHeader>
+              <TableHeader className="uppercase text-[10px] tracking-tighter">Custody Period</TableHeader>
+              <TableHeader className="pr-6 uppercase text-[10px] tracking-tighter text-right">Actions</TableHeader>
             </TableHead>
             <TableBody>
-              {data?.data?.map((asset) => (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan="6" className="p-12 text-center flex justify-center"><LoadingSpinner /></TableCell>
+                </TableRow>
+              ) : data?.data?.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan="6" className="p-12 text-center text-gray-500">No assets found</TableCell>
+                </TableRow>
+              ) : (
+                data?.data?.map((asset) => (
                 <TableRow key={asset.id} className="group hover:bg-gray-50/80 transition-colors">
                   <TableCell className="pl-6 py-4">
                     <div className="flex items-center gap-3">
@@ -347,12 +353,11 @@ const AssetsPage = () => {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+            )}
             </TableBody>
           </Table>
-          {data?.data?.length === 0 && (
-            <div className="text-center py-8 text-gray-500">No assets found</div>
-          )}
+
         </CardContent>
       </Card>
 

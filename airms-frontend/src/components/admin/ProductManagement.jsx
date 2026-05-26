@@ -1,74 +1,189 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import Button from '../ui/Button';
-import Input from '../ui/Input';
 import Badge from '../ui/Badge';
-import Modal from '../common/Modal';
+import Input from '../ui/Input';
 import LoadingSpinner from '../common/LoadingSpinner';
+import BlueprintModal from '../modals/BlueprintModal';
 import productService from '../../services/productService';
+import formService from '../../services/formService';
 import toast from 'react-hot-toast';
 import { 
-  Box, 
   Plus, 
-  Settings2, 
   Trash2, 
   Edit, 
-  Save, 
-  Package, 
-  Tag, 
   Layers, 
-  Cpu, 
-  MapPin, 
   Database,
+  Settings2,
+  ArrowLeft,
+  Layout,
+  PlusCircle,
+  X,
+  ClipboardList,
+  Download,
+  FileSpreadsheet,
   Zap,
-  Activity,
-  HardDrive,
-  Monitor,
-  Maximize2,
-  Minimize2,
-  LayoutGrid,
-  List,
-  ArrowRight,
-  ShieldCheck
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 
 const ProductManagement = () => {
+  const location = useLocation();
+  const [view, setView] = useState(location.state?.view || 'catalog'); // 'catalog' or 'manager'
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [formData, setFormData] = useState({});
-  const [submitting, setSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState('basic');
-  const [viewMode, setViewMode] = useState('table'); // Forced table view
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [lastDeployedBlueprint, setLastDeployedBlueprint] = useState(null);
 
-  const { data: productsData, loading, refetch } = useFetch('/products', { params: { limit: 1000 } });
-  const products = productsData?.products || productsData?.data || [];
+  const { data: productsData, loading, refetch: refetchProducts } = useFetch('/products', { params: { limit: 1000 } });
+  const { data: templatesData, loading: loadingTemplates, refetch: refetchTemplates } = useFetch('/form-templates');
+  
+  const products = productsData || [];
+  const blueprints = (templatesData?.data || templatesData || []).filter(t => t.module === 'blueprint');
+
+  // Auto-switch to manager if no blueprints exist
+  useEffect(() => {
+    if (!loadingTemplates && blueprints.length === 0 && view === 'catalog') {
+      setView('manager');
+    }
+  }, [blueprints.length, loadingTemplates, view]);
 
   const handleOpenModal = (item = null) => {
+    if (blueprints.length === 0 && !item) {
+        return toast.error('You must create an Architecture (Blueprint) before deploying an asset.');
+    }
     setEditingItem(item);
-    setFormData(item || { unit: 'piece', is_active: true });
-    setActiveTab('basic');
     setModalOpen(true);
   };
 
-  const handleSubmit = async () => {
-    const loadingToast = toast.loading('Committing Asset Blueprint...');
-    setSubmitting(true);
-    try {
-      if (editingItem) {
-        await productService.updateProduct(editingItem.id, formData);
-        toast.success('Blueprint Calibrated', { id: loadingToast });
-      } else {
-        await productService.createProduct(formData);
-        toast.success('Resource Deployed to Registry', { id: loadingToast });
-      }
-      refetch();
-      setModalOpen(false);
-    } catch (error) {
-      toast.error('Transaction Aborted', { id: loadingToast });
-    } finally {
-      setSubmitting(false);
+  const handleEditTemplate = (template = null) => {
+    setLastDeployedBlueprint(null); // Clear success banner when starting a new edit
+    if (template) {
+        setEditingTemplate({ ...template, schema: template.schema || [] });
+    } else {
+        setEditingTemplate({
+            name: '',
+            template_key: 'blueprint_' + Date.now(),
+            module: 'blueprint',
+            icon: '📦',
+            description: '',
+            schema: [
+                { key: 'asset_name', label: 'Asset Name', type: 'text', section: 'Identity', required: true },
+                { key: 'asset_id', label: 'Serial Number / ID', type: 'text', section: 'Identity', required: true }
+            ]
+        });
     }
+  };
+
+  useEffect(() => {
+    if (location.state?.action === 'create') {
+      handleEditTemplate();
+    }
+  }, [location.state]);
+
+  const generateCSVTemplate = (blueprint) => {
+    const headers = [];
+    blueprint.schema.forEach(field => {
+        let headerName = field.label;
+        if (field.unit) headerName += ` (${field.unit})`;
+        headers.push(headerName);
+    });
+
+    const csvContent = [
+        headers.join(','),
+        [...blueprint.schema.map(f => f.type === 'number' ? '0' : 'Sample Value')].join(',')
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${blueprint.name.replace(/\s+/g, '_')}_Bulk_Template.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(`${blueprint.name} Template Downloaded!`);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!editingTemplate.name) return toast.error('Blueprint Name is mandatory');
+    const loadingToast = toast.loading('Synchronizing Architecture...');
+    try {
+        let savedTemplate;
+        if (editingTemplate.id) {
+            const response = await formService.updateTemplate(editingTemplate.id, editingTemplate);
+            savedTemplate = response;
+        } else {
+            const response = await formService.createTemplate(editingTemplate);
+            savedTemplate = response;
+        }
+        
+        toast.success('Architecture Optimized', { id: loadingToast });
+        await refetchTemplates();
+        
+        const latestTemplate = savedTemplate || editingTemplate;
+        
+        try {
+            await productService.createProduct({
+                name: latestTemplate.name,
+                sku: `RES-${Math.random().toString(36).substring(7).toUpperCase()}`,
+                blueprint_template_id: latestTemplate.id,
+                specifications: {}, 
+                is_active: true,
+                category: latestTemplate.name
+            });
+            refetchProducts();
+        } catch (err) {
+            console.error('Auto-deploy failed', err);
+        }
+
+        setLastDeployedBlueprint(latestTemplate); // Trigger the Success Banner
+        generateCSVTemplate(latestTemplate);
+        setEditingTemplate(null);
+    } catch (err) {
+        toast.error('Architecture Failure', { id: loadingToast });
+    }
+  };
+
+  const addField = () => {
+    setEditingTemplate(prev => ({
+        ...prev,
+        schema: [...prev.schema, { 
+            key: 'field_' + Date.now(), 
+            label: 'New Attribute', 
+            type: 'text', 
+            section: 'General', 
+            unit: '',
+            options: [],
+            required: false 
+        }]
+    }));
+  };
+
+  const updateField = (index, updates) => {
+    const newSchema = [...editingTemplate.schema];
+    
+    if (updates.type) {
+        if (updates.type === 'kg') { updates.type = 'number'; updates.unit = 'KG'; }
+        else if (updates.type === 'litre') { updates.type = 'number'; updates.unit = 'L'; }
+        else if (updates.type === 'metre') { updates.type = 'number'; updates.unit = 'M'; }
+        else if (updates.type === 'percent') { updates.type = 'number'; updates.unit = '%'; }
+        else if (updates.type === 'currency') { updates.type = 'number'; updates.unit = '$'; }
+        else if (['text', 'number', 'date', 'select', 'textarea', 'checkbox'].includes(updates.type)) {
+            if (updates.type !== 'number') updates.unit = '';
+        }
+    }
+
+    newSchema[index] = { ...newSchema[index], ...updates };
+    setEditingTemplate({ ...editingTemplate, schema: newSchema });
+  };
+
+  const removeField = (index) => {
+    const newSchema = editingTemplate.schema.filter((_, i) => i !== index);
+    setEditingTemplate({ ...editingTemplate, schema: newSchema });
   };
 
   const handleDelete = async (id) => {
@@ -76,230 +191,346 @@ const ProductManagement = () => {
     try {
       await productService.deleteProduct(id);
       toast.success('Blueprint Wiped');
-      refetch();
+      refetchProducts();
     } catch (error) {
       toast.error('Deletion Restricted: Active Dependencies');
     }
   };
 
-  if (loading) return <LoadingSpinner />;
-
   return (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-      {/* CATALOG HEADER */}
-      <div className="bg-slate-950 rounded-[3rem] p-10 shadow-2xl relative overflow-hidden group">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-transparent to-transparent"></div>
-        <div className="absolute top-0 right-0 p-12 opacity-5 group-hover:opacity-10 transition-opacity duration-700">
-           <Database size={160} className="text-blue-400 -rotate-12" />
-        </div>
-        
-        <div className="relative z-10 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-10">
-          <div className="space-y-3">
-             <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-white/10 backdrop-blur-xl border border-white/20 rounded-[22px] flex items-center justify-center text-blue-400 shadow-2xl">
-                   <Layers size={32} />
-                </div>
-                <div>
-                   <div className="text-[11px] font-black text-blue-400 uppercase tracking-[0.4em] mb-1 italic">Resource Catalog</div>
-                   <h1 className="text-5xl font-black text-white tracking-tighter uppercase italic leading-none">Master Registry</h1>
-                </div>
-             </div>
-             <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] ml-20 italic opacity-80">Global Product Blueprints & Technical Specifications</p>
-          </div>
+      <div className="flex justify-end pb-8 border-b border-slate-100">
           <div className="flex items-center gap-4">
-             <Button 
-                onClick={() => handleOpenModal()} 
-                className="bg-blue-600 text-white h-16 px-10 rounded-3xl font-black uppercase text-xs tracking-widest hover:bg-white hover:text-slate-950 transition-all shadow-2xl shadow-blue-500/20"
-              >
-                <Plus size={18} className="mr-3" /> New Asset Template
-              </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* PRODUCT INSIGHT GRID */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between px-6">
-           <div className="flex items-center gap-4">
-              <div className="w-2 h-8 bg-blue-600 rounded-full" />
-              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Blueprint Repository</h3>
-           </div>
-           <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] opacity-60">
-             {products.length} Validated Templates
-           </div>
-        </div>
-
-        {products.length > 0 ? (
-          <div className="bg-white rounded-[3rem] border border-slate-100 shadow-xl overflow-hidden">
-             <table className="w-full text-left">
-                <thead>
-                   <tr className="bg-slate-50/50 border-b-2 border-slate-100">
-                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Actions</th>
-                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Blueprint ID</th>
-                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Identity</th>
-                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Classification</th>
-                      <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit</th>
-                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                   {products.map(p => (
-                      <tr key={p.id} className="group hover:bg-slate-50/80 transition-all">
-                         <td className="p-8 text-left">
-                            <div className="flex gap-2">
-                               <button onClick={() => handleOpenModal(p)} className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-950 hover:text-white transition-all shadow-sm"><Edit size={16} /></button>
-                               <button onClick={() => handleDelete(p.id)} className="p-2.5 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>
-                            </div>
-                         </td>
-                         <td className="p-8 font-mono text-[10px] font-bold text-blue-600">{p.sku}</td>
-                         <td className="p-8">
-                            <div className="font-black text-slate-900 text-sm uppercase italic">{p.name}</div>
-                            <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{p.brand} {p.model}</div>
-                         </td>
-                         <td className="p-8">
-                            <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] font-black uppercase px-2 py-1 rounded-lg">{p.category}</Badge>
-                         </td>
-                         <td className="p-8 text-xs font-black text-slate-500 uppercase">{p.unit}</td>
-                      </tr>
-                   ))}
-                </tbody>
-             </table>
-          </div>
-        ) : (
-          <div className="p-32 bg-white/40 backdrop-blur-md rounded-[4rem] border-2 border-dashed border-slate-200 flex flex-col items-center text-center">
-             <div className="w-24 h-24 bg-white rounded-[2rem] shadow-xl flex items-center justify-center text-slate-200 mb-8">
-                <Layers size={48} />
-             </div>
-             <h4 className="text-2xl font-black text-slate-900 uppercase italic">Lexicon Initialized</h4>
-             <p className="text-slate-400 font-medium max-w-sm mt-2">No asset templates have been defined in the global registry yet.</p>
-             <Button 
-               onClick={() => handleOpenModal()}
-               className="mt-10 bg-slate-950 text-white px-10 py-5 h-auto rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl"
+             <button 
+                onClick={() => setView(view === 'catalog' ? 'manager' : 'catalog')} 
+                className="bg-white border-2 border-slate-200 text-slate-800 h-14 px-8 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:border-slate-800 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center"
              >
-               Deploy First Blueprint
-             </Button>
+                {view === 'catalog' ? <><Settings2 size={16} className="mr-2" /> Design Blueprints</> : <><ArrowLeft size={16} className="mr-2" /> Back to Catalog</>}
+             </button>
+
+             {view === 'manager' && (
+                <button 
+                    onClick={() => handleEditTemplate()} 
+                    className="bg-emerald-600 text-white h-14 px-8 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-950 transition-all shadow-lg flex items-center justify-center"
+                >
+                    <PlusCircle size={16} className="mr-2" /> Create New Blueprint
+                </button>
+             )}
           </div>
-        )}
       </div>
 
-      {/* SPECIFICATION DECK MODAL */}
-      <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="RESOURCE SPECIFICATION DECK"
-        onConfirm={handleSubmit}
-        confirmText="COMMIT TO DATABASE"
-        cancelText="ABORT"
-        maxWidth="max-w-5xl"
-      >
-        <div className="flex flex-col h-[70vh]">
-          {/* TECHNICAL NAVIGATION */}
-          <div className="flex items-center px-8 bg-slate-950 rounded-t-[2.5rem] border-b border-white/5">
-            {[
-              { id: 'basic', label: 'IDENTITY MATRIX', icon: <Tag size={16} /> },
-              { id: 'physical', label: 'PHYSICAL ENVELOPE', icon: <Maximize2 size={16} /> },
-              { id: 'technical', label: 'TECHNICAL ARCHITECTURE', icon: <Cpu size={16} /> }
-            ].map(t => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={`flex items-center gap-3 px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all relative ${
-                  activeTab === t.id ? 'text-blue-400' : 'text-slate-500 hover:text-white'
-                }`}
-              >
-                {t.icon} {t.label}
-                {activeTab === t.id && (
-                  <motion.div layoutId="tab-active" className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="p-10 overflow-y-auto bg-white flex-1 space-y-8 custom-scrollbar">
-            <AnimatePresence mode="wait">
-              {activeTab === 'basic' && (
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                  className="space-y-8"
-                >
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Registry SKU" value={formData.sku || ''} onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" placeholder="IT-HW-000" />
-                     <Input label="Resource Name" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" placeholder="High Performance Workstation" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Category" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <Input label="Sub-Category" value={formData.sub_category || ''} onChange={e => setFormData({ ...formData, sub_category: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-8">
-                     <Input label="Brand" value={formData.brand || ''} onChange={e => setFormData({ ...formData, brand: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <Input label="Model Ref" value={formData.model || ''} onChange={e => setFormData({ ...formData, model: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">UOM</label>
-                        <select className="w-full h-14 bg-slate-50 border-none rounded-2xl px-6 font-black text-xs uppercase tracking-widest outline-none cursor-pointer" value={formData.unit || 'piece'} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
-                          <option value="piece">Piece (PC)</option>
-                          <option value="box">Box (BX)</option>
-                          <option value="set">Set (ST)</option>
-                          <option value="kg">Kilogram (KG)</option>
-                        </select>
-                     </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {activeTab === 'physical' && (
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                  className="space-y-8"
-                >
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Mass (Weight)" value={formData.weight || ''} onChange={e => setFormData({ ...formData, weight: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" placeholder="0.00 kg" />
-                     <Input label="Dimension Delta" value={formData.dimensions || ''} onChange={e => setFormData({ ...formData, dimensions: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" placeholder="WxHxD cm" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Primary Finish (Color)" value={formData.color || ''} onChange={e => setFormData({ ...formData, color: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <Input label="Material Composition" value={formData.material || ''} onChange={e => setFormData({ ...formData, material: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                  </div>
-                </motion.div>
-              )}
-
-              {activeTab === 'technical' && (
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                  className="space-y-8"
-                >
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Computation Core (CPU)" value={formData.processor || ''} onChange={e => setFormData({ ...formData, processor: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <Input label="Memory Matrix (RAM)" value={formData.ram || ''} onChange={e => setFormData({ ...formData, ram: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Storage Array (Disk)" value={formData.storage || ''} onChange={e => setFormData({ ...formData, storage: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <Input label="Graphics Engine (GPU)" value={formData.graphics || ''} onChange={e => setFormData({ ...formData, graphics: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-8">
-                     <Input label="Operational OS" value={formData.os || ''} onChange={e => setFormData({ ...formData, os: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                     <Input label="Display Interface" value={formData.display || ''} onChange={e => setFormData({ ...formData, display: e.target.value })} className="bg-slate-50 border-none h-14 rounded-2xl font-black" />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-          
-          <div className="p-8 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-[2.5rem]">
-             <label className="flex items-center gap-4 cursor-pointer group">
-                <input type="checkbox" className="w-6 h-6 accent-blue-600 rounded-xl" checked={formData.is_active !== false} onChange={e => setFormData({...formData, is_active: e.target.checked})} />
-                <div>
-                   <span className="block text-[11px] font-black text-slate-900 uppercase tracking-widest group-hover:text-blue-600 transition-colors">ACTIVE DEPLOYMENT STATE</span>
-                   <span className="block text-[9px] font-bold text-slate-400 uppercase italic opacity-60">Authorize use across institutional inventory</span>
+      {/* SUCCESS BANNER FOR CONTROLLED DOWNLOAD */}
+      <AnimatePresence>
+        {lastDeployedBlueprint && (
+            <motion.div 
+                initial={{ opacity: 0, height: 0, y: -20 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -20 }}
+                className="bg-emerald-50 border-2 border-emerald-100 rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between gap-8 overflow-hidden shadow-xl"
+            >
+                <div className="flex items-center gap-6">
+                    <div className="w-14 h-14 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                        <CheckCircle2 size={32} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight italic">Blueprint Successfully Deployed!</h3>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                            {lastDeployedBlueprint.name} is now live. Ready for bulk inventory preparation.
+                        </p>
+                    </div>
                 </div>
-             </label>
-             <div className="flex gap-4">
-                <Button variant="ghost" onClick={() => setModalOpen(false)} className="px-8 h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-200" disabled={submitting}>Abort</Button>
-                <Button onClick={handleSubmit} disabled={submitting} className="bg-slate-950 text-white px-10 h-14 rounded-2xl flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl">
-                   <Save size={18} /> {editingItem ? 'SYNC BLUEPRINT' : 'DEPLOY TO REGISTRY'}
-                </Button>
+                <div className="flex items-center gap-4">
+                    <button 
+                        onClick={() => generateCSVTemplate(lastDeployedBlueprint)}
+                        className="h-14 px-10 bg-slate-950 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-3 hover:bg-emerald-600 transition-all shadow-2xl"
+                    >
+                        <FileSpreadsheet size={18} /> Download Bulk Template
+                    </button>
+                    <button 
+                        onClick={() => setLastDeployedBlueprint(null)}
+                        className="p-4 text-slate-400 hover:text-slate-900 transition-colors"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence mode="wait">
+        {view === 'catalog' ? (
+          <motion.div 
+            key="catalog"
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            <div className="flex items-center justify-between px-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-2 h-8 bg-blue-600 rounded-full" />
+                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Blueprint Repository</h3>
+                </div>
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] opacity-60">
+                    {products.length} Validated Templates
+                </div>
+            </div>
+
+            {loading ? (
+                <div className="p-12 text-center flex justify-center"><LoadingSpinner /></div>
+            ) : products.length > 0 ? (
+                <div className="bg-white rounded-[3rem] border border-slate-100 shadow-xl overflow-hidden">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-slate-50/50 border-b-2 border-slate-100">
+                                <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Template Name</th>
+                                <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Unit</th>
+                                <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                                {products.map(p => (
+                                    <tr key={p.id} className="group hover:bg-slate-50/80 transition-all">
+                                        <td className="p-8">
+                                            <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] font-black uppercase px-2 py-1 rounded-lg">
+                                                {p.blueprintTemplate?.name || 'Legacy IT Architecture'}
+                                            </Badge>
+                                        </td>
+                                        <td className="p-8 text-xs font-black text-slate-500 uppercase">{p.unit}</td>
+                                        <td className="p-8 text-left">
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        if (p.blueprintTemplate) {
+                                                            handleEditTemplate(p.blueprintTemplate);
+                                                            setView('manager');
+                                                        } else {
+                                                            handleEditTemplate({
+                                                                name: p.name,
+                                                                template_key: 'blueprint_' + Date.now(),
+                                                                module: 'blueprint',
+                                                                icon: '📦',
+                                                                description: '',
+                                                                schema: [
+                                                                    { key: 'asset_name', label: 'Asset Name', type: 'text', section: 'Identity', required: true },
+                                                                    { key: 'asset_id', label: 'Serial Number / ID', type: 'text', section: 'Identity', required: true }
+                                                                ]
+                                                            });
+                                                            setView('manager');
+                                                        }
+                                                    }}
+                                                    className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-950 hover:text-white transition-all shadow-sm"
+                                                >
+                                                    <Edit size={16} />
+                                                </button>
+                                                <button onClick={() => handleDelete(p.id)} className="p-2.5 bg-rose-50 text-rose-400 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="p-32 bg-white/40 backdrop-blur-md rounded-[4rem] border-2 border-dashed border-slate-200 flex flex-col items-center text-center">
+                    <div className="w-24 h-24 bg-white rounded-[2rem] shadow-xl flex items-center justify-center text-slate-200 mb-8">
+                        <Layers size={48} />
+                    </div>
+                    <h4 className="text-2xl font-black text-slate-900 uppercase italic">Lexicon Initialized</h4>
+                    <p className="text-slate-400 font-medium max-w-sm mt-2">No asset templates have been defined in the global registry yet.</p>
+                    <Button 
+                        onClick={() => handleOpenModal()}
+                        className="mt-10 bg-slate-950 text-white px-10 py-5 h-auto rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl"
+                    >
+                        Deploy First Blueprint
+                    </Button>
+                </div>
+            )}
+          </motion.div>
+        ) : (
+          <motion.div 
+            key="manager"
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                {/* BLUEPRINT LIST */}
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="flex items-center gap-4 px-4">
+                        <div className="w-2 h-6 bg-emerald-500 rounded-full" />
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest italic">Available Architectures</h3>
+                    </div>
+                    <div className="space-y-4">
+                        {loadingTemplates ? (
+                            <div className="p-12 text-center flex justify-center"><LoadingSpinner /></div>
+                        ) : blueprints.map(bp => (
+                            <div key={bp.id} className="relative group">
+                                <button 
+                                    onClick={() => handleEditTemplate(bp)}
+                                    className={`w-full p-8 rounded-[2.5rem] border-2 text-left transition-all flex items-center justify-between ${
+                                        editingTemplate?.id === bp.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-2xl' : 'bg-white border-slate-50 hover:border-emerald-100 shadow-sm'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-6">
+                                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${editingTemplate?.id === bp.id ? 'bg-white/20' : 'bg-emerald-50 text-emerald-600'}`}>
+                                            {bp.icon || '📦'}
+                                        </div>
+                                        <div>
+                                            <div className="font-black text-sm uppercase italic tracking-tight">{bp.name}</div>
+                                            <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${editingTemplate?.id === bp.id ? 'text-white/60' : 'text-slate-400'}`}>
+                                                {bp.schema.length} Attributes Defined
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Layout size={18} className={editingTemplate?.id === bp.id ? 'text-white/40' : 'text-slate-200'} />
+                                </button>
+                                
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        generateCSVTemplate(bp);
+                                    }}
+                                    title="Download Bulk Template"
+                                    className="absolute -right-4 top-1/2 -translate-y-1/2 p-4 bg-slate-950 text-white rounded-2xl opacity-0 group-hover:opacity-100 group-hover:translate-x-0 -translate-x-4 transition-all shadow-2xl hover:bg-emerald-500 z-20"
+                                >
+                                    <FileSpreadsheet size={20} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* SCHEMA BUILDER */}
+                <div className="lg:col-span-2">
+                    {editingTemplate ? (
+                        <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+                             <div className="p-10 bg-slate-950 text-white flex items-center justify-between">
+                                <div className="flex items-center gap-6">
+                                    <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center">
+                                        <ClipboardList size={24} />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xl font-black uppercase tracking-tighter italic">Architecture Designer</h4>
+                                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mt-1">Configuring {editingTemplate.name || 'New Blueprint'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    {editingTemplate.id && (
+                                        <button 
+                                            onClick={() => generateCSVTemplate(editingTemplate)}
+                                            className="px-6 h-12 bg-white/10 rounded-xl hover:bg-white/20 transition-all flex items-center gap-3 text-[10px] font-black uppercase tracking-widest"
+                                        >
+                                            <Download size={16} /> Bulk Template
+                                        </button>
+                                    )}
+                                    <button onClick={() => setEditingTemplate(null)} className="p-3 bg-white/10 rounded-xl hover:bg-white/20 transition-all"><X size={20} /></button>
+                                </div>
+                             </div>
+
+                             <div className="p-12 space-y-10">
+                                <div className="grid grid-cols-2 gap-8">
+                                    <Input label="Blueprint Name" value={editingTemplate.name} onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})} className="h-16 bg-slate-50 border-none rounded-2xl font-black px-6" />
+                                    <Input label="Visual Icon (Emoji)" value={editingTemplate.icon} onChange={e => setEditingTemplate({...editingTemplate, icon: e.target.value})} className="h-16 bg-slate-50 border-none rounded-2xl font-black px-6" />
+                                </div>
+                                <Input label="Description" value={editingTemplate.description} onChange={e => setEditingTemplate({...editingTemplate, description: e.target.value})} className="h-16 bg-slate-50 border-none rounded-2xl font-black px-6" />
+
+                                <div className="pt-6 space-y-6">
+                                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                                        <h5 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] italic">Structural Attributes</h5>
+                                        <button onClick={addField} className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-transform"><Plus size={14} /> Add New Attribute</button>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                         {editingTemplate.schema.map((field, idx) => {
+                                             let displayType = field.type;
+                                             if (field.type === 'number' && field.unit === 'KG') displayType = 'kg';
+                                             else if (field.type === 'number' && field.unit === 'L') displayType = 'litre';
+                                             else if (field.type === 'number' && field.unit === 'M') displayType = 'metre';
+                                             else if (field.type === 'number' && field.unit === '%') displayType = 'percent';
+                                             else if (field.type === 'number' && field.unit === '$') displayType = 'currency';
+
+                                             return (
+                                                 <div key={field.key} className="p-10 bg-slate-50/50 rounded-[2.5rem] border-2 border-slate-50 space-y-6 group hover:border-emerald-200 transition-all">
+                                                     <div className="flex flex-wrap lg:flex-nowrap items-center gap-8">
+                                                        <div className="flex-[2] min-w-[200px]">
+                                                            <Input label="Attribute Label" value={field.label} onChange={e => updateField(idx, { label: e.target.value })} className="h-14 bg-white border-none rounded-2xl font-bold" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-[180px]">
+                                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Data Architecture</label>
+                                                            <select 
+                                                                className="w-full h-14 bg-white border-none rounded-2xl px-4 text-[11px] font-black uppercase tracking-widest cursor-pointer outline-none shadow-sm" 
+                                                                value={displayType} 
+                                                                onChange={e => updateField(idx, { type: e.target.value })}
+                                                            >
+                                                                <optgroup label="Standard Types">
+                                                                    <option value="text">General Text</option>
+                                                                    <option value="number">Plain Number</option>
+                                                                    <option value="date">Calendar Date</option>
+                                                                    <option value="select">Dropdown Choice</option>
+                                                                    <option value="textarea">Multi-line Text</option>
+                                                                    <option value="checkbox">Toggle Switch</option>
+                                                                </optgroup>
+                                                                <optgroup label="Measured Units">
+                                                                    <option value="kg">Weight (KG)</option>
+                                                                    <option value="litre">Volume (Litre)</option>
+                                                                    <option value="metre">Length (Metre)</option>
+                                                                    <option value="percent">Ratio (%)</option>
+                                                                    <option value="currency">Value ($)</option>
+                                                                </optgroup>
+                                                            </select>
+                                                        </div>
+                                                        <div className="flex-1 min-w-[150px]">
+                                                            <Input label="Section Group" value={field.section} onChange={e => updateField(idx, { section: e.target.value })} className="h-14 bg-white border-none rounded-2xl font-bold" />
+                                                        </div>
+                                                        <div className="pt-6">
+                                                            <button onClick={() => removeField(idx)} className="p-4 bg-white text-rose-400 rounded-2xl hover:bg-rose-500 hover:text-white transition-all shadow-sm opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
+                                                        </div>
+                                                     </div>
+
+                                                     {field.type === 'select' && (
+                                                         <div className="pt-6 border-t border-slate-200/50 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                            <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-2 mb-2 block">Dropdown Choices (comma separated)</label>
+                                                            <input 
+                                                                type="text"
+                                                                value={field.options ? field.options.join(', ') : ''}
+                                                                onChange={e => updateField(idx, { options: e.target.value.split(',').map(s => s.trim()) })}
+                                                                placeholder="e.g. Brand New, Used, Damaged"
+                                                                className="w-full h-14 bg-white border-none rounded-2xl px-6 text-xs font-bold text-slate-600 outline-none shadow-sm"
+                                                            />
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             );
+                                         })}
+                                     </div>
+                                </div>
+
+                                <div className="pt-10 flex justify-end gap-6 border-t border-slate-100">
+                                    <Button variant="ghost" onClick={() => setEditingTemplate(null)} className="px-10 h-16 rounded-2xl font-black uppercase text-xs tracking-widest text-slate-400">Cancel</Button>
+                                    <Button onClick={handleSaveTemplate} className="bg-emerald-600 text-white px-12 h-16 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl shadow-emerald-500/20">Commit Architecture</Button>
+                                </div>
+                             </div>
+                        </div>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center p-32 bg-slate-50/50 rounded-[4rem] border-2 border-dashed border-slate-200 text-center text-slate-400">
+                             <Settings2 size={64} className="mb-6 opacity-20" />
+                             <h4 className="text-xl font-black uppercase italic tracking-tight">Select an architecture to modify</h4>
+                             <p className="text-[10px] font-bold uppercase tracking-widest mt-2 max-w-xs">Alter the DNA of your inventory by editing or creating new blueprints from scratch.</p>
+                        </div>
+                    )}
+                </div>
              </div>
-          </div>
-        </div>
-      </Modal>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <BlueprintModal 
+        isOpen={modalOpen} 
+        onClose={() => setModalOpen(false)} 
+        onCreated={() => {
+          refetchProducts();
+          setModalOpen(false);
+        }}
+        editData={editingItem}
+      />
     </div>
   );
 };

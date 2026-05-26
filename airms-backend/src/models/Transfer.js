@@ -49,7 +49,7 @@ const Transfer = sequelize.define('Transfer', {
         }
     },
     transfer_type: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         allowNull: false,
         validate: {
             isIn: [['user_to_user', 'user_to_node', 'node_to_user', 'node_to_node']]
@@ -73,7 +73,7 @@ const Transfer = sequelize.define('Transfer', {
         type: DataTypes.DATE
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'pending'
     },
     transfer_date: {

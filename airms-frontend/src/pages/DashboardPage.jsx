@@ -132,8 +132,8 @@ const DashboardPage = () => {
     canViewRequests: hasPermission('request:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
     canViewDischarges: hasPermission('discharge:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
     canViewIssues: hasPermission('issue:view') || hasPermission('inventory:view') || hasPermission('inventory:manage'),
-    isRoot: user?.role?.level >= 100,
-    isStaff: user?.role?.level < 30 
+    isRoot: hasPermission('system:manage') || (user?.role?.level >= 100),
+    isStaff: (!hasPermission('dashboard:executive') && !hasPermission('inventory:view') && !hasPermission('organization:manage') && !hasPermission('system:manage')) || (user?.role?.level > 0 && user?.role?.level < 30)
   }), [user, hasPermission]);
 
   useEffect(() => {
@@ -250,16 +250,119 @@ const DashboardPage = () => {
     finally { setSubmitting(false); }
   };
 
-  const handleFulfill = async (id) => {
+  const handleFulfill = async (id, currentStatus) => {
     const loadingToast = toast.loading('Acknowledging Receipt...');
     try {
-      await api.post(`/requests/${id}/fulfill`);
+      if (currentStatus === 'pending_acknowledgment') {
+        await requestService.acknowledgeRequest(id);
+      } else {
+        await api.post(`/requests/${id}/fulfill`);
+      }
       toast.success('Protocol Fulfilled', { id: loadingToast });
       fetchData();
     } catch (error) { toast.error('Fulfillment Error', { id: loadingToast }); }
   };
 
-  if (loading || !user) return <LoadingSpinner />;
+  const getRequestDetails = (req) => {
+    const type = req.request_type?.toLowerCase() || '';
+    const status = req.status?.toLowerCase() || 'pending';
+    const targetName = req.target_user ? `${req.target_user.first_name} ${req.target_user.last_name}`.trim() : 'Personnel';
+    
+    let subtitle = '';
+    let badgeText = status.toUpperCase();
+    let badgeVariant = 'default';
+    
+    if (type === 'transfer') {
+      if (status === 'fulfilled') {
+        subtitle = `Transferred to ${targetName}`;
+        badgeText = 'TRANSFERRED';
+        badgeVariant = 'success';
+      } else if (status === 'approved') {
+        subtitle = `Approved (Pending Handover to ${targetName})`;
+        badgeText = 'APPROVED';
+        badgeVariant = 'info';
+      } else if (status === 'pending_acknowledgment') {
+        subtitle = `Awaiting Handover Receipt by ${targetName}`;
+        badgeText = 'AWAITING RECEIPT';
+        badgeVariant = 'warning';
+      } else if (status === 'rejected') {
+        subtitle = `Transfer to ${targetName} Rejected`;
+        badgeText = 'REJECTED';
+        badgeVariant = 'danger';
+      } else {
+        subtitle = `Initiating Transfer to ${targetName}`;
+        badgeText = 'PENDING';
+        badgeVariant = 'warning';
+      }
+    } else if (type === 'return') {
+      if (status === 'fulfilled') {
+        subtitle = 'Returned to Storage';
+        badgeText = 'RETURNED';
+        badgeVariant = 'success';
+      } else if (status === 'approved') {
+        subtitle = 'Approved (Awaiting Return)';
+        badgeText = 'APPROVED';
+        badgeVariant = 'info';
+      } else if (status === 'pending_acknowledgment') {
+        subtitle = 'Awaiting Return Receipt by Storage';
+        badgeText = 'AWAITING RECEIPT';
+        badgeVariant = 'warning';
+      } else if (status === 'rejected') {
+        subtitle = 'Return to Storage Rejected';
+        badgeText = 'REJECTED';
+        badgeVariant = 'danger';
+      } else {
+        subtitle = 'Initiating Return to Storage';
+        badgeText = 'PENDING';
+        badgeVariant = 'warning';
+      }
+    } else if (type === 'issue') {
+      if (status === 'fulfilled') {
+        subtitle = 'Incident Resolved';
+        badgeText = 'RESOLVED';
+        badgeVariant = 'success';
+      } else if (status === 'pending_acknowledgment') {
+        subtitle = 'Incident Resolved (Awaiting Handover)';
+        badgeText = 'AWAITING RECEIPT';
+        badgeVariant = 'warning';
+      } else if (status === 'rejected') {
+        subtitle = 'Incident Dismissed';
+        badgeText = 'DISMISSED';
+        badgeVariant = 'danger';
+      } else {
+        subtitle = 'Incident Reported';
+        badgeText = 'REPORTED';
+        badgeVariant = 'warning';
+      }
+    } else {
+      // Default / Procurement / New Intake requests
+      if (status === 'fulfilled') {
+        subtitle = 'Request Fulfilled';
+        badgeText = 'FULFILLED';
+        badgeVariant = 'success';
+      } else if (status === 'approved') {
+        subtitle = 'Request Approved';
+        badgeText = 'APPROVED';
+        badgeVariant = 'info';
+      } else if (status === 'pending_acknowledgment') {
+        subtitle = 'Awaiting Physical Handover / Receipt';
+        badgeText = 'AWAITING RECEIPT';
+        badgeVariant = 'warning';
+      } else if (status === 'rejected') {
+        subtitle = 'Request Rejected';
+        badgeText = 'REJECTED';
+        badgeVariant = 'danger';
+      } else {
+        subtitle = 'Awaiting Approval';
+        badgeText = 'PENDING';
+        badgeVariant = 'warning';
+      }
+    }
+    
+    return { subtitle, badgeText, badgeVariant };
+  };
+
+  if (!user) return <LoadingSpinner />;
 
   // ── TAB RENDERING ──
   if (tabParam) {
@@ -267,15 +370,9 @@ const DashboardPage = () => {
     const tabTitles = { users: 'Personnel Registry', roles: 'Authority Matrix', products: 'Product Catalog' };
     return (
       <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <div className="flex justify-between items-end pb-8 border-b-2 border-slate-100 px-4">
-          <div>
-            <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">{tabTitles[tabParam] || tabParam}</h1>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] mt-3 ml-1 italic">Command & Control Layer</p>
-          </div>
-        </div>
         <div className="bg-white/40 backdrop-blur-xl rounded-[3.5rem] p-4 ring-1 ring-white shadow-[0_32px_64px_rgba(0,0,0,0.04)]">
-          {tabParam === 'users' && <UserManagement orgNodeId={selectedUnit} />}
-          {tabParam === 'roles' && <RoleManagement />}
+          {tabParam === 'users' && <UserManagement orgNodeId={selectedUnit} onBack={() => setSearchParams({})} />}
+          {tabParam === 'roles' && <RoleManagement onBack={() => setSearchParams({})} />}
           {tabParam === 'products' && <ProductManagement />}
         </div>
       </div>
@@ -293,50 +390,25 @@ const DashboardPage = () => {
     <div className="min-h-screen bg-white relative overflow-hidden pb-24">
       {/* Background patterns removed for clean integrated look */}
 
-      <div className="relative z-10 max-w-[1700px] mx-auto space-y-12 py-12 px-8">
-        {/* UNIVERSAL COMMAND HEADER */}
-        <div className="bg-slate-900 rounded-[3rem] p-10 shadow-xl relative overflow-visible group">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-transparent to-transparent"></div>
-          <div className="relative z-10 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-10">
-            <div className="flex items-center gap-8">
-               <div className="w-20 h-20 bg-white/10 backdrop-blur-xl border border-white/20 rounded-[30px] flex items-center justify-center shadow-2xl rotate-3 group-hover:rotate-0 transition-transform duration-500">
-                  <Fingerprint size={40} className="text-blue-400" />
-               </div>
-               <div>
-                  <div className="text-xs font-black text-blue-400 uppercase tracking-[0.4em] mb-2 ml-1 italic">
-                    {capabilities.isRoot ? 'Institutional Authority' : 'Operational Scope'}
-                  </div>
-                  <h1 className="text-4xl font-bold text-white leading-none">
-                    {capabilities.isRoot ? 'Institutional Governance Core' : (user?.organization_node?.name || 'Central Governance')}
-                  </h1>
-                  <p className="text-xs font-medium text-slate-400 mt-3 ml-1 opacity-80">
-                    {capabilities.isRoot ? 'System Architect' : (user?.organization_node?.type?.name || 'System Core')} Access
-                  </p>
-               </div>
-            </div>
-            <div className="flex items-center gap-6 bg-white/5 backdrop-blur-xl p-5 rounded-[40px] border border-white/10">
-               {(!capabilities.isStaff && !capabilities.isRoot) && (
-                  <div className="flex items-center gap-4 px-6 border-r border-white/10">
-                    <CascadingUnitSelector 
-                      value={selectedUnit} 
-                      onChange={setSelectedUnit} 
-                      variant="dropdown"
-                      className="min-w-[320px] h-16" 
-                    />
-                  </div>
-               )}
-               <div className={`flex items-center gap-4 px-8 h-16 rounded-[28px] shadow-xl ${capabilities.isRoot ? 'bg-indigo-600' : 'bg-blue-600'}`}>
-                  <Shield size={20} className="text-white" />
-                  <span className="text-white italic text-sm font-black uppercase tracking-[0.2em]">
-                    {capabilities.isRoot ? 'INSTITUTIONAL ROOT' : 'LOCAL HUB'}
-                  </span>
-               </div>
+      <div className="relative z-10 max-w-[1700px] mx-auto space-y-4 pb-12 px-4 lg:px-8">
+        {(!capabilities.isStaff && !capabilities.isRoot) && (
+          <div className="flex justify-end">
+            <div className="bg-white p-1 rounded-xl border border-slate-100 shadow-sm">
+              <CascadingUnitSelector 
+                value={selectedUnit} 
+                onChange={setSelectedUnit} 
+                variant="dropdown"
+                className="min-w-[280px] h-12" 
+              />
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 space-y-16">
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+        {loading ? (
+          <div className="p-32 text-center flex justify-center"><LoadingSpinner /></div>
+        ) : (
+          <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 space-y-6">
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                {capabilities.isRoot ? (
                  <>
                    <KPITile 
@@ -396,16 +468,16 @@ const DashboardPage = () => {
                         icon={<Users />} 
                         gradient="from-emerald-600 to-teal-700" 
                         onClick={() => setSearchParams({ tab: 'users' })}
-                        subLabel="Registry Size"
+                        subLabel=""
                       />
                     )}
 
                     <KPITile 
-                      label="Active Assets" 
+                      label="Total Assets" 
                       value={capabilities.isStaff ? myAssignments.length : (metrics.total_stock || 0)} 
                       icon={<Box />} 
                       gradient="from-slate-800 to-slate-950" 
-                      subLabel={capabilities.isStaff ? "Under Personal Custody" : "In Node Inventory"}
+                      subLabel={capabilities.isStaff ? "Under Personal Custody" : ""}
                     />
 
                     {capabilities.canViewTransfers && (
@@ -416,28 +488,28 @@ const DashboardPage = () => {
                           icon={<ArrowLeftRight />} 
                           gradient="from-blue-500 to-indigo-600" 
                           onClick={() => navigate('/requests/inventory')}
-                          subLabel="Movement Ledger"
+                          subLabel=""
                         />
-                        <KPITile 
+                        {/* <KPITile 
                           label="Item Volume" 
                           value={metrics.total_transferred_items || 0} 
                           icon={<Activity />} 
                           gradient="from-indigo-600 to-violet-700" 
                           onClick={() => navigate('/requests/inventory')}
                           subLabel="Physical Throughput"
-                        />
+                        /> */}
                       </>
                     )}
 
                     {capabilities.canViewRequests && (
                       <>
                         <KPITile 
-                          label="Procurement" 
+                          label="user requests" 
                           value={metrics.total_procurement || 0} 
                           icon={<PackagePlus />} 
                           gradient="from-emerald-500 to-emerald-700" 
                           onClick={() => navigate('/requests/procurement')}
-                          subLabel="Acquisition Log"
+                          subLabel=""
                         />
                         <KPITile 
                           label="Inventory Returns" 
@@ -445,7 +517,7 @@ const DashboardPage = () => {
                           icon={<RotateCcw />} 
                           gradient="from-cyan-500 to-blue-700" 
                           onClick={() => navigate('/requests/inventory-returns')}
-                          subLabel="Decommission Log"
+                          subLabel=""
                         />
                       </>
                     )}
@@ -457,18 +529,18 @@ const DashboardPage = () => {
                         icon={<PackageMinus />} 
                         gradient="from-orange-500 to-amber-700" 
                         onClick={() => navigate('/requests/discharge')}
-                        subLabel="Release Protocol"
+                        subLabel=""
                       />
                     )}
 
                     {capabilities.canViewIssues && (
                       <KPITile 
-                        label="Incident Reports" 
+                        label="Reports" 
                         value={metrics.total_reports || 0} 
                         icon={<AlertTriangle />} 
                         gradient="from-rose-500 to-pink-700" 
                         onClick={() => navigate('/issues')}
-                        subLabel="Compliance Alerts"
+                        subLabel=""
                       />
                     )}
 
@@ -528,98 +600,15 @@ const DashboardPage = () => {
                     </div>
                  ) : (
                     <>
-                       {/* PERSONAL VAULT FOR OPERATIONAL STAFF */}
-                       <div className="space-y-8">
-                          <div className="flex items-center justify-between px-2">
-                             <div className="flex items-center gap-4">
-                                <div className="w-2 h-8 bg-blue-600 rounded-full" />
-                                <div>
-                                  <h3 className="text-xl font-bold text-slate-900">Personnel Vault</h3>
-                                  <p className="text-xs font-medium text-slate-500 mt-1">Resources Under Active Custody</p>
-                                </div>
-                             </div>
-                          </div>
-                          <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-white/50 shadow-sm overflow-hidden">
-                             <table className="w-full text-left border-collapse">
-                                <thead>
-                                   <tr className="bg-slate-50/50 border-b border-slate-100">
-                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">Asset Detail</th>
-                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">Serial / SKU</th>
-                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">State</th>
-                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500">Custody Date</th>
-                                      <th className="px-8 py-4 text-xs font-semibold text-slate-500 text-right">Actions</th>
-                                   </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50">
-                                   {myAssignments.map(asset => (
-                                      <tr key={asset.id} className="group hover:bg-blue-50/30 transition-colors">
-                                         <td className="px-8 py-6">
-                                            <div className="flex items-center gap-4">
-                                               <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all"><Package size={22} /></div>
-                                               <div>
-                                                  <div className="font-black text-slate-900 text-sm italic uppercase">{asset.product?.name}</div>
-                                                  <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">{asset.product?.brand || 'ASSET'}</div>
-                                               </div>
-                                            </div>
-                                         </td>
-                                         <td className="px-8 py-6">
-                                            <div className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{asset.serial_number}</div>
-                                            <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{asset.product?.sku}</div>
-                                         </td>
-                                         <td className="px-8 py-6">
-                                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                                               asset.condition === 'new' ? 'bg-emerald-50 text-emerald-600' : 
-                                               asset.condition === 'good' ? 'bg-blue-50 text-blue-600' : 
-                                               'bg-amber-50 text-amber-600'
-                                            }`}>
-                                               {asset.condition || 'STANDARD'}
-                                            </span>
-                                         </td>
-                                         <td className="px-8 py-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                            {new Date(asset.assigned_at).toLocaleDateString()}
-                                         </td>
-                                         <td className="px-8 py-6 text-right">
-                                            <div className="flex justify-end gap-3">
-                                               <button 
-                                                 onClick={() => setTransferAsset(asset)}
-                                                 title="Initiate Transfer"
-                                                 className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl hover:bg-slate-950 hover:text-blue-400 transition-all"
-                                               >
-                                                  <ArrowLeftRight size={16} />
-                                               </button>
-                                               <button 
-                                                 onClick={() => setReturnAsset(asset)}
-                                                 title="Return to Store"
-                                                 className="w-10 h-10 flex items-center justify-center bg-teal-50 text-teal-600 rounded-xl hover:bg-slate-950 hover:text-teal-400 transition-all"
-                                               >
-                                                  <RotateCcw size={16} />
-                                               </button>
-                                               <button 
-                                                 onClick={() => setReportAsset(asset)}
-                                                 title="Report Issue"
-                                                 className="w-10 h-10 flex items-center justify-center bg-rose-50 text-rose-600 rounded-xl hover:bg-slate-950 hover:text-rose-400 transition-all"
-                                               >
-                                                  <AlertTriangle size={16} />
-                                               </button>
-                                            </div>
-                                         </td>
-                                      </tr>
-                                   ))}
-                                </tbody>
-                             </table>
-                             {myAssignments.length === 0 && (
-                                <div className="p-20 text-center text-slate-400 text-sm font-medium">No assets currently assigned to your account.</div>
-                             )}
-                          </div>
-                       </div>
+
 
                        {/* ACTIVITY LEDGER FOR OPERATIONAL STAFF */}
                        <div className="space-y-8">
                           <div className="flex items-center gap-4 px-2">
                              <div className="w-2 h-8 bg-slate-950 rounded-full" />
                              <div>
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">Activity Ledger</h3>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Lifecycle Tracking of Personal Protocols</p>
+                                <h3 className="text-xl font-bold text-slate-900">My Activity</h3>
+                                <p className="text-xs font-medium text-slate-500 mt-1">History of your requests and transfers</p>
                              </div>
                           </div>
                           <div className="space-y-4">
@@ -630,18 +619,31 @@ const DashboardPage = () => {
                                       <div>
                                          <div className="font-black text-slate-900 text-sm uppercase italic">{req.items?.[0]?.product?.name || 'PROTOCOL'}</div>
                                          <div className="text-[9px] font-black text-slate-400 uppercase mt-1">
-                                            {req.request_type === 'transfer' ? (
-                                              req.status === 'approved' ? `Completed Transfer to ${req.target_user?.first_name || 'Personnel'}` : `Initiating Transfer to ${req.target_user?.first_name || 'Personnel'}`
-                                            ) : req.request_type === 'return' ? (
-                                              req.status === 'approved' ? 'Successfully Returned to Storage' : 'Initiating Return to Storage'
-                                            ) : req.request_type.toUpperCase()} • {req.request_number}
+                                            {(() => {
+                                              const details = getRequestDetails(req);
+                                              return details.subtitle;
+                                            })()} • {req.request_number}
                                          </div>
                                       </div>
                                    </div>
                                    <div className="flex items-center gap-6">
-                                      <Badge variant={req.status === 'approved' ? 'success' : 'gray'} className="text-[8px] font-black px-4 py-1.5 rounded-xl">{req.status.toUpperCase()}</Badge>
-                                      {req.status === 'approved' && <button onClick={() => handleFulfill(req.id)} className="bg-blue-600 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20">Fulfill</button>}
-                                   </div>
+                                       {(() => {
+                                         const details = getRequestDetails(req);
+                                         return (
+                                           <Badge variant={details.badgeVariant} className="text-[8px] font-black px-4 py-1.5 rounded-xl">
+                                             {details.badgeText}
+                                           </Badge>
+                                         );
+                                       })()}
+                                       {(req.status === 'approved' || req.status === 'pending_acknowledgment') && (
+                                         <button 
+                                           onClick={() => handleFulfill(req.id, req.status)} 
+                                           className="bg-blue-600 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-colors"
+                                         >
+                                           {req.status === 'pending_acknowledgment' ? 'Acknowledge Receipt' : 'Fulfill'}
+                                         </button>
+                                       )}
+                                    </div>
                                 </div>
                              ))}
                           </div>
@@ -652,10 +654,95 @@ const DashboardPage = () => {
 
               <div className="space-y-16">
                  {(!capabilities.isRoot && capabilities.canViewInventory) && <AssetInsight inventory={nodeDistribution} />}
-
               </div>
-           </div>
-        </div>
+            </div>
+
+            {/* GLOBAL ASSET DISPLAY AT THE BOTTOM */}
+            {myAssignments.length > 0 && (
+              <div className="space-y-8 pt-8">
+                 <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-4">
+                       <div className="w-2 h-8 bg-blue-600 rounded-full" />
+                       <div>
+                         <h3 className="text-xl font-bold text-slate-900">My Equipment</h3>
+                         <p className="text-xs font-medium text-slate-500 mt-1">Physical assets currently in your custody</p>
+                       </div>
+                    </div>
+                 </div>
+                 <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                       <thead>
+                          <tr className="bg-slate-50/50 border-b border-slate-100">
+                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">Asset Detail</th>
+                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">Serial / SKU</th>
+                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">State</th>
+                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">Custody Date</th>
+                             <th className="px-8 py-4 text-xs font-semibold text-slate-500 text-right">Actions</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-50">
+                          {myAssignments.map(asset => (
+                             <tr key={asset.id} className="group hover:bg-blue-50/30 transition-colors">
+                                <td className="px-8 py-6">
+                                   <div className="flex items-center gap-4">
+                                      <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all"><Package size={22} /></div>
+                                      <div>
+                                         <div className="font-black text-slate-900 text-sm italic uppercase">{asset.product?.name}</div>
+                                         <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">{asset.product?.brand || 'ASSET'}</div>
+                                      </div>
+                                   </div>
+                                </td>
+                                <td className="px-8 py-6">
+                                   <div className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{asset.serial_number}</div>
+                                   <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{asset.product?.sku}</div>
+                                </td>
+                                <td className="px-8 py-6">
+                                   <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                                      asset.condition === 'new' ? 'bg-emerald-50 text-emerald-600' : 
+                                      asset.condition === 'good' ? 'bg-blue-50 text-blue-600' : 
+                                      'bg-amber-50 text-amber-600'
+                                   }`}>
+                                      {asset.condition || 'STANDARD'}
+                                   </span>
+                                </td>
+                                <td className="px-8 py-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                   {new Date(asset.assigned_at).toLocaleDateString()}
+                                </td>
+                                <td className="px-8 py-6 text-right">
+                                   <div className="flex justify-end gap-3">
+                                      <button 
+                                        onClick={() => setTransferAsset(asset)}
+                                        title="Initiate Transfer"
+                                        className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl hover:bg-slate-950 hover:text-blue-400 transition-all"
+                                      >
+                                         <ArrowLeftRight size={16} />
+                                      </button>
+                                      <button 
+                                        onClick={() => setReturnAsset(asset)}
+                                        title="Return to Store"
+                                        className="w-10 h-10 flex items-center justify-center bg-teal-50 text-teal-600 rounded-xl hover:bg-slate-950 hover:text-teal-400 transition-all"
+                                      >
+                                         <RotateCcw size={16} />
+                                      </button>
+                                      <button 
+                                        onClick={() => setReportAsset(asset)}
+                                        title="Report Issue"
+                                        className="w-10 h-10 flex items-center justify-center bg-rose-50 text-rose-600 rounded-xl hover:bg-slate-950 hover:text-rose-400 transition-all"
+                                      >
+                                         <AlertTriangle size={16} />
+                                      </button>
+                                   </div>
+                                </td>
+                             </tr>
+                          ))}
+                       </tbody>
+                    </table>
+                 </div>
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
 
       {/* MODALS */}

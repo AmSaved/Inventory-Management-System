@@ -7,6 +7,34 @@ const { getEffectivePermissions } = require('../middleware/permissions');
 
 const assignmentController = {
     /**
+     * Get assignments strictly for the logged-in user.
+     * No special permissions required.
+     */
+    async getMyAssignments(req, res, next) {
+        try {
+            const { count, rows } = await Assignment.findAndCountAll({
+                where: { 
+                    company_id: req.user.company_id,
+                    user_id: req.user.id
+                },
+                include: [
+                    { model: Product, as: 'product' },
+                    { model: OrganizationNode, as: 'organizationNode', attributes: ['name'] }
+                ],
+                order: [['assigned_at', 'DESC']]
+            });
+
+            res.json({
+                success: true,
+                data: rows,
+                pagination: { total: count, page: 1, pages: 1 }
+            });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    /**
      * Get all assignments scoped to company and user's organizational scope.
      */
     async getAll(req, res, next) {

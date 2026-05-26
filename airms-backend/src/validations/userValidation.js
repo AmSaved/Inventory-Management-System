@@ -2,7 +2,7 @@ const { body, param, query } = require('express-validator');
 
 const createUserValidation = [
     body('employee_id')
-        .notEmpty().withMessage('Employee ID is required')
+        .optional({ values: 'falsy' })
         .isLength({ min: 1, max: 100 }).withMessage('Employee ID must be between 1 and 100 characters'),
     
     body('email')

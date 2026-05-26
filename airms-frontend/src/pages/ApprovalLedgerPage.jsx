@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import Badge from '../components/ui/Badge';
 import Modal from '../components/common/Modal';
-import LoadingSpinner from '../components/common/LoadingSpinner';
 import { formatDate } from '../utils/formatters';
 import api from '../services/api';
+import requestService from '../services/requestService';
 import toast from 'react-hot-toast';
 import { parseSpecifications } from '../utils/helpers';
 import { 
@@ -19,7 +18,6 @@ import {
   Package, 
   ClipboardList, 
   Eye, 
-  CheckCircle2, 
   XCircle,
   QrCode
 } from 'lucide-react';
@@ -28,7 +26,7 @@ import QRCode from 'react-qr-code';
 const ApprovalLedgerPage = () => {
   const { type } = useParams();
   const navigate = useNavigate();
-  const { user, hasPermission } = useAuth();
+  const { } = useAuth(); // auth context kept for potential future use
 
   const [searchValue, setSearchValue] = useState('');
   const [search, setSearch] = useState('');
@@ -40,51 +38,9 @@ const ApprovalLedgerPage = () => {
   const [viewingRequest, setViewingRequest] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
 
-  // Asset Allocation State (Required for Standard Request final steps)
-  const [allocations, setAllocations] = useState({}); 
-  const [availableInventory, setAvailableInventory] = useState({}); 
-  const [loadingInventory, setLoadingInventory] = useState(false);
-  
-  const [fullRequestDetails, setFullRequestDetails] = useState(null);
   const [activeQr, setActiveQr] = useState(null); 
 
-  // Fetch full details and available inventory when approval modal opens for the final step
-  useEffect(() => {
-    const fetchInventoryForAllocation = async () => {
-      if (!approvalModalOpen || approvalAction !== 'approve' || !selectedRequest) return;
 
-      // ONLY fetch inventory if it's the final step
-      if (!selectedRequest.is_final_step) return;
-
-      setLoadingInventory(true);
-      try {
-        // 1. Fetch full request details to get items
-        const res = await api.get(`/requests/${selectedRequest.id}`);
-        const request = res.data.data;
-        setFullRequestDetails(request);
-
-        // 2. Determine if it's the final step (Backend could tell us, but we can check if it's the last step in steps array)
-        // If it's a request and we have items, pre-fetch available inventory for each product
-        if (request.items && request.items.length > 0) {
-          const invMap = {};
-          for (const item of request.items) {
-            const invRes = await api.get('/inventory', {
-              params: { product_id: item.product_id, status: 'available', limit: 100 }
-            });
-            invMap[item.product_id] = invRes.data.data;
-          }
-          setAvailableInventory(invMap);
-        }
-      } catch (err) {
-        console.error('Failed to load allocation data:', err);
-        toast.error('Failed to load available inventory for allocation');
-      } finally {
-        setLoadingInventory(false);
-      }
-    };
-
-    fetchInventoryForAllocation();
-  }, [approvalModalOpen, approvalAction, selectedRequest]);
   const typeConfig = {
     inventory: { title: 'Inventory Transfer Approvals', icon: <Shuffle className="text-blue-500" /> },
     items: { title: 'Item Transfer Approvals', icon: <Package className="text-indigo-500" /> },
@@ -112,78 +68,85 @@ const ApprovalLedgerPage = () => {
 
   const data = Array.isArray(rawData) ? rawData : (rawData?.data || []);
 
-  const canUserApprove = (item) => {
-    const userRoleId = Number(user.role?.id || user.role_id);
-    const stepRoleId = item.currentStep?.required_role_id ? Number(item.currentStep.required_role_id) : null;
-
-    // 1. Direct Role Match Override (Priority 1)
-    if (stepRoleId && userRoleId === stepRoleId) return true;
-
-    // 2. If backend already calculated authority, trust it
-    if (item.can_action === true) return true;
-    if (item.can_action === false) return false;
-
-    // 3. Fallback check for workflow step requirements
-    if (!user || !item.currentStep) return false;
-
-    const step = item.currentStep;
-
-    // Check Permission Authority
-    if (step.required_permission && hasPermission(step.required_permission)) return true;
-
-    // Check Global/Admin overrides
-    if (hasPermission('system:manage') || hasPermission('workflow:process')) return true;
-
-    return false;
-  };
+  // Buttons are shown only when the backend explicitly grants can_action.
+  // The backend already evaluates role match, branch scope, 4-eyes principle,
+  // and global admin overrides — so we trust it as the single source of truth.
+  const canUserApprove = (item) => item.can_action === true;
 
   const handleAction = async (requestId, action) => {
+
     setProcessing(true);
     try {
-      // Map the resource type for the backend workflow processor
-      const resourceType = selectedRequest?.resource_origin || 'request';
-      await api.post(`/approvals/${requestId}/${action}`, {
-        comments,
-        resourceType,
-        allocations
-      });
+      const origin = selectedRequest?.resource_origin || 'request';
 
-      toast.success(`Request ${action === 'approve' ? 'authorized' : 'rejected'} successfully`);
+      if (origin === 'discharge') {
+        if (action === 'approve') {
+          await api.post(`/discharge/${requestId}/approve`, { notes: comments });
+        } else if (action === 'reject') {
+          await api.post(`/discharge/${requestId}/reject`, { reason: comments });
+        }
+      } else if (origin === 'transfer') {
+        if (action === 'approve') {
+          await api.post(`/transfers/${requestId}/approve`, { comments });
+        } else if (action === 'reject') {
+          await api.post(`/transfers/${requestId}/reject`, { reason: comments });
+        }
+      } else if (origin === 'return') {
+        if (action === 'approve') {
+          await api.post(`/returns/${requestId}/process`, { notes: comments });
+        } else if (action === 'reject') {
+          await api.post(`/returns/${requestId}/reject`, { reason: comments });
+        }
+      } else {
+        // Fallback to requestService which respects backend permission checks
+        if (action === 'approve') {
+          await requestService.approveRequest(requestId, comments, {});
+        } else if (action === 'reject') {
+          await requestService.rejectRequest(requestId, comments);
+        }
+      }
+
+      toast.success(`${origin.charAt(0).toUpperCase() + origin.slice(1)} ${action === 'approve' ? 'Approved' : 'Rejected'} successfully`);
       setApprovalModalOpen(false);
       setComments('');
       refetch();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Command execution failed');
-    } finally {
+      } catch (error) {
+        const backendMsg = error.response?.data?.message;
+        const status = error.response?.status;
+        let msg = backendMsg || error.message || 'Command execution failed';
+        // If authorization failed and we know the required permission, show it
+        if (status === 403) {
+          const requiredPerm = action === 'approve' ? 'request:approve' : action === 'reject' ? 'request:reject' : null;
+          // Prefer backend required permission if available on selected request
+          const stepPerm = selectedRequest?.currentStep?.required_permission;
+          const perm = stepPerm || requiredPerm;
+          if (perm) {
+            msg = `${msg} (Missing permission: ${perm})`;
+          }
+        }
+        toast.error(msg);
+      } finally {
       setProcessing(false);
     }
   };
 
   const getStatusBadge = (item) => {
     const status = item.status?.toLowerCase();
+    const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Unknown';
 
     if (status === 'fulfilled') {
-      return <Badge variant="success">FULFILLED / RECEIVED</Badge>;
+      return <span className="text-xs font-medium text-gray-900 bg-white border border-gray-200 px-3 py-1 rounded-md">Fulfilled / Received</span>;
     }
 
     if (item.workflow_status) {
-      const isFinished = status === 'approved' || status === 'completed';
-      const variant = isFinished ? 'success' : 'warning';
-      return <Badge variant={variant}>{item.workflow_status.toUpperCase()}</Badge>;
+      const cleanWf = item.workflow_status.replace(/\s*\(.*?\)\s*/g, '').trim();
+      return <span className="text-xs font-medium text-gray-900 bg-white border border-gray-200 px-3 py-1 rounded-md">{capitalize(cleanWf)}</span>;
     }
 
-    const variantMap = {
-      pending: 'warning',
-      approved: 'success',
-      completed: 'success',
-      rejected: 'danger',
-      cancelled: 'default'
-    };
-
-    return <Badge variant={variantMap[status] || 'default'}>{status?.toUpperCase() || 'UNKNOWN'}</Badge>;
+    return <span className="text-xs font-medium text-gray-900 bg-white border border-gray-200 px-3 py-1 rounded-md">{capitalize(status)}</span>;
   };
 
-  if (loading) return <LoadingSpinner />;
+
 
   return (
     <div className="space-y-6">
@@ -191,7 +154,7 @@ const ApprovalLedgerPage = () => {
 
       <Card className="border-none shadow-xl bg-white/50 backdrop-blur-sm">
         <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row gap-4 mb-8">
+          <div className="flex flex-col md:flex-row gap-4 mb-3">
             <div className="w-full max-w-md">
               <Input
                 placeholder="Search by ID or Name..."
@@ -211,19 +174,30 @@ const ApprovalLedgerPage = () => {
           <div className="overflow-hidden rounded-2xl border border-gray-100 shadow-sm">
             <table className="w-full text-left border-collapse bg-white">
               <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest">Resource #</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest">Requester</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest">Sub-Unit / Branch</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest text-center">Type / priority</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest text-center">Active Blueprint</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest text-center">Current Handover Status</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest text-center">Submission Date</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase text-gray-400 tracking-widest text-right">Ledger Command</th>
+                <tr className="bg-gray-50/50 border-b border-black-100">
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest">Resource #</th>
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest">Requester</th>
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest">Sub-Unit / Branch</th>
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest">Target User / Node</th>
+
+
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest text-center">current Status</th>
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest text-center">Submission Date</th>
+                  <th className="px-6 py-4 text-[11px] font-white text-black-400 tracking-widest text-right">View
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {data?.map((item) => {
+                {loading ? (
+                  <tr>
+                    <td colSpan="7" className="p-12 text-center"><div className="flex justify-center"></div></td>
+                  </tr>
+                ) : (!data || data.length === 0) ? (
+                  <tr>
+                    <td colSpan="7" className="p-12 text-center text-gray-400 italic">Command queue clear for {type} ledger</td>
+                  </tr>
+                ) : (
+                  data?.map((item) => {
                   const requester = item.requester || item.creator;
                   const orgNode = item.organizationNode || item.fromNode;
                   const typeLabel = item.request_type || item.transfer_type || item.discharge_type || type;
@@ -232,51 +206,82 @@ const ApprovalLedgerPage = () => {
                   return (
                     <tr key={item.id} className="hover:bg-primary-50/30 transition-all cursor-default group">
                       <td className="px-6 py-5 align-middle">
-                        <span className="font-black text-primary-600 tracking-tighter text-sm">
+                        <span className="text-xs font-bold text-primary-500 tracking-tighter">
                           {item.transfer_number || item.discharge_number || item.request_number || `#${item.id}`}
                         </span>
                       </td>
                       <td className="px-6 py-5 align-middle">
                         <div className="flex flex-col">
-                          <span className="font-bold text-gray-800 leading-none">{requester?.first_name} {requester?.last_name}</span>
-                          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1">{requester?.employee_id || 'N/A'}</span>
+                          <span className="text-sm font-bold text-gray-800 leading-none">{requester?.first_name} {requester?.last_name}</span>
+                          <span className="text-[10px] text-gray-400 font-bold  tracking-wider mt-1">{requester?.employee_id || 'N/A'}</span>
                         </div>
                       </td>
                       <td className="px-6 py-5 align-middle">
                         <span className="text-sm text-gray-500 font-medium">{orgNode?.name || 'Institutional Domain'}</span>
                       </td>
-                      <td className="px-6 py-5 align-middle text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-black uppercase tracking-tighter">
-                            {typeLabel}
-                          </span>
-                          <span className={`${priority === 'high' ? 'text-red-500' : 'text-primary-500'} text-[9px] font-black uppercase tracking-widest`}>
-                            {priority}
-                          </span>
-                        </div>
+                      <td className="px-6 py-5 align-middle">
+                        {(() => {
+                          const origin = item.resource_origin;
+                          if (origin === 'transfer') {
+                            if (item.toUser) {
+                              return (
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-gray-800 leading-none">{item.toUser.first_name} {item.toUser.last_name}</span>
+                                  <span className="text-[10px] text-gray-400 font-bold tracking-wider mt-1">{item.toUser.employee_id || 'N/A'}</span>
+                                </div>
+                              );
+                            }
+                            if (item.toNode) {
+                              return <span className="text-sm text-gray-500 font-medium">{item.toNode.name}</span>;
+                            }
+                          }
+                          if (origin === 'discharge') {
+                            if (item.toUser) {
+                              return (
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-gray-800 leading-none">{item.toUser.first_name} {item.toUser.last_name}</span>
+                                  <span className="text-[10px] text-gray-400 font-bold  tracking-wider mt-1">{item.toUser.employee_id || 'N/A'}</span>
+                                </div>
+                              );
+                            }
+                            if (item.toNode) {
+                              return <span className="text-sm text-gray-500 font-medium">{item.toNode.name}</span>;
+                            }
+                          }
+                          if (origin === 'return') {
+                            if (item.toNode) {
+                              return <span className="text-sm text-gray-500 font-medium">{item.toNode.name}</span>;
+                            }
+                          }
+                          // default / request
+                          if (item.targetUser) {
+                            return (
+                              <div className="flex flex-col">
+                                <span className="text-sm font-bold text-gray-800 leading-none">{item.targetUser.first_name} {item.targetUser.last_name}</span>
+                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1">{item.targetUser.employee_id || 'N/A'}</span>
+                              </div>
+                            );
+                          }
+                          return <span className="text-xs text-gray-400 italic">N/A</span>;
+                        })()}
                       </td>
-                      <td className="px-6 py-5 align-middle text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-[10px] font-black text-gray-800 uppercase tracking-tighter italic">
-                            {item.workflow?.name || 'Standard Request'}
-                          </span>
-                          <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">
-                            {item.workflow?.resource_type || 'default'}
-                          </span>
-                        </div>
-                      </td>
+
+
                       <td className="px-6 py-5 align-middle text-center">
                         {getStatusBadge(item)}
                       </td>
                       <td className="px-6 py-5 align-middle text-center">
-                        <span className="text-xs text-gray-400 font-bold">{formatDate(item.created_at)}</span>
+                        <span className="text-xs text-gray-400 ">{formatDate(item.created_at)}</span>
                       </td>
                       <td className="px-6 py-5 align-middle">
                         <div className="flex justify-end gap-2 pr-2">
                           <button
                             onClick={async () => {
                               try {
-                                const endpoint = item.resource_origin === 'discharge' ? `/discharge/${item.id}` : `/requests/${item.id}`;
+                                const endpoint = item.resource_origin === 'discharge' ? `/discharge/${item.id}` :
+                                                 item.resource_origin === 'transfer' ? `/transfers/${item.id}` :
+                                                 item.resource_origin === 'return' ? `/returns/${item.id}` :
+                                                 `/requests/${item.id}`;
                                 const response = await api.get(endpoint);
                                 setViewingRequest(response.data.data);
                                 setViewModalOpen(true);
@@ -289,7 +294,7 @@ const ApprovalLedgerPage = () => {
                             <Eye size={18} />
                           </button>
 
-                          {(item.can_action || canUserApprove(item)) && (
+                          {canUserApprove(item) && (
                             <div className="flex gap-1">
                               <button
                                 onClick={() => {
@@ -317,16 +322,10 @@ const ApprovalLedgerPage = () => {
                       </td>
                     </tr>
                   );
-                })}
+                })
+               )}
               </tbody>
             </table>
-            {(!data || data.length === 0) && (
-              <div className="text-center py-20 bg-gray-50/50">
-                <span className="text-gray-400 font-bold text-sm tracking-widest uppercase italic opacity-50">
-                  Command queue clear for {type} ledger
-                </span>
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -337,9 +336,6 @@ const ApprovalLedgerPage = () => {
           setApprovalModalOpen(false);
           setComments('');
           setApprovalAction(null);
-          setAllocations({});
-          setAvailableInventory({});
-          setFullRequestDetails(null);
         }}
         title={`${approvalAction === 'approve' ? 'Authorize' : 'Reject'} Ledger Entry`}
       >
@@ -351,43 +347,7 @@ const ApprovalLedgerPage = () => {
             </p>
           </div>
 
-          {/* Physical Asset Allocation Section - Only for Final Step of Requests (NOT Discharges) */}
-          {approvalAction === 'approve' && selectedRequest?.resource_origin !== 'discharge' && selectedRequest?.is_final_step && fullRequestDetails?.items?.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-black text-primary-600 uppercase tracking-[0.2em] px-1">
-                Physical Asset Allocation
-              </h3>
-              <div className="space-y-3">
-                {fullRequestDetails.items.map((item) => (
-                  <div key={item.id} className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-gray-700 uppercase">{item.product?.name}</span>
-                      <Badge variant="default">QTY: {item.quantity_requested}</Badge>
-                    </div>
 
-                    <div>
-                      <select
-                        className="w-full px-3 py-2 bg-gray-50 border-none rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500"
-                        value={allocations[item.id] || ''}
-                        onChange={(e) => setAllocations(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      >
-                        <option value="">-- Select Physical Asset (Serial/Batch) --</option>
-                        {availableInventory[item.product_id]?.map(inv => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.serial_number ? `SN: ${inv.serial_number}` : (inv.batch_number ? `Batch: ${inv.batch_number}` : `ID: ${inv.id}`)}
-                            ({inv.quantity} available in {inv.organizationNode?.name})
-                          </option>
-                        ))}
-                        {(!availableInventory[item.product_id] || availableInventory[item.product_id].length === 0) && (
-                          <option disabled>No available stock found in visible nodes</option>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div>
             <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 px-1">Institutional Comments</label>
@@ -407,9 +367,6 @@ const ApprovalLedgerPage = () => {
                 setApprovalModalOpen(false);
                 setComments('');
                 setApprovalAction(null);
-                setAllocations({});
-                setAvailableInventory({});
-                setFullRequestDetails(null);
               }}
             >
               Discard Action

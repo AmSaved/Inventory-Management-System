@@ -59,9 +59,9 @@ const ReturnAssetPage = () => {
   const selectedA = assignments?.data?.find(a => a.id === parseInt(assignmentId));
 
   return (
-    <div className="max-w-[1000px] mx-auto space-y-12 py-10 px-6">
+    <div className="max-w-[1600px] mx-auto space-y-6 py-6 px-4 lg:px-6">
       {/* Dynamic Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b-2 border-slate-50 pb-10">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between border-b border-slate-100 pb-4">
         <div className="space-y-3">
            <button 
              onClick={() => navigate(-1)} 
@@ -70,11 +70,11 @@ const ReturnAssetPage = () => {
              <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Operational Return
            </button>
            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-slate-900 rounded-[28px] flex items-center justify-center shadow-2xl rotate-6">
-                 <RotateCcw className="text-emerald-400" size={32} />
+              <div className="w-12 h-12 bg-slate-900 rounded-[24px] flex items-center justify-center shadow-lg rotate-6">
+                 <RotateCcw className="text-emerald-400" size={24} />
               </div>
               <div>
-                <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Asset De-Allocation</h1>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Asset De-Allocation</h1>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">Infrastructure Re-Entry Protocol</p>
               </div>
            </div>

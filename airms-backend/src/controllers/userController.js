@@ -1,4 +1,4 @@
-const { User, Role, OrganizationNode, ActivityLog, Permission } = require('../models');
+const { User, Role, OrganizationNode, ActivityLog, Permission, Assignment, Product } = require('../models');
 const { Op } = require('sequelize');
 const userService = require('../services/userService');
 const hierarchyService = require('../services/hierarchyService');
@@ -141,8 +141,7 @@ const userController = {
             const userData = req.body;
             const companyId = req.user.company_id;
             const permissions = await getEffectivePermissions(req.user);
-            const hasFullManagePower = permissions.includes('user:manage:all') || permissions.includes('system:manage');
-            const isSuperAdmin = hasFullManagePower;
+            const isSuperAdmin = (req.user.role && req.user.role.level >= 100) || permissions.includes('system:manage');
 
             logger.info(`Starting manual user creation for email: ${userData.email} by user: ${req.user.id}`);
 
@@ -211,8 +210,7 @@ const userController = {
             if (!targetUser) return res.status(404).json({ success: false, message: 'User not found' });
 
             const permissions = await getEffectivePermissions(req.user);
-            const hasFullManagePower = permissions.includes('user:manage:all') || permissions.includes('system:manage');
-            const isSuperAdmin = hasFullManagePower;
+            const isSuperAdmin = (req.user.role && req.user.role.level >= 100) || permissions.includes('system:manage');
 
             // MANAGEMENT AUTHORITY: Self OR Permission-based Authority
             const isSelf = targetUser.id === req.user.id;
@@ -285,7 +283,7 @@ const userController = {
                                    permissions.includes('system:manage');
             
             const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-            const isWithinScope = allowedNodes.includes(targetUser.org_node_id);
+            const isWithinScope = allowedNodes === null || allowedNodes.includes(Number(targetUser.org_node_id));
 
             if (!hasDeletePower || !isWithinScope) {
                 return res.status(403).json({ 
@@ -356,8 +354,29 @@ const userController = {
     },
 
     /**
-     * Permission management.
+     * Get active assignments for a user.
      */
+    async getActiveAssignments(req, res, next) {
+        try {
+            const { id } = req.params;
+            const companyId = req.user.company_id;
+
+            const assignments = await Assignment.findAll({
+                where: { user_id: id, company_id: companyId, status: 'active' },
+                include: [{
+                    model: Product,
+                    as: 'product',
+                    attributes: ['id', 'name', 'sku', 'qr_code_data']
+                }],
+                order: [['assigned_at', 'DESC']]
+            });
+
+            res.json({ success: true, data: assignments });
+        } catch (error) {
+            next(error);
+        }
+    },
+
     /**
      * Permission management.
      */

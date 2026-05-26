@@ -50,6 +50,11 @@ router.post('/:id/reject',
     transferController.reject
 );
 
+router.post('/:id/acknowledge', 
+    authMiddleware,
+    transferController.acknowledgeTransfer
+);
+
 router.post('/:id/cancel', 
     checkPermission('transfer:update'), 
     validate(cancelTransferValidation), 

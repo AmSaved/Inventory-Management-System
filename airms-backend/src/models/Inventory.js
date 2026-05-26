@@ -58,7 +58,7 @@ const Inventory = sequelize.define('Inventory', {
         allowNull: true
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'available'
     },
     unit_cost: {
@@ -108,6 +108,10 @@ const Inventory = sequelize.define('Inventory', {
     },
     last_counted_at: {
         type: DataTypes.DATE
+    },
+    custom_fields: {
+        type: DataTypes.JSONB,
+        defaultValue: {}
     }
 }, {
     tableName: 'inventory',

@@ -59,13 +59,13 @@ const StockIntakeForm = ({ onSuccess, onCancel }) => {
         quantity: parseInt(item.quantity)
       }));
 
-      await inventoryService.createStoreForm({
+      const response = await inventoryService.createStoreForm({
         org_node_id: parseInt(orgNodeId),
         supplier,
         items: formattedItems,
         total_quantity: parseInt(totalProducts) || 0
       });
-      toast.success('Stock intake registered successfully');
+      toast.success(response?.message || 'Stock intake registered successfully');
       if (onSuccess) onSuccess();
     } catch (error) {
       const errorMsg = error.response?.data?.message || 'Failed to complete intake';

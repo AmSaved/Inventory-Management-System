@@ -10,7 +10,7 @@ const findPathFromFlat = (nodes, id) => {
   const targetId = String(id);
   let currentId = targetId;
   const path = [];
-  
+
   while (currentId) {
     const node = findNodeInFlat(nodes, currentId);
     if (!node) break;
@@ -19,19 +19,18 @@ const findPathFromFlat = (nodes, id) => {
   }
   return path.length > 0 ? path : null;
 };
-
-const CascadingUnitSelector = ({ 
-  value, 
-  onChange, 
-  sourceNodeId, 
-  initialTree, 
-  loading: externalLoading, 
+const CascadingUnitSelector = ({
+  value,
+  onChange,
+  sourceNodeId,
+  initialTree,
+  loading: externalLoading,
   className = "",
-  variant = "inline" // "inline" or "dropdown"
+  variant = "inline"
 }) => {
   const [internalTree, setInternalTree] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPath, setSelectedPath] = useState([]); 
+  const [selectedPath, setSelectedPath] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -47,7 +46,7 @@ const CascadingUnitSelector = ({
   }, [initialTree, externalLoading]);
 
   const tree = useMemo(() => internalTree, [internalTree]);
-  
+
   const getFlatNodes = (nodes, result = []) => {
     if (!nodes || !Array.isArray(nodes)) return result;
     nodes.forEach(node => {
@@ -94,7 +93,7 @@ const CascadingUnitSelector = ({
 
   const filteredFlatNodes = useMemo(() => {
     if (!searchTerm) return [];
-    return flatNodes.filter(n => 
+    return flatNodes.filter(n =>
       n.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (n.code && n.code.toLowerCase().includes(searchTerm.toLowerCase()))
     ).slice(0, 10);
@@ -166,7 +165,7 @@ const CascadingUnitSelector = ({
 
     levels.push({ label: initialLabel, nodes: initialNodes, selectedId: selectedPath[0]?.id || '' });
     const pathOffset = (sourceNodeId) ? (selectedPath.findIndex(n => String(n.id) === String(initialNodes[0]?.id)) || 0) : 0;
-    
+
     selectedPath.slice(pathOffset).forEach((node, index) => {
       const nodeWithChildren = flatNodes.find(n => String(n.id) === String(node.id));
       const children = nodeWithChildren?.children || [];
@@ -176,22 +175,19 @@ const CascadingUnitSelector = ({
       }
     });
   }
-
   const activeNode = selectedPath[selectedPath.length - 1];
-
-  // ── RENDER DROPDOWN VARIANT ────────────────────────────────────────────────
   if (variant === "dropdown") {
     return (
       <div className={`relative ${className}`} ref={dropdownRef}>
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="w-full h-full flex items-center justify-between px-6 bg-white/10 hover:bg-white/20 border border-white/10 rounded-2xl transition-all group"
+          className="w-full h-full flex items-center justify-between px-4 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all group"
         >
           <div className="flex items-center gap-3 overflow-hidden">
             <MapPin size={16} className="text-blue-400 shrink-0" />
             <div className="text-left overflow-hidden">
-              <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest truncate">
+              <div className="text-[9px] font-black text-blue-400 uppercase tracking-widest truncate">
                 {activeNode?.type?.name || 'Scope Focus'}
               </div>
               <div className="text-xs font-black text-white uppercase italic truncate">
@@ -204,70 +200,68 @@ const CascadingUnitSelector = ({
 
         {isOpen && (
           <div className="absolute top-full left-0 mt-4 w-[340px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-[0_40px_80px_rgba(0,0,0,0.5)] z-[100] p-8 space-y-6 animate-in zoom-in-95 slide-in-from-top-4 duration-300">
-             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                   <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center text-white">
-                      <Building2 size={16} />
-                   </div>
-                   <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Hierarchy Scope</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center text-white">
+                  <Building2 size={16} />
                 </div>
-                <button onClick={() => setIsOpen(false)} className="text-slate-500 hover:text-white transition-colors">
-                   <X size={18} />
-                </button>
-             </div>
+                <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Hierarchy Scope</span>
+              </div>
+              <button onClick={() => setIsOpen(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
 
-             <div className="space-y-5">
-                {levels.map((level, index) => (
-                  <div key={index} className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-2">{level.label}</label>
-                    <select
-                      className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-4 text-[10px] font-black text-white uppercase outline-none focus:border-blue-500 transition-all"
-                      value={level.selectedId}
-                      onChange={(e) => handleSelectLevel(index, e.target.value)}
-                    >
-                      <option value="" className="bg-slate-900 text-slate-400">-- Choose --</option>
-                      {level.nodes.map(node => (
-                        <option key={node.id} value={node.id} className="bg-slate-900 text-white font-bold">
-                          {node.name} {node.can_store_inventory ? '📦' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-             </div>
-
-             {selectedPath.length > 0 && (
-               <div className="pt-4 border-t border-white/5">
-                  <div className="p-4 bg-white/5 rounded-2xl space-y-2">
-                     <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Active Path:</span>
-                     <div className="flex flex-wrap items-center gap-2">
-                        {selectedPath.map((node, i) => (
-                          <React.Fragment key={node.id}>
-                             <span className="text-[9px] font-bold text-white uppercase">{node.name}</span>
-                             {i < selectedPath.length - 1 && <ChevronRight size={10} className="text-slate-600" />}
-                          </React.Fragment>
-                        ))}
-                     </div>
-                  </div>
-                  <button 
-                    onClick={() => setIsOpen(false)}
-                    className="w-full mt-4 h-12 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-500/20 transition-all"
+            <div className="space-y-5">
+              {levels.map((level, index) => (
+                <div key={index} className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-2">{level.label}</label>
+                  <select
+                    className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-4 text-[10px] font-black text-white uppercase outline-none focus:border-blue-500 transition-all"
+                    value={level.selectedId}
+                    onChange={(e) => handleSelectLevel(index, e.target.value)}
                   >
-                    Confirm Scope
-                  </button>
-               </div>
-             )}
+                    <option value="" className="bg-slate-900 text-slate-400">-- Choose --</option>
+                    {level.nodes.map(node => (
+                      <option key={node.id} value={node.id} className="bg-slate-900 text-white font-bold">
+                        {node.name} {node.can_store_inventory ? '📦' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {selectedPath.length > 0 && (
+              <div className="pt-4 border-t border-white/5">
+                <div className="p-4 bg-white/5 rounded-2xl space-y-2">
+                  <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Active Path:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedPath.map((node, i) => (
+                      <React.Fragment key={node.id}>
+                        <span className="text-[9px] font-bold text-white uppercase">{node.name}</span>
+                        {i < selectedPath.length - 1 && <ChevronRight size={10} className="text-slate-600" />}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="w-full mt-4 h-12 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-500/20 transition-all"
+                >
+                  Confirm Scope
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
     );
   }
-
-  // ── RENDER INLINE VARIANT (FOR FORMS/STORE) ────────────────────────────────
   return (
-    <div className={`space-y-5 ${className}`}>
+    <div className={`space-y-3 ${className}`}>
       <div className="flex justify-end">
-        <button 
+        <button
           type="button"
           onClick={() => setShowSearch(!showSearch)}
           className="text-[9px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 transition-colors flex items-center gap-2"
@@ -278,45 +272,45 @@ const CascadingUnitSelector = ({
       </div>
 
       {showSearch ? (
-        <div className="space-y-4">
-           <input 
-             type="text"
-             placeholder="SEARCH..."
-             value={searchTerm}
-             onChange={(e) => setSearchTerm(e.target.value)}
-             className="w-full h-14 bg-white border-2 border-slate-900 rounded-2xl px-6 font-black text-[11px] outline-none shadow-xl shadow-slate-900/5 transition-all"
-           />
-           {filteredFlatNodes.length > 0 && (
-             <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-2xl">
-               {filteredFlatNodes.map(node => (
-                 <button
-                   key={node.id}
-                   type="button"
-                   onClick={() => {
-                     const path = findPathFromFlat(flatNodes, node.id);
-                     if (path) setSelectedPath(path);
-                     onChange(String(node.id), node);
-                     setShowSearch(false);
-                   }}
-                   className="w-full flex justify-between items-center p-4 hover:bg-blue-50 transition-all border-b border-slate-50 last:border-0"
-                 >
-                    <div className="flex items-center gap-2">
-                       <span className="text-[10px] font-black text-slate-900 uppercase">{node.name}</span>
-                       {node.can_store_inventory && <div className="px-2 py-0.5 bg-emerald-500 text-white text-[7px] font-black rounded-full uppercase tracking-widest">Storage Ready</div>}
-                    </div>
-                    <ChevronRight size={12} className="text-slate-300" />
-                 </button>
-               ))}
-             </div>
-           )}
+        <div className="space-y-3">
+          <input
+            type="text"
+            placeholder="SEARCH..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-10 bg-white border border-slate-200 rounded-xl px-4 font-bold text-xs outline-none shadow-sm transition-all"
+          />
+          {filteredFlatNodes.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-lg">
+              {filteredFlatNodes.map(node => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => {
+                    const path = findPathFromFlat(flatNodes, node.id);
+                    if (path) setSelectedPath(path);
+                    onChange(String(node.id), node);
+                    setShowSearch(false);
+                  }}
+                  className="w-full flex justify-between items-center p-3 hover:bg-blue-50 transition-all border-b border-slate-50 last:border-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-900 uppercase">{node.name}</span>
+                    {node.can_store_inventory && <div className="px-2 py-0.5 bg-emerald-500 text-white text-[7px] font-black rounded-full uppercase tracking-widest">Storage Ready</div>}
+                  </div>
+                  <ChevronRight size={12} className="text-slate-300" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-3">
           {levels.map((level, index) => (
-            <div key={index} className="space-y-2">
+            <div key={index} className="space-y-1.5">
               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{level.label}</label>
               <select
-                className={`w-full h-14 rounded-2xl px-6 font-black text-[11px] uppercase outline-none transition-all ${level.selectedId ? 'bg-white border-2 border-slate-900 shadow-xl' : 'bg-slate-50 border-2 border-transparent hover:bg-slate-100'}`}
+                className={`w-full h-10 rounded-xl px-4 font-bold text-xs uppercase outline-none transition-all ${level.selectedId ? 'bg-white border border-slate-200 shadow-sm' : 'bg-slate-50 border border-transparent hover:bg-slate-100'}`}
                 value={level.selectedId}
                 onChange={(e) => handleSelectLevel(index, e.target.value)}
               >
@@ -331,15 +325,15 @@ const CascadingUnitSelector = ({
       )}
 
       {selectedPath.length > 0 && (
-        <div className="p-5 bg-slate-900 rounded-3xl border-b-4 border-slate-950">
-           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              {selectedPath.map((node, i) => (
-                <React.Fragment key={node.id}>
-                   <span className="text-[10px] font-black text-white whitespace-nowrap">{node.name}</span>
-                   {i < selectedPath.length - 1 && <ChevronRight size={10} className="text-slate-700" />}
-                </React.Fragment>
-              ))}
-           </div>
+        <div className="p-3 bg-slate-900 rounded-2xl border-b border-slate-950">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            {selectedPath.map((node, i) => (
+              <React.Fragment key={node.id}>
+                <span className="text-[9px] font-black text-white whitespace-nowrap">{node.name}</span>
+                {i < selectedPath.length - 1 && <ChevronRight size={10} className="text-slate-700" />}
+              </React.Fragment>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -79,10 +79,7 @@ const MergePage = () => {
     }
   };
 
-  if (loading) return <LoadingSpinner />;
-  if (items.length === 0) return null;
-
-  const targetItem = items[0];
+  const targetItem = items[0] || {};
   const sourceItems = items.slice(1);
   const totalVolume = items.reduce((sum, i) => sum + parseInt(i.quantity, 10), 0);
 
@@ -110,7 +107,14 @@ const MergePage = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-8 lg:gap-12">
+      {loading ? (
+        <div className="p-20 text-center flex justify-center"><LoadingSpinner /></div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-10 opacity-40">
+           <p className="text-[10px] font-black uppercase tracking-widest">Failed to load consolidation details</p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-8 lg:gap-12">
          {/* Warning Panel */}
          <div className="xl:col-span-12">
             <div className="bg-amber-50 p-8 rounded-[40px] border-4 border-amber-100 flex flex-col md:flex-row items-center gap-8 shadow-xl shadow-amber-50/50">
@@ -226,7 +230,8 @@ const MergePage = () => {
                </Button>
             </div>
          </div>
-      </form>
+        </form>
+      )}
     </div>
   );
 };

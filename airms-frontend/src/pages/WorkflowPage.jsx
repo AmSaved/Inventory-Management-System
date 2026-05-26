@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useFetch';
 import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -9,16 +10,33 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import {
-  GitBranch, Plus, Trash2, Settings2, ChevronRight, Zap, ArrowRight
+  GitBranch, Plus, Trash2, Settings2, ChevronRight, Zap, ArrowRight, ArrowLeft
 } from 'lucide-react';
 
 const WorkflowPage = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { data: workflows, loading: workflowsLoading, refetch } = useFetch('/workflows');
   const { data: rolesData } = useFetch('/roles');
   const { data: statusesData, refetch: refetchStatuses } = useFetch('/workflow-statuses');
   const roles = rolesData || [];
   const statusLabels = statusesData || [];
+
+  const filteredRoles = React.useMemo(() => {
+    if (!roles) return [];
+    return roles.filter(role => {
+      // 1. Level Filter: Only see roles at or below current user's level
+      const userMaxLevel = user?.role?.level ?? 0;
+      const isLevelAllowed = role.level <= userMaxLevel;
+
+      // 2. Node/Hierarchy Filter: Only see roles in same organization node, its sub-nodes, or company level (null org_node_id)
+      const isNodeAllowed = !role.org_node_id || 
+                            role.org_node_id === user?.org_node_id || 
+                            user?.allowedNodes?.includes(role.org_node_id);
+      
+      return isLevelAllowed && isNodeAllowed;
+    });
+  }, [roles, user]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -34,7 +52,7 @@ const WorkflowPage = () => {
 
   const resourceTypes = [
     { value: 'inventory_store', label: 'Store Item ' },
-    { value: 'inventory_discharge', label: 'Discharge Item ' },
+    { value: 'inventory_discharge', label: 'Discharge Inventories ' },
     { value: 'request', label: 'Request Item ' },
     { value: 'transfer', label: 'Transfer Item ' },
     { value: 'inventory_transfer', label: 'Inventory Transfer ' },
@@ -146,7 +164,7 @@ const WorkflowPage = () => {
     try {
       if (isEditing) {
         await api.put(`/workflows/${editingId}`, payload);
-        toast.success('Blueprint Synchronized');
+        toast.success('Wrorkflow updated');
       } else {
         await api.post('/workflows', payload);
         toast.success('Deployed Workflow Logic');
@@ -188,117 +206,85 @@ const WorkflowPage = () => {
       toast.error('Failed to create label');
     }
   };
-
-  if (workflowsLoading) return <LoadingSpinner />;
-
   return (
-    <div className="max-w-[1400px] mx-auto space-y-10 py-10 px-6">
+    <div className="max-w-7xl mx-auto space-y-5 py-6 px-4">
       {/* ... (header unchanged) */}
-      <div className="flex justify-between items-center bg-slate-950 p-10 rounded-[40px] shadow-2xl relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 blur-[100px] rounded-full -mr-32 -mt-32" />
-        <div className="space-y-1 z-10">
-          <div className="flex items-center gap-3">
-            <GitBranch className="text-blue-500" size={28} />
-            <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">Rule-based Process Designer</h1>
+      {/* HEADER SECTION */}
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center hover:bg-green-100 transition-colors"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="text-lg font-bold text-green-700">Workflow Management</h1>
+            <p className="text-sm text-slate-500 mt-1">This is the workflow management of the Oromia Transport Agency Super Admin</p>
           </div>
-          <p className="text-slate-500 font-bold text-[10px] tracking-[0.2em] uppercase">Multi-Tenant Dynamic Governance</p>
         </div>
-        <div className="flex gap-4 z-10">
-          <Button
-            onClick={() => setIsLabelModalOpen(true)}
-            variant="ghost"
-            className="bg-slate-900 text-slate-400 hover:text-white font-black px-6 h-14 rounded-2xl transition-all border border-slate-800 uppercase text-[10px] tracking-widest"
+        
+        <div className="flex items-center gap-4">
+          <Button 
+            onClick={openDesigner} 
+            className="bg-green-600 text-white h-9 px-4 rounded-lg font-bold text-sm hover:bg-green-700 transition-all shadow-sm"
           >
-            <Settings2 size={18} className="mr-2" /> Label Registry
-          </Button>
-          <Button
-            onClick={openDesigner}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 h-14 rounded-2xl transition-all shadow-xl shadow-blue-600/20 flex items-center gap-2 uppercase text-[10px] tracking-widest"
-          >
-            <Plus size={18} /> New Process Flow
+            + Add Workflow
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8">
-        {Array.isArray(workflows) && workflows.map((wf) => (
-          <Card key={wf.id} className="rounded-[40px] border-none bg-white shadow-xl shadow-slate-100 overflow-hidden hover:shadow-2xl transition-shadow border-l-8 border-blue-500">
-            <CardContent className="p-10">
-              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-10">
-                <div className="space-y-4 flex-1">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Zap size={14} className="text-blue-500" />
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{wf.resource_type} Lifecycle</span>
+      {/* TABLE */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-green-600 text-white">
+              <th className="p-4 text-sm font-bold">Workflow Name</th>
+              <th className="p-4 text-sm font-bold">Resource Type</th>
+              <th className="p-4 text-sm font-bold">Steps</th>
+              <th className="p-4 text-sm font-bold text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {workflowsLoading ? (
+              <tr>
+                <td colSpan="4" className="p-12 text-center flex justify-center"><LoadingSpinner /></td>
+              </tr>
+            ) : workflows?.length === 0 ? (
+              <tr>
+                <td colSpan="4" className="p-12 text-center text-slate-400 text-sm">No workflows found.</td>
+              </tr>
+            ) : (
+              workflows.map((wf) => (
+                <tr key={wf.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="p-4 text-sm font-medium text-slate-900">{wf.name}</td>
+                  <td className="p-4 text-sm text-slate-600">{wf.resource_type?.replace('_', ' ')}</td>
+                  <td className="p-4 text-sm text-slate-600">{wf.steps?.length || 0} Steps</td>
+                  <td className="p-4 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => handleEdit(wf)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Edit">
+                        <Settings2 size={16} />
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (window.confirm('Delete this workflow?')) {
+                            await api.delete(`/workflows/${wf.id}`);
+                            toast.success('Workflow deleted');
+                            refetch();
+                          }
+                        }} 
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" 
+                        title="Delete"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">{wf.name}</h3>
-                  </div>
-
-                  {/* ... (steps rendering unchanged) */}
-                  <div className="flex flex-col gap-3 mt-6">
-                    {wf.steps && wf.steps.length > 0 ? (
-                      [...wf.steps].sort((a, b) => a.step_order - b.step_order).map((step, idx) => {
-                        const status = statusLabels.find(s => s.id === step.status_id) || {};
-                        const roleObj = roles.find(r => r.id === step.required_role_id);
-                        const isLast = idx === wf.steps.length - 1;
-
-                        return (
-                          <div key={step.id} className="flex flex-col sm:flex-row items-center gap-4">
-                            <div className="flex-1 flex gap-3 items-center w-full bg-slate-50 border border-slate-100 rounded-3xl p-4 shadow-sm">
-                              <div className="h-8 w-8 rounded-xl bg-slate-900 text-white font-black text-xs flex items-center justify-center flex-shrink-0">{step.step_order || idx + 1}</div>
-                              <div className="bg-white border text-xs border-slate-200 px-4 py-3 rounded-2xl font-black uppercase italic text-slate-700 flex-1 flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: status.color || '#3b82f6' }} />
-                                {step.status_label_override || status.name || `Pending ${roleObj?.name || 'Approval'}`}
-                              </div>
-                              <div className="bg-blue-50 border border-blue-200 text-[10px] tracking-widest text-blue-700 px-4 py-2 rounded-xl font-bold uppercase">
-                                {roleObj ? roleObj.name : 'System Action'}
-                              </div>
-                            </div>
-                            {!isLast && (
-                              <div className="flex items-center justify-center py-2 sm:py-0">
-                                <div className="h-8 w-0.5 sm:h-0.5 sm:w-12 bg-slate-200 relative">
-                                  <div className="absolute -bottom-1 sm:bottom-auto sm:-right-1 sm:-top-1 text-slate-300">
-                                    <ChevronRight size={14} className="rotate-90 sm:rotate-0" />
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-xs font-bold text-slate-400 italic bg-slate-50 p-6 rounded-3xl border border-dashed border-slate-200 text-center">No steps configured for this lifecycle.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex gap-3 mt-4 xl:mt-0">
-                  <Button
-                    variant="ghost"
-                    className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-300 hover:text-blue-500 transition-colors"
-                    onClick={() => handleEdit(wf)}
-                  >
-                    <Settings2 size={18} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-12 h-12 rounded-2xl bg-red-50 text-red-300 hover:text-red-500 transition-colors"
-                    onClick={async () => {
-                      if (window.confirm('Delete this workflow?')) {
-                        await api.delete(`/workflows/${wf.id}`);
-                        toast.success('Route purged');
-                        refetch();
-                      }
-                    }}
-                  >
-                    <Trash2 size={18} />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {/* ... (empty state unchanged) */}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Editor Modal */}
@@ -307,24 +293,24 @@ const WorkflowPage = () => {
         onClose={() => setIsModalOpen(false)}
         title={isEditing ? `Refining: ${formData.name}` : "Design Flow Rules"}
         onConfirm={handleSave}
-        confirmText={isEditing ? "Synchronize Blueprint" : "Deploy Workflow"}
+        confirmText={isEditing ? "Save" : "Deploy Workflow"}
         size="4xl"
       >
         <div className="space-y-6">
-          <div className="flex flex-col gap-4 bg-slate-50 p-6 rounded-3xl border border-slate-200">
+          <div className="flex flex-col gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Workflow Name</label>
+              <label className="text-xs font-semibold text-slate-500 ml-1">Workflow Name</label>
               <Input
                 placeholder="e.g. Standard Asset Request Pipeline"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="h-12 mt-1 bg-white"
+                className="h-10 mt-1 bg-white text-xs"
               />
             </div>
             <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Trigger Resource</label>
+              <label className="text-xs font-semibold text-slate-500 ml-1">Trigger Resource</label>
               <select
-                className="w-full h-12 mt-1 bg-white text-slate-900 border border-slate-300 outline-blue-500 rounded-xl px-4 font-bold shadow-sm"
+                className="w-full h-10 mt-1 bg-white text-slate-900 border border-slate-200 outline-blue-500 rounded-lg px-4 text-xs font-semibold shadow-sm"
                 value={formData.resource_type}
                 onChange={(e) => setFormData({ ...formData, resource_type: e.target.value })}
               >
@@ -335,18 +321,18 @@ const WorkflowPage = () => {
             </div>
           </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-2xl w-fit mb-4">
+          <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-4">
             <button
               type="button"
               onClick={() => setDesignMode('linear')}
-              className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${designMode === 'linear' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${designMode === 'linear' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Sequential Role Flow
             </button>
             <button
               type="button"
               onClick={() => setDesignMode('complex')}
-              className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${designMode === 'complex' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${designMode === 'complex' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Custom Node Mapping
             </button>
@@ -354,10 +340,10 @@ const WorkflowPage = () => {
 
           <div className="p-1">
             <div className="flex items-center justify-between mb-4 mt-2">
-              <h3 className="font-black text-slate-900 uppercase tracking-widest text-xs">
+              <h3 className="font-bold text-slate-900 text-xs">
                 {designMode === 'linear' ? 'Approval Sequence (Ordered Roles)' : 'Transition Link Logic'}
               </h3>
-              <span className="text-[10px] text-slate-400 font-bold">
+              <span className="text-xs text-slate-400 font-normal">
                 {designMode === 'linear' ? 'Select roles in the order they should approve' : 'Construct rules representing status links'}
               </span>
             </div>
@@ -367,7 +353,7 @@ const WorkflowPage = () => {
                 /* LINEAR MODE */
                 <div className="space-y-3">
                   {linearSteps.map((roleId, idx) => (
-                    <div key={idx} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm group animate-in fade-in slide-in-from-left-2 duration-300">
+                    <div key={idx} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl shadow-sm group animate-in fade-in slide-in-from-left-2 duration-300">
                       <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">
                         {idx + 1}
                       </div>
@@ -378,7 +364,7 @@ const WorkflowPage = () => {
                           onChange={(e) => updateLinearStep(idx, e.target.value)}
                         >
                           <option value="">-- Select Approver Role --</option>
-                          {roles.map(r => (
+                          {filteredRoles.map(r => (
                             <option key={r.id} value={r.id}>{r.name} (Lvl {r.level})</option>
                           ))}
                         </select>
@@ -398,7 +384,7 @@ const WorkflowPage = () => {
                 /* COMPLEX MODE */
                 flows.map((flow, idx) => (
                   <div key={flow.id} className="relative flex flex-col items-center">
-                    <div className="w-full flex sm:flex-row flex-col items-start gap-4 p-5 bg-white border-2 border-slate-100 rounded-3xl shadow-sm hover:border-blue-100 transition-colors">
+                    <div className="w-full flex sm:flex-row flex-col items-start gap-4 p-5 bg-white border border-slate-100 rounded-xl shadow-sm hover:border-blue-100 transition-colors">
                       <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black flex-shrink-0">
                         {idx + 1}
                       </div>
@@ -407,7 +393,7 @@ const WorkflowPage = () => {
                         <div className="flex flex-col gap-1">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">From Status</label>
                           <select
-                            className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold uppercase italic tracking-tight"
+                            className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold uppercase italic tracking-tight"
                             value={flow.from_status_id}
                             onChange={(e) => updateFlow(idx, 'from_status_id', e.target.value)}
                           >
@@ -421,7 +407,7 @@ const WorkflowPage = () => {
                         <div className="flex flex-col gap-1 relative">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1"><ArrowRight size={10} className="text-blue-500" /> To Status</label>
                           <select
-                            className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold uppercase italic tracking-tight"
+                            className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold uppercase italic tracking-tight"
                             value={flow.to_status_id}
                             onChange={(e) => updateFlow(idx, 'to_status_id', e.target.value)}
                           >
@@ -435,12 +421,12 @@ const WorkflowPage = () => {
                         <div className="flex flex-col gap-1 sm:pl-4 sm:border-l border-slate-100">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 text-blue-600">Performed By Role</label>
                           <select
-                            className="w-full h-12 bg-blue-50/50 border border-blue-100 rounded-xl px-3 text-xs font-bold text-slate-700"
+                            className="w-full h-10 bg-blue-50/50 border border-blue-100 rounded-xl px-3 text-xs font-bold text-slate-700"
                             value={flow.role_id}
                             onChange={(e) => updateFlow(idx, 'role_id', e.target.value)}
                           >
                             <option value="">System Auto (No Role)</option>
-                            {roles.map(r => (
+                            {filteredRoles.map(r => (
                               <option key={r.id} value={r.id}>{r.name} (Lvl {r.level})</option>
                             ))}
                           </select>
@@ -450,7 +436,7 @@ const WorkflowPage = () => {
                       {flows.length > 1 && (
                         <button
                           onClick={() => handleRemoveFlow(idx)}
-                          className="w-12 h-12 flex items-center justify-center rounded-xl bg-red-50 text-red-400 hover:text-red-600 hover:bg-red-100 transition-colors flex-shrink-0"
+                          className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-400 hover:text-red-600 hover:bg-red-100 transition-colors flex-shrink-0"
                         >
                           <Trash2 size={18} />
                         </button>
@@ -461,11 +447,11 @@ const WorkflowPage = () => {
               )}
             </div>
 
-            <div className="mt-8 flex justify-center">
+            <div className="mt-4 flex justify-center">
               <Button
                 onClick={designMode === 'linear' ? handleAddLinearStep : handleAddFlow}
                 variant="outline"
-                className="rounded-full px-8 h-12 font-black uppercase text-[10px] tracking-widest border-2 border-slate-200 text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center gap-2"
+                className="rounded-full px-8 h-10 font-black uppercase text-[10px] tracking-widest border border-slate-200 text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center gap-2"
               >
                 <Plus size={16} /> {designMode === 'linear' ? 'Add Approval Role' : 'Add Transition Flow'}
               </Button>
@@ -483,7 +469,7 @@ const WorkflowPage = () => {
         confirmText="Done"
       >
         <div className="space-y-6 p-2">
-          <div className="flex gap-4 p-6 bg-slate-950 rounded-[30px] border border-slate-800">
+          <div className="flex gap-4 p-4 bg-slate-950 rounded-xl border border-slate-800">
             <div className="flex-1">
               <Input
                 placeholder="New Status (e.g., EXECUTIVE_REVIEW)"
@@ -505,7 +491,7 @@ const WorkflowPage = () => {
 
           <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
             {statusLabels.map(label => (
-              <div key={label.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex justify-between items-center group shadow-sm">
+              <div key={label.id} className="p-4 bg-white border border-slate-100 rounded-xl flex justify-between items-center group shadow-sm">
                 <div className="flex items-center gap-3">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: label.color }} />
                   <span className="text-[11px] font-black text-slate-800 uppercase italic">{label.name}</span>

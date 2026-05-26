@@ -80,7 +80,7 @@ const Issue = sequelize.define('Issue', {
         }
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(50),
         defaultValue: 'open'
     },
     resolution_notes: {

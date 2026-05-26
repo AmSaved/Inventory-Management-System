@@ -40,18 +40,18 @@ const Request = sequelize.define('Request', {
         defaultValue: 'new'
     },
     status: {
-        type: DataTypes.STRING(50),
+        type: DataTypes.STRING(100),
         defaultValue: 'pending'
     },
     priority: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'medium'
     },
     purpose: {
         type: DataTypes.TEXT
     },
     chairman_approval_status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'pending'
     },
     chairman_approved_at: {
@@ -68,7 +68,7 @@ const Request = sequelize.define('Request', {
         type: DataTypes.TEXT
     },
     storage_approval_status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'pending'
     },
     storage_approved_at: {

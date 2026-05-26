@@ -33,7 +33,6 @@ const BranchMergePage = () => {
 
   const [formData, setFormData] = useState({
     newBranchName: '',
-    code: '',
     org_type_id: '',
     parent_id: ''
   });
@@ -157,7 +156,6 @@ const BranchMergePage = () => {
     );
   };
 
-  if (loading) return <LoadingSpinner />;
 
   const rootNodes = nodes.filter(n => !n.parent_id && n.status === 'active');
 
@@ -198,7 +196,9 @@ const BranchMergePage = () => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="max-h-[600px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {rootNodes.length > 0 ? (
+                {loading ? (
+                  <div className="p-12 text-center flex justify-center"><LoadingSpinner /></div>
+                ) : rootNodes.length > 0 ? (
                   rootNodes.map(node => (
                     <TreeNode key={node.id} node={node} />
                   ))
@@ -235,15 +235,7 @@ const BranchMergePage = () => {
                     className="h-14 rounded-2xl bg-slate-50 border-none shadow-inner font-bold"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Unique Branch Code</label>
-                  <Input 
-                    placeholder="e.g. UCB-2026"
-                    value={formData.code}
-                    onChange={(e) => setFormData({...formData, code: e.target.value})}
-                    className="h-14 rounded-2xl bg-slate-50 border-none shadow-inner font-mono font-bold"
-                  />
-                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Entity Type</label>
@@ -343,7 +335,7 @@ const BranchMergePage = () => {
               <div className="pt-10 mt-auto">
                 <Button 
                   onClick={() => setShowConfirmModal(true)}
-                  disabled={selectedSources.length < 2 || !formData.newBranchName || !formData.code || !formData.org_type_id}
+                  disabled={selectedSources.length < 2 || !formData.newBranchName || !formData.org_type_id}
                   className="w-full h-16 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl shadow-2xl shadow-primary-900/50 flex items-center justify-center gap-3 group disabled:bg-slate-700 disabled:shadow-none"
                 >
                   <span className="font-black uppercase tracking-widest text-xs">Execute Merge</span>

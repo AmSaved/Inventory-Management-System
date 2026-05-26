@@ -43,6 +43,12 @@ const userService = {
     return response.data.data;
   },
 
+  // Get active assignments for user
+  getActiveAssignments: async (id) => {
+    const response = await api.get(`/users/${id}/active-assignments`);
+    return response.data.data;
+  },
+
   // Assign permissions to user
   assignPermissions: async (id, permissionIds) => {
     const response = await api.post(`/users/${id}/permissions`, { permission_ids: permissionIds });

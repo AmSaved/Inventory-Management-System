@@ -79,10 +79,10 @@ const SplitPage = () => {
     }
   };
 
-  if (loading) return <LoadingSpinner />;
-  if (!item) return null;
 
-  const maxQty = item.quantity - 1;
+
+
+  const maxQty = item ? item.quantity - 1 : 0;
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-12 py-10 px-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
@@ -112,7 +112,14 @@ const SplitPage = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-8 lg:gap-12">
+      {loading ? (
+        <div className="p-20 text-center flex justify-center"><LoadingSpinner /></div>
+      ) : !item ? (
+        <div className="text-center py-10 opacity-40">
+           <p className="text-[10px] font-black uppercase tracking-widest">Failed to load asset blueprint</p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-8 lg:gap-12">
          {/* Identity Overview Panel */}
          <div className="xl:col-span-5 space-y-6">
             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Source Asset</h2>
@@ -226,7 +233,8 @@ const SplitPage = () => {
                )}
             </Button>
          </div>
-      </form>
+        </form>
+      )}
     </div>
   );
 };

@@ -116,6 +116,30 @@ const Product = sequelize.define('Product', {
             model: 'companies',
             key: 'id'
         }
+    },
+    org_node_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'organization_nodes',
+            key: 'id'
+        }
+    },
+    form_template_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'form_templates',
+            key: 'id'
+        }
+    },
+    blueprint_template_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'form_templates',
+            key: 'id'
+        }
     }
 }, {
     tableName: 'products',

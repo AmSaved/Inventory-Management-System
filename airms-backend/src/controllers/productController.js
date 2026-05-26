@@ -1,8 +1,9 @@
-const { Product, Inventory, ActivityLog, OrganizationNode, sequelize } = require('../models');
+const { Product, Inventory, ActivityLog, OrganizationNode, FormTemplate, sequelize } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const barcodeService = require('../services/barcodeService');
 const logger = require('../config/logger');
+const hierarchyService = require('../services/hierarchyService');
 
 const productController = {
     /**
@@ -13,6 +14,15 @@ const productController = {
             const { page = 1, limit = 10, search, category, brand, is_active, in_stock } = req.query;
             const company_id = req.user.company_id;
             const where = { company_id };
+            
+            // Scope blueprints to the top-level organization (root node)
+            if (req.user.org_node_id) {
+                const breadcrumb = await hierarchyService.getBreadcrumb(req.user.org_node_id);
+                if (breadcrumb && breadcrumb.length > 0) {
+                    const rootNodeId = breadcrumb[0].id;
+                    where.org_node_id = { [Op.or]: [rootNodeId, null] }; // include null for legacy global products
+                }
+            }
             
             if (category) where.category = category;
             if (brand) where.brand = brand;
@@ -30,20 +40,31 @@ const productController = {
             const findOptions = {
                 where,
                 limit: parseInt(limit),
-                offset: parseInt(offset),
-                order: [['created_at', 'DESC']]
+                order: [['created_at', 'DESC']],
+                include: [
+                    {
+                        model: FormTemplate,
+                        as: 'intakeTemplate',
+                        attributes: ['id', 'name', 'schema']
+                    },
+                    {
+                        model: FormTemplate,
+                        as: 'blueprintTemplate',
+                        attributes: ['id', 'name', 'schema']
+                    }
+                ]
             };
 
             if (in_stock === 'true') {
                 // Filter to products that actually exist in the inventory (Stock Intake)
                 // We use an inner join (required: true) on inventory
-                findOptions.include = [{
+                findOptions.include.push({
                     model: Inventory,
                     as: 'inventory',
                     required: true,
                     where: { company_id },
                     attributes: [] // We don't need the inventory data itself, just the join to filter
-                }];
+                });
                 // When using required include, findAndCountAll needs subQuery: false if using limits
                 findOptions.subQuery = false;
                 findOptions.distinct = true; // Ensure count is correct for joined results
@@ -87,6 +108,14 @@ const productController = {
                         as: 'organizationNode',
                         attributes: ['id', 'name', 'code']
                     }]
+                }, {
+                    model: FormTemplate,
+                    as: 'intakeTemplate',
+                    attributes: ['id', 'name', 'schema']
+                }, {
+                    model: FormTemplate,
+                    as: 'blueprintTemplate',
+                    attributes: ['id', 'name', 'schema']
                 }]
             });
 
@@ -117,6 +146,14 @@ const productController = {
             productData.barcode_data = await barcodeService.generateBarcode(productData.sku);
             productData.qr_code_data = await barcodeService.generateQRCode(productData.sku);
             productData.company_id = company_id;
+
+            // Scope the product to the organization root
+            if (req.user.org_node_id) {
+                const breadcrumb = await hierarchyService.getBreadcrumb(req.user.org_node_id);
+                if (breadcrumb && breadcrumb.length > 0) {
+                    productData.org_node_id = breadcrumb[0].id;
+                }
+            }
 
             const product = await Product.create(productData);
 
@@ -213,9 +250,19 @@ const productController = {
      */
     async getCategories(req, res, next) {
         try {
+            const where = { company_id: req.user.company_id, category: { [Op.ne]: null } };
+            
+            if (req.user.org_node_id) {
+                const breadcrumb = await hierarchyService.getBreadcrumb(req.user.org_node_id);
+                if (breadcrumb && breadcrumb.length > 0) {
+                    const rootNodeId = breadcrumb[0].id;
+                    where.org_node_id = { [Op.or]: [rootNodeId, null] };
+                }
+            }
+
             const categories = await Product.findAll({
                 attributes: [[sequelize.fn('DISTINCT', sequelize.col('category')), 'category']],
-                where: { company_id: req.user.company_id, category: { [Op.ne]: null } }
+                where
             });
 
             res.json({
@@ -232,9 +279,19 @@ const productController = {
      */
     async getBrands(req, res, next) {
         try {
+            const where = { company_id: req.user.company_id, brand: { [Op.ne]: null } };
+            
+            if (req.user.org_node_id) {
+                const breadcrumb = await hierarchyService.getBreadcrumb(req.user.org_node_id);
+                if (breadcrumb && breadcrumb.length > 0) {
+                    const rootNodeId = breadcrumb[0].id;
+                    where.org_node_id = { [Op.or]: [rootNodeId, null] };
+                }
+            }
+
             const brands = await Product.findAll({
                 attributes: [[sequelize.fn('DISTINCT', sequelize.col('brand')), 'brand']],
-                where: { company_id: req.user.company_id, brand: { [Op.ne]: null } }
+                where
             });
 
             res.json({
@@ -271,6 +328,64 @@ const productController = {
 
             res.json({ success: true, data: product });
         } catch (error) {
+            next(error);
+        }
+    },
+
+    /**
+     * Bulk create products (Batch Registration).
+     */
+    async bulkCreate(req, res, next) {
+        const transaction = await sequelize.transaction();
+        try {
+            const { products } = req.body;
+            const company_id = req.user.company_id;
+            
+            if (!Array.isArray(products) || products.length === 0) {
+                return res.status(400).json({ success: false, message: 'No product data provided' });
+            }
+
+            const results = [];
+            
+            // Determine root organization node for bulk creations
+            let rootNodeId = null;
+            if (req.user.org_node_id) {
+                const breadcrumb = await hierarchyService.getBreadcrumb(req.user.org_node_id);
+                if (breadcrumb && breadcrumb.length > 0) {
+                    rootNodeId = breadcrumb[0].id;
+                }
+            }
+
+            for (const pData of products) {
+                pData.company_id = company_id;
+                if (rootNodeId) pData.org_node_id = rootNodeId;
+                
+                // Generate tracking codes for each individual unit
+                pData.barcode_data = await barcodeService.generateBarcode(pData.sku);
+                pData.qr_code_data = await barcodeService.generateQRCode(pData.sku);
+                
+                const product = await Product.create(pData, { transaction });
+                results.push(product);
+            }
+            
+            await transaction.commit();
+
+            // Background logging for the batch
+            ActivityLog.create({
+                company_id,
+                user_id: req.user.id,
+                action: 'BULK_CREATE',
+                resource: 'products',
+                details: { count: results.length }
+            }).catch(err => logger.error(`Batch activity logging failed:`, err));
+
+            res.status(201).json({
+                success: true,
+                message: `Successfully registered ${results.length} resources`,
+                count: results.length
+            });
+        } catch (error) {
+            await transaction.rollback();
             next(error);
         }
     }

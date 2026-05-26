@@ -48,7 +48,7 @@ const StoreForm = sequelize.define('StoreForm', {
         type: DataTypes.TEXT
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(50),
         defaultValue: 'completed'
     },
     workflow_id: {

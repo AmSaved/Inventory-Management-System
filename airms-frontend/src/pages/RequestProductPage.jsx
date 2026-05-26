@@ -13,10 +13,9 @@ const RequestProductPage = () => {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   
-  const canRequest = hasPermission('item:request');
+  const canRequest = hasPermission('request:create');
   
   const [items, setItems] = useState([{ 
-    product_id: '', 
     quantity: 1, 
     specifications: '',
     category: '',
@@ -63,7 +62,6 @@ const RequestProductPage = () => {
 
   const handleAddItem = () => {
     setItems([...items, { 
-      product_id: '', 
       quantity: 1, 
       specifications: '',
       category: '',
@@ -77,8 +75,8 @@ const RequestProductPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (items.some(item => !item.product_id)) {
-      return toast.error('Please complete the product selection for all items');
+    if (items.some(item => !item.category)) {
+      return toast.error('Please select a category for all items');
     }
 
     try {
@@ -88,14 +86,15 @@ const RequestProductPage = () => {
         priority,
         expected_delivery_date: expectedDate || null,
         items: items.map(item => ({
-          product_id: parseInt(item.product_id),
           quantity_requested: item.quantity,
           specifications: {
+            category: item.category,
+            sub_category: item.sub_category || null,
             notes: item.specifications
           }
         }))
       });
-      toast.success('Requisition Protocol Initialized');
+      toast.success('Request submitted successfully');
       navigate('/dashboard');
     } catch (error) {
       let errorMessage = 'Protocol Failure: Could not submit request';
@@ -184,8 +183,8 @@ const RequestProductPage = () => {
                  <div className="flex items-center gap-4">
                     <span className="text-xs font-black text-slate-900 bg-slate-100 w-8 h-8 rounded-lg flex items-center justify-center">2</span>
                     <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Item Discovery & Quantity</label>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Browse by Category and Sub-category</p>
+                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Item Discovery & Quantity</label>
+                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Select a Category (Sub-category is optional)</p>
                     </div>
                  </div>
                  <Button 
@@ -200,10 +199,10 @@ const RequestProductPage = () => {
 
               {items.map((item, index) => (
                 <div key={index} className="space-y-6 p-8 bg-slate-50 rounded-[30px] border border-slate-100 relative group animate-in fade-in slide-in-from-top-4 duration-300">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Category Select */}
                     <div className="space-y-2">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Category</label>
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Category <span className="text-red-400">*</span></label>
                        <select
                         className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 font-black text-slate-900 outline-none hover:border-blue-200 transition-all cursor-pointer text-[10px] uppercase"
                         value={item.category}
@@ -211,7 +210,6 @@ const RequestProductPage = () => {
                           const newItems = [...items];
                           newItems[index].category = e.target.value;
                           newItems[index].sub_category = '';
-                          newItems[index].product_id = '';
                           setItems(newItems);
                         }}
                         required
@@ -221,44 +219,23 @@ const RequestProductPage = () => {
                       </select>
                     </div>
 
-                    {/* Sub-Category Select */}
+                    {/* Sub-Category Select (Optional) */}
                     <div className="space-y-2">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Sub-Category</label>
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                         Sub-Category <span className="text-slate-300 font-normal normal-case">(optional)</span>
+                       </label>
                        <select
-                        className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 font-black text-slate-900 outline-none hover:border-blue-200 transition-all cursor-pointer text-[10px] uppercase disabled:opacity-50"
+                        className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 font-black text-slate-900 outline-none hover:border-blue-200 transition-all cursor-pointer text-[10px] uppercase disabled:opacity-40"
                         value={item.sub_category}
                         disabled={!item.category}
                         onChange={(e) => {
                           const newItems = [...items];
                           newItems[index].sub_category = e.target.value;
-                          newItems[index].product_id = '';
                           setItems(newItems);
                         }}
-                        required
                       >
-                        <option value="">Choose Sub-Category...</option>
+                        <option value="">Any Sub-Category...</option>
                         {getSubCategories(item.category).map(sub => <option key={sub} value={sub}>{sub}</option>)}
-                      </select>
-                    </div>
-
-                    {/* Product Select */}
-                    <div className="space-y-2">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Item / Product Model</label>
-                       <select
-                        className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 font-black text-slate-900 outline-none hover:border-blue-200 transition-all cursor-pointer text-[10px] uppercase disabled:opacity-50"
-                        value={item.product_id}
-                        disabled={!item.category}
-                        onChange={(e) => {
-                          const newItems = [...items];
-                          newItems[index].product_id = e.target.value;
-                          setItems(newItems);
-                        }}
-                        required
-                      >
-                        <option value="">Select Item / Model...</option>
-                        {getFilteredItems(item.category, item.sub_category).map(p => (
-                          <option key={p.id} value={p.id}>{p.name} [{p.sku || 'N/A'}]</option>
-                        ))}
                       </select>
                     </div>
                   </div>

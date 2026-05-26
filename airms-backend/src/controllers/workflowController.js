@@ -1,9 +1,10 @@
-const { Workflow, WorkflowStep, WorkflowRoute, ActivityLog, Role } = require('../models');
+const { Workflow, WorkflowStep, WorkflowRoute, ActivityLog, Role, Request, DischargeForm, Transfer, Return } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const workflowService = require('../services/workflowService');
 const hierarchyService = require('../services/hierarchyService');
 const { getEffectivePermissions } = require('../middleware/permissions');
+const logger = require('../config/logger');
 
 const workflowController = {
     async getAll(req, res, next) {
@@ -262,6 +263,43 @@ const workflowController = {
                         });
                     }
                 }
+            }
+
+            // ─── RE-ASSIGN PENDING RESOURCES TO NEW FIRST STEP ───
+            // When a workflow is edited, old steps are deleted and new ones are created.
+            // Any pending resources still pointing to the old (now-deleted) step IDs
+            // become orphaned. We must re-point them to the new first step.
+            const newFirstStep = await WorkflowStep.findOne({
+                where: { workflow_id: id },
+                order: [['step_order', 'ASC']],
+                include: [{ model: Role, as: 'requiredRole' }]
+            });
+
+            if (newFirstStep) {
+                const newRoleName = newFirstStep.requiredRole ? newFirstStep.requiredRole.name : 'Authorized Personnel';
+                const newStatusLabel = newFirstStep.status_label_override || `Pending ${newRoleName}`;
+
+                // Build the update payload
+                const updateData = {
+                    current_step_id: newFirstStep.id,
+                    workflow_status: newStatusLabel
+                };
+
+                // Update all pending resources across all resource tables that use this workflow
+                const pendingWhere = {
+                    workflow_id: id,
+                    company_id,
+                    status: 'pending'
+                };
+
+                await Promise.all([
+                    Request.update(updateData, { where: pendingWhere }),
+                    DischargeForm.update(updateData, { where: pendingWhere }),
+                    Transfer.update(updateData, { where: pendingWhere }),
+                    Return.update(updateData, { where: pendingWhere })
+                ]);
+
+                logger.info(`Workflow ${id} updated: Re-assigned all pending resources to new first step ${newFirstStep.id} (${newRoleName})`);
             }
 
             await ActivityLog.create({

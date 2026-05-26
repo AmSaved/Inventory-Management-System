@@ -22,7 +22,8 @@ const dischargeController = {
                 status,
                 discharge_type,
                 from_date,
-                to_date 
+                to_date,
+                search
             } = req.query;
             
             const company_id = req.user.company_id;
@@ -49,6 +50,14 @@ const dischargeController = {
 
             if (status) where.status = status;
             if (discharge_type) where.discharge_type = discharge_type;
+            
+            if (search) {
+                where[Op.or] = [
+                    { discharge_number: { [Op.like]: `%${search}%` } },
+                    { status: { [Op.like]: `%${search}%` } },
+                    { discharge_type: { [Op.like]: `%${search}%` } }
+                ];
+            }
             
             if (from_date || to_date) {
                 where.created_at = {};
@@ -375,7 +384,7 @@ const dischargeController = {
         try {
             const { id } = req.params;
             const company_id = req.user.company_id;
-            const { notes } = req.body;
+            const notes = req.body.notes || req.body.reason;
 
             const form = await DischargeForm.findOne({ where: { id, company_id } });
             if (!form) return res.status(404).json({ success: false, message: 'Not found' });

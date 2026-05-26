@@ -243,13 +243,20 @@ const dashboardController = {
             // Sort by stock count descending
             levelStats.sort((a, b) => b.stock_count - a.stock_count);
 
+            // 5. Always fetch the user's personal assignments (regardless of their admin level)
+            const myAssignments = await Assignment.findAll({ 
+                where: { user_id: req.user.id, status: 'active', company_id }, 
+                include: ['product'] 
+            });
+
             res.json({
                 success: true,
                 data: {
                     metrics,
                     level_distribution: levelStats,
                     recent_activity: recentActivity,
-                    pending_approvals: pendingApprovalListRaw
+                    pending_approvals: pendingApprovalListRaw,
+                    my_assignments: myAssignments
                 }
             });
         } catch (error) {

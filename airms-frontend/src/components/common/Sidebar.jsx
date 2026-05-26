@@ -47,12 +47,12 @@ const MAJOR_CATEGORIES = [
     name: 'Requests',
     icon: <ShieldAlert size={18} />,
     items: [
-      { name: 'Procurement Requests', href: '/requests/procurement', permissions: ['request:approve'], icon: <PlusSquare size={14} /> },
+      { name: 'User Requests', href: '/requests/procurement', permissions: ['request:approve'], icon: <PlusSquare size={14} /> },
       { name: 'Item Transfer Requests', href: '/requests/items', permissions: ['request:approve'], icon: <ArrowLeftRight size={14} /> },
       { name: 'Return Item Requests', href: '/requests/returns', permissions: ['return:approve'], icon: <RotateCcw size={14} /> },
-      { name: 'Discharge Authorizations', href: '/requests/discharge', permissions: ['discharge:approve'], icon: <Truck size={14} /> },
-      { name: 'Inventory Transfers', href: '/requests/inventory', permissions: ['transfer:approve'], icon: <Search size={14} /> },
-      { name: 'Inventory Returns', href: '/requests/inventory-returns', permissions: ['stock:return:approve'], icon: <RotateCcw size={14} /> },
+      { name: 'Discharge requests', href: '/requests/discharge', permissions: ['discharge:approve'], icon: <Truck size={14} /> },
+      { name: 'Inventory Transfer requests', href: '/requests/inventory', permissions: ['transfer:approve'], icon: <Search size={14} /> },
+      { name: 'Return requests', href: '/requests/inventory-returns', permissions: ['stock:return:approve'], icon: <RotateCcw size={14} /> },
     ]
   },
   {
@@ -61,25 +61,25 @@ const MAJOR_CATEGORIES = [
     icon: <Compass size={18} />,
     items: [
       { name: 'Organization Hierarchy', href: '/dashboard?tab=structure', permissions: ['branch:read'], icon: <Map size={14} /> },
-      { name: 'Consolidate Branches', href: '/admin/merge-branches', permissions: ['branch:create'], icon: <GitMerge size={14} /> },
-      { name: 'Process Designer', href: '/admin/workflows', permissions: ['workflow:manage'], icon: <Workflow size={14} /> },
-      { name: 'User Management', href: '/dashboard?tab=users', permissions: ['user:read'], icon: <Users size={14} /> },
-      { name: 'Roles & Safety', href: '/dashboard?tab=roles', permissions: ['role:read'], icon: <ShieldCheck size={14} /> },
-      { name: 'Permissions Matrix', href: '/admin/permissions', permissions: ['permission:read'], icon: <Key size={14} /> },
+      { name: 'Merge Branches', href: '/admin/merge-branches', permissions: ['branch:create'], icon: <GitMerge size={14} /> },
+      { name: 'Workflows', href: '/admin/workflows', permissions: ['workflow:manage'], icon: <Workflow size={14} /> },
+      { name: 'User Management', href: '/dashboard?tab=users', permissions: ['user:manage:all'], icon: <Users size={14} /> },
+      { name: 'Roles', href: '/dashboard?tab=roles', permissions: ['role:read'], icon: <ShieldCheck size={14} /> },
+      { name: 'Permissions', href: '/admin/permissions', permissions: ['permission:read'], icon: <Key size={14} /> },
     ]
   },
   {
     id: 'logistics-suite',
-    name: 'Operational Logistics',
+    name: 'Operations',
     icon: <Zap size={18} />,
     items: [
-      { name: 'Stock Intake (Store)', href: '/store', permissions: ['stock:intake'], icon: <Store size={14} /> },
-      { name: 'Discharge & Issuing', href: '/discharge', permissions: ['stock:discharge'], icon: <PackageCheck size={14} /> },
-      { name: 'Return Logistics', href: '/inventory/return', permissions: ['return:read'], icon: <RotateCcw size={14} /> },
-      { name: 'Transfer Logistics', href: '/transfers', permissions: ['stock:transfer'], icon: <ArrowLeftRight size={14} /> },
-      { name: 'Exception Reports', href: '/issues', permissions: ['issue:read'], icon: <History size={14} /> },
-      { name: 'Inventory Ledger', href: '/inventory', permissions: ['inventory:view'], icon: <Package size={14} /> },
-      { name: 'Product Catalog', href: '/dashboard?tab=products', permissions: ['product:read'], icon: <Boxes size={14} /> },
+      { name: 'Intake', href: '/store', permissions: ['stock:intake'], icon: <Store size={14} /> },
+      { name: 'Discharge', href: '/discharge', permissions: ['stock:discharge'], icon: <PackageCheck size={14} /> },
+      { name: 'Return', href: '/inventory/return', permissions: ['return:read'], icon: <RotateCcw size={14} /> },
+      { name: 'Transfer', href: '/transfers', permissions: ['stock:transfer'], icon: <ArrowLeftRight size={14} /> },
+      { name: 'Report Center', href: '/issues', permissions: ['issue:read'], icon: <History size={14} /> },
+      { name: 'Inventories', href: '/inventory', permissions: ['inventory:view'], icon: <Package size={14} /> },
+      { name: 'Form Submissions', href: '/dashboard?tab=products', permissions: ['product:read'], icon: <Boxes size={14} /> },
     ]
   },
   {
@@ -87,7 +87,6 @@ const MAJOR_CATEGORIES = [
     name: 'Business Intel',
     icon: <BarChart3 size={18} />,
     items: [
-      { name: 'My Assets', href: '/assets', permissions: ['assignment:view'], icon: <Package size={14} /> },
       { name: 'Request Items', href: '/requests/new', permissions: ['request:create'], icon: <PlusSquare size={14} /> },
       { name: 'Reports', href: '/reports', permissions: ['report:view'], icon: <FileText size={14} /> },
     ]
@@ -114,43 +113,9 @@ const Sidebar = ({ open }) => {
   };
 
   return (
-    <aside className={`fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out border-r border-gray-200 bg-white ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+    <aside className={`fixed top-20 bottom-0 left-0 z-50 lg:z-30 w-64 transition-transform duration-300 ease-in-out border-r border-gray-200 bg-white ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
       <div className="h-full flex flex-col relative">
-        <div className="p-8 border-b border-gray-100 relative z-10">
-          <div className="flex items-center justify-between mb-8">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all group"
-              title="Personal Dashboard"
-            >
-              <Home size={18} className="group-hover:scale-110 transition-transform" />
-            </button>
-            <div className="flex gap-1">
-              <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse"></div>
-              <div className="w-1 h-1 rounded-full bg-gray-200"></div>
-              <div className="w-1 h-1 rounded-full bg-gray-200"></div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-4 group/brand"
-          >
-            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 rotate-2 group-hover/brand:rotate-0 transition-all duration-500">
-              <ShieldCheck className="text-white" size={24} />
-            </div>
-            <div>
-              <span className="text-xl font-bold text-gray-900 block leading-none">
-                {user?.organization_node?.name || 'AIRMS'}
-              </span>
-              <span className="text-xs font-medium text-blue-600 mt-1 block opacity-90">
-                Institutional Core
-              </span>
-            </div>
-          </button>
-        </div>
-
-        <nav className="flex-1 px-4 py-8 overflow-y-auto space-y-8 custom-scrollbar relative z-10">
+        <nav className="flex-1 px-4 py-6 overflow-y-auto space-y-6 custom-scrollbar relative z-10">
           {MAJOR_CATEGORIES.map((major) => {
             const isInstitutionalOnly = user?.role?.level >= 100;
             const operationalSuites = ['approval-suite', 'logistics-suite'];
@@ -172,7 +137,7 @@ const Sidebar = ({ open }) => {
                     <div className={`transition-all duration-500 ${isMajorExpanded ? 'text-blue-600' : 'group-hover:text-blue-500'}`}>
                       {major.icon}
                     </div>
-                    <span className="text-sm font-black text-gray-400 uppercase tracking-widest text-left leading-tight">{major.name}</span>
+                    <span className="text-sm font-bold text-gray-900 text-left leading-tight">{major.name}</span>
                   </div>
                   <ChevronRight size={14} className={`transition-transform duration-500 ${isMajorExpanded ? 'rotate-90 text-blue-600' : 'text-gray-300'}`} />
                 </button>
@@ -191,8 +156,8 @@ const Sidebar = ({ open }) => {
                           to={item.href}
                           className={({ isActive }) => `
                             flex items-center gap-4 px-5 py-3 rounded-2xl text-sm transition-all duration-300 relative group/link
-                            ${isActive 
-                              ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-500/20' 
+                            ${isActive
+                              ? 'bg-green-600 text-white font-bold shadow-lg shadow-green-500/20'
                               : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}
                           `}
                         >
@@ -201,11 +166,11 @@ const Sidebar = ({ open }) => {
                               <div className={`transition-all duration-300 ${isActive ? 'text-white' : 'text-gray-400 group-hover/link:text-blue-600'}`}>
                                 {item.icon}
                               </div>
-                              <span className="text-sm font-bold">{item.name}</span>
+                              <span className="text-sm font-medium">{item.name}</span>
                               {isActive && (
-                                <motion.div 
+                                <motion.div
                                   layoutId="sidebar-active-dot"
-                                  className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" 
+                                  className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full"
                                 />
                               )}
                             </>

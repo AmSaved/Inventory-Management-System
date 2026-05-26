@@ -49,11 +49,11 @@ const DischargeForm = sequelize.define('DischargeForm', {
         }
     },
     discharge_type: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         allowNull: false
     },
     status: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(100),
         defaultValue: 'pending'
     },
     workflow_id: {

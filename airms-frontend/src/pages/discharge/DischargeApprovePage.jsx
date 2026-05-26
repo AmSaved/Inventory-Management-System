@@ -69,29 +69,29 @@ const DischargeApprovePage = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 py-10 px-4 animate-fade-in">
+    <div className="max-w-7xl mx-auto space-y-5 py-6 px-4 animate-fade-in">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="flex items-center gap-5">
-           <div className="w-16 h-16 bg-blue-600 rounded-[28px] flex items-center justify-center shadow-2xl shadow-blue-500/20 rotate-3">
-              <PackageCheck className="text-white" size={32} />
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex items-center gap-3">
+           <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
+              <PackageCheck className="text-white" size={20} />
            </div>
            <div>
-              <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Workflow Inbox</h1>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">Inventory Discharge Protocols</p>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Workflow Inbox</h1>
+              <p className="text-xs text-slate-500 font-normal">Inventory Discharge Protocols</p>
            </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1.5 rounded-[22px] w-full md:w-auto">
+        <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto">
            <button 
              onClick={() => setActiveTab('inbox')}
-             className={`flex-1 md:flex-none px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
+             className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${activeTab === 'inbox' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
            >
              Pending Actions
            </button>
            <button 
              onClick={() => setActiveTab('all')}
-             className={`flex-1 md:flex-none px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
+             className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${activeTab === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
            >
              All Monitorable
            </button>
@@ -99,13 +99,13 @@ const DischargeApprovePage = () => {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-xl flex flex-col md:flex-row items-center gap-4">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-3">
           <div className="relative w-full max-w-md">
-             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
              <input 
                type="text"
                placeholder="Search by ID or Name..." 
-               className="w-full pl-16 h-14 bg-slate-50 border-none rounded-2xl font-bold text-xs uppercase tracking-widest text-slate-900 focus:ring-2 focus:ring-blue-100 outline-none"
+               className="w-full pl-9 h-10 bg-slate-50 border border-slate-200 rounded-lg text-sm font-normal text-slate-900 focus:ring-2 focus:ring-blue-100 outline-none"
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
                onKeyDown={(e) => {
@@ -114,88 +114,85 @@ const DischargeApprovePage = () => {
                  }
                }}
              />
-             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-2 ml-2">Press Enter to Filter Ledger</p>
           </div>
-          <Button onClick={() => refetch()} className="h-14 px-8 rounded-2xl bg-slate-950 text-white font-black uppercase text-[10px] tracking-widest hover:bg-black w-full md:w-auto">
+          <Button onClick={() => refetch()} className="h-10 px-4 rounded-lg bg-slate-900 text-white font-semibold text-xs hover:bg-black w-full md:w-auto">
              Refresh Ledger
           </Button>
       </div>
 
       {/* Table Interface */}
-      <Card className="rounded-[45px] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-slate-100">
+      <Card className="rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden">
          <div className="overflow-x-auto">
             <table className="w-full border-collapse">
                <thead>
-                  <tr className="bg-slate-950 text-white border-b border-slate-800">
-                     <th className="px-8 py-6 text-left text-[10px] font-black uppercase tracking-widest">Discharge ID</th>
-                     <th className="px-6 py-6 text-left text-[10px] font-black uppercase tracking-widest">Source Node</th>
-                     <th className="px-6 py-6 text-left text-[10px] font-black uppercase tracking-widest">Target Destination</th>
-                     <th className="px-6 py-6 text-left text-[10px] font-black uppercase tracking-widest">Items Payload</th>
-                     <th className="px-6 py-6 text-left text-[10px] font-black uppercase tracking-widest">Workflow Status</th>
-                     <th className="px-6 py-6 text-center text-[10px] font-black uppercase tracking-widest">Actions</th>
-                  </tr>
+                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                     <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Discharge ID</th>
+                     <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Source Node</th>
+                     <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Target Destination</th>
+                     <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Items Payload</th>
+                     <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Workflow Status</th>
+                     <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Actions</th>
+                   </tr>
                </thead>
-               <tbody className="divide-y divide-slate-50">
+               <tbody className="divide-y divide-slate-100">
                   {filteredDischarges.map((discharge) => (
-                    <tr key={discharge.id} className="hover:bg-blue-50/30 transition-colors group">
-                       <td className="px-8 py-8">
+                    <tr key={discharge.id} className="hover:bg-blue-50/10 transition-colors group">
+                       <td className="px-4 py-3">
                           <div className="flex flex-col">
-                             <span className="text-lg font-black text-slate-900 tracking-tighter leading-none">{discharge.discharge_number}</span>
-                             <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">ID: {discharge.id} • {new Date(discharge.created_at).toLocaleDateString()}</span>
+                             <span className="text-sm font-semibold text-slate-900 tracking-tight">{discharge.discharge_number}</span>
+                             <span className="text-xs text-slate-500 font-normal">ID: {discharge.id} • {new Date(discharge.created_at).toLocaleDateString()}</span>
                           </div>
                        </td>
-                       <td className="px-6 py-8">
+                       <td className="px-4 py-3">
                           <div className="flex flex-col">
-                             <span className="text-xs font-black text-slate-900 uppercase truncate max-w-[150px]">{discharge.fromNode?.name}</span>
-                             <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">Originating Unit</span>
+                             <span className="text-sm font-semibold text-slate-800 truncate max-w-[150px]">{discharge.fromNode?.name}</span>
+                             <span className="text-xs text-slate-400 font-normal">Originating Unit</span>
                           </div>
                        </td>
-                       <td className="px-6 py-8">
+                       <td className="px-4 py-3">
                           <div className="flex flex-col">
-                             <span className="text-xs font-black text-blue-600 uppercase truncate max-w-[150px]">
+                             <span className="text-sm font-semibold text-blue-600 truncate max-w-[150px]">
                                 {discharge.toNode?.name || 
                                  (discharge.toUser ? `${discharge.toUser.first_name} ${discharge.toUser.last_name}` : 'Internal / Multiple')}
                              </span>
-                             <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">Receiving Target</span>
+                             <span className="text-xs text-slate-400 font-normal">Receiving Target</span>
                           </div>
                        </td>
-                       <td className="px-6 py-8">
-                          <div className="flex -space-x-3 overflow-hidden">
-                             {discharge.items?.slice(0, 3).map((it, i) => (
-                               <div key={i} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm" title={it.product?.name}>
-                                  {it.product?.name?.[0]}
-                               </div>
-                             ))}
-                             {discharge.items?.length > 3 && (
-                               <div className="w-8 h-8 rounded-full bg-blue-600 border-2 border-white flex items-center justify-center text-[8px] font-black text-white shadow-sm">
-                                  +{discharge.items.length - 3}
-                               </div>
-                             )}
+                       <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                             <div className="flex -space-x-2 overflow-hidden">
+                                {discharge.items?.slice(0, 3).map((it, i) => (
+                                  <div key={i} className="w-6 h-6 rounded-full bg-slate-100 border border-white flex items-center justify-center text-xs font-semibold text-slate-700 shadow-sm" title={it.product?.name}>
+                                     {it.product?.name?.[0]}
+                                  </div>
+                                ))}
+                                {discharge.items?.length > 3 && (
+                                  <div className="w-6 h-6 rounded-full bg-blue-600 border border-white flex items-center justify-center text-xs font-semibold text-white shadow-sm">
+                                     +{discharge.items.length - 3}
+                                  </div>
+                                )}
+                             </div>
+                             <span className="text-xs text-slate-500 font-normal">({discharge.items?.length || 0} Lines)</span>
                           </div>
-                          <p className="text-[9px] font-bold text-slate-500 mt-2 uppercase tracking-tighter">{discharge.items?.length} Lines Registered</p>
                        </td>
-                       <td className="px-6 py-8">
-                          <div className="flex flex-col gap-2">
-                             <Badge className={`w-fit rounded-full px-4 py-1 font-black text-[9px] uppercase tracking-widest ${
-                               discharge.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                               discharge.status === 'approved' ? 'bg-blue-100 text-blue-700' :
-                               'bg-amber-100 text-amber-700'
-                             }`}>
-                                {discharge.workflow_status || discharge.status}
+                       <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                             <Badge className="w-fit bg-white text-slate-800 border border-slate-200 rounded px-2 py-0.5 text-xs font-normal capitalize">
+                                {((discharge.workflow_status ? discharge.workflow_status.replace(/\s*\(.*?\)\s*/g, '').trim() : '') || discharge.status || '').toLowerCase()}
                              </Badge>
-                             <div className="flex items-center gap-1.5 ml-1">
-                                <Clock size={10} className="text-slate-300" />
-                                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Step Order: {discharge.currentStep?.step_order || 0}</span>
+                             <div className="flex items-center gap-1 ml-0.5">
+                                <Clock size={12} className="text-slate-400" />
+                                <span className="text-xs text-slate-400 font-normal">Step: {discharge.currentStep?.step_order || 0}</span>
                              </div>
                           </div>
                        </td>
-                       <td className="px-6 py-8">
-                          <div className="flex items-center justify-center gap-3">
+                       <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-2">
                              <button 
                                onClick={() => navigate(`/discharge/view/${discharge.id}`)}
-                               className="p-3 bg-slate-50 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-white transition-all shadow-sm border border-slate-50"
+                               className="p-1.5 bg-slate-50 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-all border border-slate-200"
                              >
-                                <Eye size={18} />
+                                <Eye size={16} />
                              </button>
                              
                              {/* Dynamic Action Buttons - Only show if backend says can_action is true */}
@@ -203,19 +200,19 @@ const DischargeApprovePage = () => {
                                <>
                                  <button 
                                    onClick={() => handleAction(discharge.id, 'approve')}
-                                   className="flex items-center gap-2 px-5 h-11 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-emerald-500/20"
+                                   className="flex items-center gap-1.5 px-3 h-8 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs transition-all shadow-sm"
                                  >
-                                    <CheckCircle2 size={14} /> Approve
+                                    <CheckCircle2 size={13} /> Approve
                                  </button>
                                  <button 
                                    onClick={() => handleAction(discharge.id, 'reject')}
-                                   className="flex items-center gap-2 px-5 h-11 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-rose-500/20"
+                                   className="flex items-center gap-1.5 px-3 h-8 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-xs transition-all shadow-sm"
                                  >
-                                    <XCircle size={14} /> Reject
+                                    <XCircle size={13} /> Reject
                                  </button>
                                </>
                              ) : (
-                               <div className="px-4 py-2 bg-slate-50 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest italic opacity-50 border border-slate-100">
+                               <div className="px-2 py-1 bg-slate-50 rounded border border-slate-200 text-xs font-normal text-slate-400 italic">
                                   Awaiting Turn
                                </div>
                              )}
@@ -228,20 +225,20 @@ const DischargeApprovePage = () => {
          </div>
 
          {loading && (
-           <div className="p-20 flex flex-col items-center justify-center gap-4">
-              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Accessing Ledger...</p>
+           <div className="p-12 flex flex-col items-center justify-center gap-3">
+              <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-medium text-slate-500">Accessing Ledger...</p>
            </div>
          )}
 
          {!loading && filteredDischarges.length === 0 && (
-           <div className="p-32 flex flex-col items-center justify-center text-center space-y-6">
-              <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center text-slate-200">
-                 <ClipboardList size={48} />
+           <div className="p-16 flex flex-col items-center justify-center text-center space-y-4">
+              <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
+                 <ClipboardList size={36} />
               </div>
               <div>
-                 <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase italic">No Pending Protocols</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Your inbox is currently clear of pending discharge approvals.</p>
+                 <h3 className="text-lg font-bold text-slate-900">No Pending Protocols</h3>
+                 <p className="text-xs text-slate-500 mt-1">Your inbox is currently clear of pending discharge approvals.</p>
               </div>
            </div>
          )}

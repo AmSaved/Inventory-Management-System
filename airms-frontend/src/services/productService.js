@@ -19,6 +19,12 @@ const productService = {
     return response.data.data;
   },
 
+  // Bulk create products
+  bulkCreateProducts: async (products) => {
+    const response = await api.post('/products/bulk', { products });
+    return response.data;
+  },
+
   // Update product
   updateProduct: async (id, productData) => {
     const response = await api.put(`/products/${id}`, productData);

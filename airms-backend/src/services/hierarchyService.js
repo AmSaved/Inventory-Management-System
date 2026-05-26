@@ -91,28 +91,53 @@ class HierarchyService {
     async getAllowedNodes(user, permissions = []) {
         if (!user) return [];
         
-        const visibility = user.role?.visibility_scope || 'own_node';
-        const roleLevel = user.role?.level || 0;
-        const roleName = user.role?.name?.toLowerCase() || '';
-
         // 1. Institutional authority (Pure Permission Check)
-        const hasGlobalVisibility = permissions.includes('hierarchy:all:view') || 
+        // Super Admins (role level 100) or specific permissions get global access
+        const hasGlobalVisibility = (user.role?.level >= 100) || 
+                                     permissions.includes('hierarchy:all:view') || 
                                      permissions.includes('system:manage');
         
         if (hasGlobalVisibility) {
             // Signal global visibility by returning null
-            // This prevents building massive arrays of IDs that slow down SQL IN clauses
             return null;
         }
 
-        // 2. Recursive authority check
-        // If user is at a branch, they can see that branch and all sub-units
-        // This is where we remove the "static" nature by allowing the hierarchy to dictate access
-        if (user.org_node_id) {
-            return await this.getDescendants(user.org_node_id);
+        // 2. Multi-node recursive authority check
+        const seedPaths = [];
+        
+        // Primary node
+        if (user.organizationNode && user.organizationNode.path) {
+            seedPaths.push(user.organizationNode.path);
+        } else if (user.org_node_id) {
+            // Fallback if association not loaded
+            const node = await OrganizationNode.findByPk(user.org_node_id, { attributes: ['path'] });
+            if (node && node.path) seedPaths.push(node.path);
         }
 
-        return [];
+        // Additional authorized nodes (from multi-tenancy junction)
+        if (user.authorizedNodes && user.authorizedNodes.length > 0) {
+            user.authorizedNodes.forEach(node => {
+                if (node.path && !seedPaths.includes(node.path)) {
+                    seedPaths.push(node.path);
+                }
+            });
+        }
+
+        if (seedPaths.length === 0) return [];
+
+        // Get all descendants for all seed paths in one query
+        const descendants = await OrganizationNode.findAll({
+            where: {
+                [Op.or]: seedPaths.map(p => ({
+                    path: { [Op.like]: `${p}%` }
+                })),
+                status: { [Op.ne]: 'archived' }
+            },
+            attributes: ['id'],
+            raw: true
+        });
+
+        return [...new Set(descendants.map(d => d.id))];
     }
 
     /**

@@ -1,4 +1,4 @@
-const { Role, Permission, ActivityLog, User, OrganizationNode } = require('../models');
+const { Role, Permission, ActivityLog, User, OrganizationNode, RolePermission, WorkflowStep } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const sequelize = require('../config/database');
@@ -166,7 +166,11 @@ const roleController = {
             });
 
             if (permission_ids && permission_ids.length > 0) {
-                await role.setPermissions(permission_ids);
+                const rolePermissions = permission_ids.map(permId => ({
+                    role_id: role.id,
+                    permission_id: permId
+                }));
+                await RolePermission.bulkCreate(rolePermissions);
             }
 
             await ActivityLog.create({
@@ -245,7 +249,14 @@ const roleController = {
             await role.update(updates);
 
             if (updates.permission_ids) {
-                await role.setPermissions(updates.permission_ids);
+                await RolePermission.destroy({ where: { role_id: id } });
+                if (updates.permission_ids.length > 0) {
+                    const rolePermissions = updates.permission_ids.map(permId => ({
+                        role_id: id,
+                        permission_id: permId
+                    }));
+                    await RolePermission.bulkCreate(rolePermissions);
+                }
             }
 
             await ActivityLog.create({
@@ -292,6 +303,10 @@ const roleController = {
             const userCount = await User.count({ where: { role_id: id, company_id } });
             if (userCount > 0) return res.status(400).json({ success: false, message: 'Cannot delete role with assigned users' });
 
+            // Check for workflows
+            const workflowStepCount = await WorkflowStep.count({ where: { required_role_id: id } });
+            if (workflowStepCount > 0) return res.status(400).json({ success: false, message: 'Cannot delete role. This role is assigned to a workflow.' });
+
             await role.destroy();
 
             await ActivityLog.create({
@@ -332,7 +347,14 @@ const roleController = {
             });
 
             const permissionIds = permissions.map(p => p.id);
-            await role.setPermissions(permissionIds);
+            await RolePermission.destroy({ where: { role_id: id } });
+            if (permissionIds.length > 0) {
+                const rolePermissions = permissionIds.map(permId => ({
+                    role_id: id,
+                    permission_id: permId
+                }));
+                await RolePermission.bulkCreate(rolePermissions);
+            }
 
             await ActivityLog.create({
                 company_id,

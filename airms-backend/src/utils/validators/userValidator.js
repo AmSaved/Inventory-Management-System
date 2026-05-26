@@ -3,7 +3,7 @@ const { body, param, query } = require('express-validator');
 // Validate user creation
 const validateCreateUser = [
     body('employee_id')
-        .notEmpty().withMessage('Employee ID is required')
+        .optional({ values: 'falsy' })
         .isLength({ min: 3, max: 50 }).withMessage('Employee ID must be between 3 and 50 characters')
         .matches(/^[A-Z0-9-]+$/).withMessage('Employee ID can only contain uppercase letters, numbers, and hyphens'),
     

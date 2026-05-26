@@ -1,4 +1,4 @@
-const { User, Role, OrganizationNode, Permission, UserPermission, ActivityLog, Assignment, Product } = require('../models');
+const { User, Role, OrganizationNode, Permission, UserPermission, ActivityLog, Assignment, Product, UserRole, UserNode, Request, Approval, StoreForm, DischargeForm, Return, Transfer, Issue, Inventory, Workflow, FormTemplate, DischargeItem } = require('../models');
 const { Op } = require('sequelize');
 const logger = require('../config/logger');
 
@@ -106,13 +106,15 @@ class UserService {
      */
     async createUser(companyId, userData, createdBy) {
         try {
+            const orConditions = [{ email: userData.email }];
+            if (userData.employee_id) {
+                orConditions.push({ employee_id: userData.employee_id });
+            }
+
             const existingUser = await User.findOne({
                 where: {
                     company_id: companyId,
-                    [Op.or]: [
-                        { email: userData.email },
-                        { employee_id: userData.employee_id }
-                    ]
+                    [Op.or]: orConditions
                 }
             });
 
@@ -132,6 +134,12 @@ class UserService {
             // Ensure name fields are present
             if (!userData.first_name || !userData.last_name) {
                 throw new Error('Both First Name and Last Name are required for identity records');
+            }
+
+            // Fallback for missing employee_id to prevent database constraint errors
+            if (!userData.employee_id) {
+                const randomDigits = Math.floor(1000 + Math.random() * 9000);
+                userData.employee_id = `EMP-${userData.email.split('@')[0].toUpperCase()}-${randomDigits}`;
             }
 
             // Fallback for missing username to prevent unique constraint errors with blank strings
@@ -199,15 +207,71 @@ class UserService {
     /**
      * Delete user only if they have no active assignments.
      */
-    async deleteUser(companyId, id) {
+        async deleteUser(companyId, id) {
         try {
             const user = await User.findOne({ where: { id, company_id: companyId } });
             if (!user) throw new Error('User not found');
 
-            const assignmentCount = await Assignment.count({ where: { user_id: id } });
-            if (assignmentCount > 0) {
-                throw new Error('Cannot delete user with active/historical assignments for audit integrity');
-            }
+            // Fire all database cleanup updates in parallel (extremely fast!)
+            await Promise.all([
+                UserPermission.destroy({ where: { user_id: id } }),
+                UserRole ? UserRole.destroy({ where: { user_id: id } }) : Promise.resolve(),
+                UserNode ? UserNode.destroy({ where: { user_id: id } }) : Promise.resolve(),
+                ActivityLog.update({ user_id: null }, { where: { user_id: id } }),
+                User.update({ created_by: null }, { where: { created_by: id } }),
+                Role.update({ created_by_id: null }, { where: { created_by_id: id } }),
+                Assignment.update(
+                    { 
+                        status: 'returned', 
+                        actual_return_date: new Date(), 
+                        condition_at_return: 'good',
+                        notes: 'Automatically returned to store due to user account deletion'
+                    },
+                    { where: { user_id: id, status: 'active' } }
+                ),
+                Inventory.update(
+                    { assigned_to: null, status: 'available', assignment_notes: 'Released due to user account deletion' },
+                    { where: { assigned_to: id } }
+                ),
+                Assignment.update({ user_id: null }, { where: { user_id: id } }),
+                Request ? Request.update(
+                    { status: 'rejected', notes: 'Automatically rejected due to user account deletion' },
+                    { 
+                        where: { 
+                            status: 'pending',
+                            [Op.or]: [
+                                { requester_id: id },
+                                { target_user_id: id }
+                            ]
+                        } 
+                    }
+                ) : Promise.resolve(),
+                Request ? Request.update({ requester_id: null }, { where: { requester_id: id } }) : Promise.resolve(),
+                Request ? Request.update({ target_user_id: null }, { where: { target_user_id: id } }) : Promise.resolve(),
+                Request ? Request.update({ chairman_approver_id: null }, { where: { chairman_approver_id: id } }) : Promise.resolve(),
+                Request ? Request.update({ storage_approver_id: null }, { where: { storage_approver_id: id } }) : Promise.resolve(),
+                Request ? Request.update({ cancelled_by: null }, { where: { cancelled_by: id } }) : Promise.resolve(),
+                Approval ? Approval.update({ approver_id: null }, { where: { approver_id: id } }) : Promise.resolve(),
+                StoreForm ? StoreForm.update({ created_by: null }, { where: { created_by: id } }) : Promise.resolve(),
+                DischargeForm ? DischargeForm.update({ to_user_id: null }, { where: { to_user_id: id } }) : Promise.resolve(),
+                DischargeForm ? DischargeForm.update({ created_by: null }, { where: { created_by: id } }) : Promise.resolve(),
+                DischargeForm ? DischargeForm.update({ approved_by: null }, { where: { approved_by: id } }) : Promise.resolve(),
+                DischargeItem ? DischargeItem.update({ to_user_id: null }, { where: { to_user_id: id } }) : Promise.resolve(),
+                Return ? Return.update({ user_id: null }, { where: { user_id: id } }) : Promise.resolve(),
+                Return ? Return.update({ received_by: null }, { where: { received_by: id } }) : Promise.resolve(),
+                Transfer ? Transfer.update({ from_user_id: null }, { where: { from_user_id: id } }) : Promise.resolve(),
+                Transfer ? Transfer.update({ to_user_id: null }, { where: { to_user_id: id } }) : Promise.resolve(),
+                Transfer ? Transfer.update({ requested_by: null }, { where: { requested_by: id } }) : Promise.resolve(),
+                Transfer ? Transfer.update({ approved_by: null }, { where: { approved_by: id } }) : Promise.resolve(),
+                Issue ? Issue.update({ user_id: null }, { where: { user_id: id } }) : Promise.resolve(),
+                Issue ? Issue.update({ reported_by: null }, { where: { reported_by: id } }) : Promise.resolve(),
+                Issue ? Issue.update({ assigned_to: null }, { where: { assigned_to: id } }) : Promise.resolve(),
+                Issue ? Issue.update({ resolved_by: null }, { where: { resolved_by: id } }) : Promise.resolve(),
+                OrganizationNode.update({ manager_id: null }, { where: { manager_id: id } }),
+                OrganizationNode.update({ created_by: null }, { where: { created_by: id } }),
+                Workflow ? Workflow.update({ created_by: null }, { where: { created_by: id } }) : Promise.resolve(),
+                FormTemplate ? FormTemplate.update({ created_by: null }, { where: { created_by: id } }) : Promise.resolve()
+            ]);
 
             await user.destroy();
             return true;
@@ -216,7 +280,6 @@ class UserService {
             throw error;
         }
     }
-
     /**
      * Get user permissions (both role-based and direct).
      */

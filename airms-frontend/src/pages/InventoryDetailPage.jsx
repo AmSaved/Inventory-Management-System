@@ -58,25 +58,25 @@ const InventoryDetailPage = () => {
     <div className="min-h-screen bg-slate-50/50 pb-24">
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6">
+        <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button 
                 variant="ghost" 
                 size="sm" 
                 onClick={() => navigate('/inventory')}
-                className="w-10 h-10 rounded-xl bg-slate-50 text-slate-500 hover:text-slate-900"
+                className="w-10 h-10 rounded-lg bg-slate-50 text-slate-500 hover:text-slate-900"
               >
-                <ArrowLeft size={18} />
+                <ArrowLeft size={16} />
               </Button>
               <div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                <h1 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-3">
                   Asset Profile
-                  <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${getStatusColor(item.status)}`}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getStatusColor(item.status)}`}>
                     {item.status.replace('_', ' ')}
                   </span>
                 </h1>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+                <p className="text-xs font-semibold text-slate-400 mt-1">
                   Registered ID: {item.id}
                 </p>
               </div>
@@ -85,98 +85,98 @@ const InventoryDetailPage = () => {
             <div className="flex items-center gap-3">
               <Button
                 onClick={() => setQrModalOpen(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-200 flex items-center gap-2"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm flex items-center gap-2"
               >
-                <QrCode size={16} />
-                <span className="font-bold tracking-wide">Print ID Label</span>
+                <QrCode size={14} />
+                <span className="font-bold text-xs">Print ID Label</span>
               </Button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="max-w-5xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           
           {/* Left Column: Specs & Details */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-5">
             
             {/* Identity Card */}
-            <Card className="rounded-[32px] border-none bg-white shadow-2xl shadow-slate-100 overflow-hidden">
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6 flex items-center gap-4">
-                <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center">
-                  <Package size={32} className="text-white" />
+            <Card className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-4 flex items-center gap-4">
+                <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-lg flex items-center justify-center">
+                  <Package size={20} className="text-white" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-white tracking-tight">{item.product?.name}</h2>
+                  <h2 className="text-lg font-bold text-white tracking-tight">{item.product?.name}</h2>
                   <div className="flex items-center gap-2 mt-1">
-                    <Tag size={14} className="text-blue-200" />
-                    <span className="text-sm font-bold text-blue-100">{item.product?.category}</span>
+                    <Tag size={12} className="text-blue-200" />
+                    <span className="text-xs font-semibold text-blue-100">{item.product?.category}</span>
                   </div>
                 </div>
               </div>
               
-              <CardContent className="p-8">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+              <CardContent className="p-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Hash size={12} /> Serial Number
                     </label>
-                    <p className="text-base font-bold text-slate-900">{item.serial_number || 'N/A'}</p>
+                    <p className="text-sm font-bold text-slate-900">{item.serial_number || 'N/A'}</p>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Hash size={12} /> Batch / Lot
                     </label>
-                    <p className="text-base font-bold text-slate-900">{item.batch_number || 'N/A'}</p>
+                    <p className="text-sm font-bold text-slate-900">{item.batch_number || 'N/A'}</p>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Tag size={12} /> Stock Keeping Unit (SKU)
                     </label>
-                    <p className="text-base font-bold text-slate-900">{item.product?.sku}</p>
+                    <p className="text-sm font-bold text-slate-900">{item.product?.sku}</p>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Activity size={12} /> Condition
                     </label>
-                    <p className="text-base font-bold text-slate-900 capitalize">{item.condition}</p>
+                    <p className="text-sm font-bold text-slate-900 capitalize">{item.condition}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             {/* Location & Ownership */}
-            <Card className="rounded-[32px] border-none bg-white shadow-2xl shadow-slate-100 overflow-hidden">
-              <CardContent className="p-8">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
-                  <MapPin size={16} className="text-emerald-500" /> 
+            <Card className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <CardContent className="p-5">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <MapPin size={14} className="text-emerald-500" /> 
                   Location & Custody
                 </h3>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Building2 size={12} /> Assigned Branch
                     </label>
                     <p className="text-sm font-bold text-slate-900">{item.organizationNode?.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">{item.organizationNode?.code}</p>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase">{item.organizationNode?.code}</p>
                   </div>
                   
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <MapPin size={12} /> Specific Location
                     </label>
                     <p className="text-sm font-bold text-slate-900">{item.location_details || 'Unspecified Location'}</p>
                   </div>
 
                   <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Package size={12} /> Current Quantity
                     </label>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-3xl font-black text-slate-900">{item.quantity}</span>
-                      <span className="text-xs font-bold text-slate-400">units</span>
+                      <span className="text-xl font-bold text-slate-900">{item.quantity}</span>
+                      <span className="text-xs font-semibold text-slate-400">units</span>
                     </div>
                   </div>
                 </div>
@@ -186,22 +186,22 @@ const InventoryDetailPage = () => {
 
           {/* Right Column: Lifecycle Timeline */}
           <div className="lg:col-span-1">
-            <Card className="rounded-[32px] border-none bg-white shadow-2xl shadow-slate-100 h-full overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                  <History size={16} className="text-blue-500" /> 
+            <Card className="rounded-xl border border-slate-200 bg-white shadow-sm h-full overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <History size={14} className="text-blue-500" /> 
                   Lifecycle History
                 </h3>
               </div>
               
-              <CardContent className="p-6 flex-1 overflow-y-auto max-h-[600px]">
+              <CardContent className="p-4 flex-1 overflow-y-auto max-h-[600px]">
                 {!item.activity_logs || item.activity_logs.length === 0 ? (
                   <div className="text-center py-12 text-slate-400">
-                    <Activity size={32} className="mx-auto mb-3 opacity-50" />
+                    <Activity size={24} className="mx-auto mb-3 opacity-50" />
                     <p className="text-xs font-bold">No history logs found.</p>
                   </div>
                 ) : (
-                  <div className="relative border-l-2 border-slate-100 ml-3 space-y-8 py-4">
+                  <div className="relative border-l-2 border-slate-100 ml-3 space-y-6 py-2">
                     {item.activity_logs.map((log, index) => (
                       <div key={log.id} className="relative pl-6">
                         {/* Timeline Node */}
@@ -209,24 +209,24 @@ const InventoryDetailPage = () => {
                         
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <span className="text-xs font-black text-slate-900 tracking-wide uppercase">
+                            <span className="text-xs font-bold text-slate-900 tracking-wide uppercase">
                               {log.action.replace(/_/g, ' ')}
                             </span>
-                            <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
+                            <span className="text-[9px] font-semibold text-slate-400 flex items-center gap-1">
                               <Calendar size={10} />
                               {new Date(log.created_at).toLocaleString()}
                             </span>
                           </div>
                           
-                          <p className="text-xs text-slate-600 font-medium">
+                          <p className="text-xs text-slate-500 font-medium">
                             {log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}
                           </p>
                           
                           {log.details && (
-                            <div className="mt-2 bg-slate-50 rounded-xl p-3 border border-slate-100 text-[11px] text-slate-600 font-mono">
+                            <div className="mt-2 bg-slate-50 rounded-lg p-2.5 border border-slate-100 text-xs text-slate-600 font-mono">
                               {Object.entries(log.details).map(([key, value]) => (
                                 <div key={key} className="flex gap-2">
-                                  <span className="text-slate-400 font-bold">{key}:</span>
+                                  <span className="text-slate-400 font-semibold">{key}:</span>
                                   <span>{typeof value === 'object' ? JSON.stringify(value) : value}</span>
                                 </div>
                               ))}

@@ -161,9 +161,13 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
     }
   };
 
-  const handleFulfill = async (id) => {
+  const handleFulfill = async (id, currentStatus) => {
     try {
-      await api.post(`/requests/${id}/fulfill`);
+      if (currentStatus === 'pending_acknowledgment') {
+        await requestService.acknowledgeRequest(id);
+      } else {
+        await api.post(`/requests/${id}/fulfill`);
+      }
       toast.success('Receipt acknowledged successfully!');
       setRequests((prev) =>
         prev.map((r) => (r.id === id ? { ...r, status: 'fulfilled' } : r))
@@ -338,11 +342,11 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
                       className="px-4 py-1 text-[9px] font-black tracking-widest"
                     >
                       {req.status?.toLowerCase() === 'fulfilled' ? 'DEPLOYED / RECEIVED'
-                        : (req.workflow_status || (req.status || 'Unknown').replace('_', ' ')).toUpperCase()}
+                        : ((req.workflow_status ? req.workflow_status.replace(/\s*\(.*?\)\s*/g, '').trim() : '') || (req.status || 'Unknown').replace('_', ' ')).toUpperCase()}
                     </Badge>
-                    {req.status?.toLowerCase() === 'approved' && (
+                    {(req.status?.toLowerCase() === 'approved' || req.status?.toLowerCase() === 'pending_acknowledgment') && (
                       <button
-                        onClick={() => handleFulfill(req.id)}
+                        onClick={() => handleFulfill(req.id, req.status)}
                         className="bg-slate-950 hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-2xl shadow-xl transition-all"
                       >
                         Acknowledge Receipt

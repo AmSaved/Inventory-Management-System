@@ -5,11 +5,12 @@ const {
     Assignment, 
     Request, 
     ActivityLog, 
-    sequelize 
+    sequelize, 
+    User 
 } = require('../models');
 const { Op } = require('sequelize');
 const logger = require('../config/logger');
-
+const hierarchyService = require('../services/hierarchyService');
 class ReturnService {
     /**
      * Create an Inventory Return (Branch to Parent)
@@ -33,17 +34,44 @@ class ReturnService {
 
             // 2. Add Items
             for (const item of items) {
-                // Verify sender has enough stock
-                const inv = await Inventory.findOne({
-                    where: { 
-                        org_node_id: from_node_id, 
+                // Verify sender has enough stock either in inventory or active assignments
+                const inventoryRows = await Inventory.findAll({
+                    where: {
+                        org_node_id: from_node_id,
                         product_id: item.product_id,
-                        quantity: { [Op.gte]: item.quantity }
+                        quantity: { [Op.gt]: 0 }
                     },
                     transaction: t
                 });
 
-                if (!inv) {
+                const inventoryQty = inventoryRows.reduce((sum, row) => sum + (row.quantity || 0), 0);
+                let hasStock = inventoryQty >= item.quantity;
+
+                if (!hasStock) {
+                    // Count direct assignments at source node
+                    const assignmentCountNode = await Assignment.count({
+                        where: {
+                            org_node_id: from_node_id,
+                            product_id: item.product_id,
+                            status: 'active'
+                        },
+                        transaction: t
+                    });
+                    // Count assignments linked to users belonging to the source node
+                    const assignmentCountUser = await Assignment.count({
+                        where: {
+                            product_id: item.product_id,
+                            status: 'active'
+                        },
+                        include: [{ model: User, as: 'user', where: { org_node_id: from_node_id }, attributes: [] }],
+                        transaction: t
+                    });
+                    if ((assignmentCountNode + assignmentCountUser) >= item.quantity) {
+                        hasStock = true;
+                    }
+                }
+
+                if (!hasStock) {
                     throw new Error(`Insufficient inventory for product ID ${item.product_id} at source branch`);
                 }
 
@@ -90,16 +118,41 @@ class ReturnService {
 
             // Move each item
             for (const item of returnRecord.items) {
-                // 1. Deduct from Source (Sub-Branch)
-                const sourceInv = await Inventory.findOne({
-                    where: { org_node_id: returnRecord.from_node_id, product_id: item.product_id },
+                // 1. Deduct from Source (Branch) - handle both inventory and assignments
+                let remainingQty = item.quantity;
+                const sourceInvRows = await Inventory.findAll({
+                    where: { org_node_id: returnRecord.from_node_id, product_id: item.product_id, quantity: { [Op.gt]: 0 } },
+                    order: [['created_at', 'ASC']],
                     transaction: t
                 });
-                
-                if (!sourceInv || sourceInv.quantity < item.quantity) {
-                    throw new Error(`Source branch no longer has sufficient stock for ${item.product_id}`);
+
+                for (const sourceInv of sourceInvRows) {
+                    if (remainingQty <= 0) break;
+                    const deduct = Math.min(sourceInv.quantity, remainingQty);
+                    if (deduct > 0) {
+                        await sourceInv.decrement('quantity', { by: deduct, transaction: t });
+                        remainingQty -= deduct;
+                    }
                 }
-                await sourceInv.decrement('quantity', { by: item.quantity, transaction: t });
+
+                if (remainingQty > 0) {
+                    // Need to remove assignments to cover the remaining quantity
+                    const assignments = await Assignment.findAll({
+                        where: {
+                            org_node_id: returnRecord.from_node_id,
+                            product_id: item.product_id,
+                            status: 'active'
+                        },
+                        limit: remainingQty,
+                        transaction: t
+                    });
+                    if (assignments.length < remainingQty) {
+                        throw new Error(`Source branch no longer has sufficient stock for ${item.product_id}`);
+                    }
+                    for (const assign of assignments) {
+                        await assign.destroy({ transaction: t });
+                    }
+                }
 
                 // 2. Add to Target (Parent Branch)
                 const [targetInv] = await Inventory.findOrCreate({

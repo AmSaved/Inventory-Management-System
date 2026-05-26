@@ -51,6 +51,12 @@ router.post('/:id/fulfill',
     requestController.fulfill
 );
 
+// Receipt acknowledgment – only the designated recipient can call this
+router.post('/:id/acknowledge',
+    checkPermission('request:read'),
+    requestController.acknowledge
+);
+
 router.delete('/:id', 
     checkPermission('request:delete'), 
     requestController.getAll // Stub

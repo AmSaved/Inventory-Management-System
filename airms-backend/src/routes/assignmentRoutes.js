@@ -20,7 +20,7 @@ router.get('/', checkPermission('assignment:view'), assignmentController.getAll)
 // Legacy support & Hierarchical shortcuts
 router.get('/overdue', checkPermission('assignment:view'), assignmentController.getAll);
 router.get('/statistics', checkPermission('assignment:view'), assignmentController.getAll);
-router.get('/my-assignments', checkPermission('assignment:view'), assignmentController.getAll);
+router.get('/my-assignments', assignmentController.getMyAssignments);
 router.get('/user/:user_id', checkPermission('assignment:view'), assignmentController.getAll);
 router.get('/number/:assignment_number', checkPermission('assignment:view'), assignmentController.getAll);
 

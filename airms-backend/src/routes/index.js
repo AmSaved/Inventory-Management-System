@@ -22,6 +22,7 @@ const workflowStatusRoutes = require('./workflowStatusRoutes');
 const reportRoutes = require('./reportRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
 const activityRoutes = require('./activityRoutes');
+const formTemplateRoutes = require('./formTemplateRoutes');
 // Health check endpoint
 router.get('/health', (req, res) => {
     res.json({
@@ -63,5 +64,6 @@ router.use('/workflow-statuses', workflowStatusRoutes);
 router.use('/reports', reportRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/activity', activityRoutes);
+router.use('/form-templates', formTemplateRoutes);
 
 module.exports = router;

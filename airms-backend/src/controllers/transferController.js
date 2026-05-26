@@ -24,11 +24,11 @@ const transferController = {
                 transfer_type,
                 status,
                 from_date,
-                to_date 
+                to_date,
+                search
             } = req.query;
             
             const company_id = req.user.company_id;
-            const where = { company_id };
             
             // PERFORMANCE SCOPING: Use the lazy-loading authorized nodes getter
             const permissions = req.userPermissions || await getEffectivePermissions(req.user);
@@ -38,6 +38,19 @@ const transferController = {
                 ? await req.getAuthorizedNodes() 
                 : await hierarchyService.getAllowedNodes(req.user, permissions);
 
+            // Construct AND conditions to avoid Op.or overwrites
+            const andConditions = [{ company_id }];
+
+            if (search) {
+                andConditions.push({
+                    [Op.or]: [
+                        { transfer_number: { [Op.like]: `%${search}%` } },
+                        { status: { [Op.like]: `%${search}%` } },
+                        { transfer_type: { [Op.like]: `%${search}%` } }
+                    ]
+                });
+            }
+
             // Hierarchical Scoping
             if (from_node_id || to_node_id) {
                 const targetNode = Number(from_node_id || to_node_id);
@@ -46,31 +59,37 @@ const transferController = {
                 if (!isAuthorized) {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
-                if (from_node_id) where.from_node_id = from_node_id;
-                if (to_node_id) where.to_node_id = to_node_id;
+                if (from_node_id) andConditions.push({ from_node_id });
+                if (to_node_id) andConditions.push({ to_node_id });
             } else if (allowedNodes !== null) {
                 // Optimized Field of Vision for standard users (null means global, so skip)
-                where[Op.or] = [
-                    { from_node_id: { [Op.in]: allowedNodes } },
-                    { to_node_id: { [Op.in]: allowedNodes } }
-                ];
+                // Also include transfers where the current user is the designated recipient
+                andConditions.push({
+                    [Op.or]: [
+                        { from_node_id: { [Op.in]: allowedNodes } },
+                        { to_node_id: { [Op.in]: allowedNodes } },
+                        { to_user_id: req.user.id },
+                        { from_user_id: req.user.id }
+                    ]
+                });
             }
-            
-            if (from_user_id) where.from_user_id = from_user_id;
-            if (to_user_id) where.to_user_id = to_user_id;
-            if (transfer_type) where.transfer_type = transfer_type;
-            if (status) where.status = status;
-            
+
+            if (from_user_id) andConditions.push({ from_user_id });
+            if (to_user_id) andConditions.push({ to_user_id });
+            if (transfer_type) andConditions.push({ transfer_type });
+            if (status) andConditions.push({ status });
+
             if (from_date || to_date) {
-                where.created_at = {};
-                if (from_date) where.created_at[Op.gte] = new Date(from_date);
-                if (to_date) where.created_at[Op.lte] = new Date(to_date);
+                const dateCond = {};
+                if (from_date) dateCond[Op.gte] = new Date(from_date);
+                if (to_date) dateCond[Op.lte] = new Date(to_date);
+                andConditions.push({ created_at: dateCond });
             }
 
             const offset = (page - 1) * limit;
             
             const { count, rows } = await Transfer.findAndCountAll({
-                where,
+                where: { [Op.and]: andConditions },
                 include: [
                     { model: User, as: 'fromUser', attributes: ['id', 'first_name', 'last_name'] },
                     { model: OrganizationNode, as: 'fromNode', attributes: ['id', 'name'] },
@@ -123,9 +142,8 @@ const transferController = {
                 return plain;
             });
 
-            // Re-mapping with full auth logic but using the pre-fetched data
             const finalResults = await Promise.all(resultsWithAuth.map(async (plain) => {
-                if (plain.currentStep && (plain.status || '').toLowerCase().startsWith('pending')) {
+                if (plain.currentStep && (plain.status || '').toLowerCase().startsWith('pending') && plain.status !== 'pending_acknowledgment') {
                     // Pass the already-fetched acted state to skip DB hit in workflowService
                     plain.can_action = await workflowService.userCanApproveStep(
                         req.user, 
@@ -135,6 +153,19 @@ const transferController = {
                         allowedNodes
                     );
                 }
+
+                // can_acknowledge: recipient sees Acknowledge button when transfer is pending physical handover
+                if (plain.status === 'pending_acknowledgment') {
+                    const isRecipient = plain.to_user_id && Number(plain.to_user_id) === Number(req.user.id);
+                    // Also allow node-level managers in the destination node
+                    const isDestinationManager = plain.to_node_id && allowedNodes !== null 
+                        ? allowedNodes.includes(Number(plain.to_node_id))
+                        : allowedNodes === null;
+                    plain.can_acknowledge = isRecipient || isDestinationManager;
+                } else {
+                    plain.can_acknowledge = false;
+                }
+
                 return plain;
             }));
 
@@ -395,7 +426,92 @@ const transferController = {
      * Stubs for hierarchical transfer handlers.
      */
     async reject(req, res, next) {
-        try { res.json({ success: true, message: "Transfer rejected." }); } catch (e) { next(e); }
+        try {
+            const { id } = req.params;
+            const company_id = req.user.company_id;
+
+            const transfer = await Transfer.findOne({ where: { id, company_id } });
+            if (!transfer) return res.status(404).json({ success: false, message: 'Transfer not found' });
+
+            const resourceType = transfer.transfer_type === 'node_to_node' ? 'inventory_transfer' : 'transfer';
+            const result = await workflowService.rejectWorkflow(transfer, resourceType, req.user, req.body.reason || req.body.comments || 'Rejected');
+
+            res.json({ 
+                success: true, 
+                message: 'Transfer rejected', 
+                data: result 
+            });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    /**
+     * Acknowledge physical receipt of a transfer (recipient confirms items were received).
+     * This is the final step that actually moves the inventory.
+     */
+    async acknowledgeTransfer(req, res, next) {
+        const t = await sequelize.transaction();
+        try {
+            const { id } = req.params;
+            const company_id = req.user.company_id;
+
+            const transfer = await Transfer.findOne({
+                where: { id, company_id },
+                include: ['items'],
+                transaction: t
+            });
+
+            if (!transfer) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Transfer not found' });
+            }
+
+            if (transfer.status !== 'pending_acknowledgment') {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'Transfer is not awaiting acknowledgment' });
+            }
+
+            // Security: only the designated recipient or a node manager in the destination node can acknowledge
+            const permissions = req.userPermissions || await getEffectivePermissions(req.user);
+            const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            const isRecipient = transfer.to_user_id && Number(transfer.to_user_id) === Number(req.user.id);
+            const isDestinationManager = transfer.to_node_id && (
+                allowedNodes === null || allowedNodes.includes(Number(transfer.to_node_id))
+            );
+            const isSuperAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
+
+            if (!isRecipient && !isDestinationManager && !isSuperAdmin) {
+                await t.rollback();
+                return res.status(403).json({ success: false, message: 'Only the designated recipient or destination manager can acknowledge this transfer.' });
+            }
+
+            // Execute the actual inventory movement now
+            await inventoryService.executeTransfer(transfer, req.user, { transaction: t });
+
+            await transfer.update({
+                status: 'completed',
+                workflow_status: 'Completed & Acknowledged',
+                transfer_date: new Date()
+            }, { transaction: t });
+
+            // Log the acknowledgment
+            await ActivityLog.create({
+                company_id,
+                user_id: req.user.id,
+                action: 'ACKNOWLEDGE',
+                resource: 'transfers',
+                resource_id: transfer.id,
+                details: { message: 'Recipient acknowledged physical receipt of transferred items.' }
+            }, { transaction: t });
+
+            await t.commit();
+
+            res.json({ success: true, message: 'Transfer acknowledged. Items have been formally received and inventory updated.' });
+        } catch (error) {
+            await t.rollback();
+            next(error);
+        }
     },
 
     async cancel(req, res, next) {

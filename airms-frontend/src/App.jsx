@@ -19,7 +19,6 @@ import AssetsPage from './pages/AssetsPage';
 import ReportsPage from './pages/ReportsPage';
 import ProfilePage from './pages/ProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
-import ItemManagementPage from './pages/ItemManagementPage';
 import SplitPage from './pages/SplitPage';
 import MergePage from './pages/MergePage';
 
@@ -69,7 +68,6 @@ function App() {
               <Route path="/requests/:type" element={<ApprovalLedgerPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/inventory/:id" element={<InventoryDetailPage />} />
-              <Route path="/inventory/manage" element={<ItemManagementPage />} />
               <Route path="/inventory/split" element={<SplitPage />} />
               <Route path="/inventory/merge" element={<MergePage />} />
               <Route path="/inventory/return" element={<ReturnInventoryPage />} />

@@ -65,9 +65,9 @@ const TransferAssetPage = () => {
   const selectedA = assignments?.data?.find(a => a.id === parseInt(assignmentId));
 
   return (
-    <div className="max-w-[1200px] mx-auto space-y-12 py-10 px-6">
+    <div className="max-w-[1600px] mx-auto space-y-6 py-6 px-4 lg:px-6">
       {/* Dynamic Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b-2 border-slate-50 pb-10">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between border-b border-slate-100 pb-4">
         <div className="space-y-3">
            <button 
              onClick={() => navigate(-1)} 
@@ -76,11 +76,11 @@ const TransferAssetPage = () => {
              <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Operational Return
            </button>
            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-slate-900 rounded-[28px] flex items-center justify-center shadow-2xl rotate-3">
-                 <ArrowRightLeft className="text-blue-500" size={32} />
+              <div className="w-12 h-12 bg-slate-900 rounded-[24px] flex items-center justify-center shadow-lg rotate-3">
+                 <ArrowRightLeft className="text-blue-500" size={24} />
               </div>
               <div>
-                <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Asset Handover</h1>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Asset Handover</h1>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">Personnel-to-Personnel Transition</p>
               </div>
            </div>
@@ -101,17 +101,9 @@ const TransferAssetPage = () => {
                      
                      <div className="space-y-4">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asset Model</label>
-                        <select 
-                          className="w-full h-14 bg-white border-2 border-slate-100 rounded-2xl px-6 font-black text-slate-900 outline-none focus:border-blue-500 transition-all cursor-pointer"
-                          value={assignmentId}
-                          onChange={(e) => setAssignmentId(e.target.value)}
-                          required
-                        >
-                          <option value="">Choose your asset...</option>
-                          {assignments?.data?.map(a => (
-                            <option key={a.id} value={a.id}>{a.product?.name} — {a.serial_number}</option>
-                          ))}
-                        </select>
+                        <div className="w-full h-14 bg-slate-100/50 border-2 border-slate-200 rounded-2xl px-6 flex items-center font-black text-slate-900">
+                          {selectedA ? `${selectedA.product?.name} — ${selectedA.serial_number}` : 'No asset selected'}
+                        </div>
                         {selectedA && (
                           <div className="p-4 bg-white border border-slate-100 rounded-2xl animate-in fade-in slide-in-from-top-2">
                              <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest leading-none mb-1">Instance Details</div>

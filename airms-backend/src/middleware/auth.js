@@ -1,6 +1,12 @@
 const jwt = require('jsonwebtoken');
 const { User, Role, Permission, OrganizationNode } = require('../models');
 const logger = require('../config/logger');
+const hierarchyService = require('../services/hierarchyService');
+const { getEffectivePermissions } = require('./permissions');
+
+// High-performance auth memory cache (Bypasses Windows slow Statement Planning on concurrent loads)
+const authCache = new Map();
+const CACHE_TTL = 8000; // 8 seconds
 
 const authMiddleware = async (req, res, next) => {
     try {
@@ -20,23 +26,44 @@ const authMiddleware = async (req, res, next) => {
         // 2. Fast JWT verification
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // 3. Optimized User Fetch (Only essential data for middleware)
-        const user = await User.findByPk(decoded.id, {
-            attributes: ['id', 'email', 'role_id', 'company_id', 'org_node_id', 'is_active'],
-            include: [
-                {
-                    model: Role,
-                    as: 'role',
-                    attributes: ['id', 'name', 'level', 'visibility_scope']
-                    // Permissions will be loaded lazily only when checkPermission is called
-                },
-                {
-                    model: OrganizationNode,
-                    as: 'organizationNode',
-                    attributes: ['id', 'name', 'code', 'path']
-                }
-            ]
-        });
+        const cacheKey = decoded.id;
+        const now = Date.now();
+        const cached = authCache.get(cacheKey);
+
+        let user;
+        if (cached && (now - cached.timestamp < CACHE_TTL)) {
+            user = cached.user;
+        } else {
+            // 3. Optimized User Fetch (Only essential data for middleware)
+            user = await User.findByPk(decoded.id, {
+                attributes: ['id', 'email', 'role_id', 'company_id', 'org_node_id', 'is_active'],
+                include: [
+                    {
+                        model: Role,
+                        as: 'role',
+                        attributes: ['id', 'name', 'level', 'visibility_scope']
+                    },
+                    {
+                        model: OrganizationNode,
+                        as: 'organizationNode',
+                        attributes: ['id', 'name', 'code', 'path']
+                    },
+                    {
+                        model: OrganizationNode,
+                        as: 'authorizedNodes',
+                        attributes: ['id', 'name', 'code', 'path'],
+                        through: { attributes: [] }
+                    }
+                ]
+            });
+
+            if (user) {
+                authCache.set(cacheKey, {
+                    user,
+                    timestamp: now
+                });
+            }
+        }
 
         if (!user) {
             return res.status(401).json({
@@ -54,6 +81,13 @@ const authMiddleware = async (req, res, next) => {
 
         // Attach user to request
         req.user = user;
+
+        // ATTACH SCOPING HELPER: req.getAuthorizedNodes()
+        req.getAuthorizedNodes = async () => {
+            const allPermissions = await getEffectivePermissions(req.user);
+            return await hierarchyService.getAllowedNodes(req.user, allPermissions);
+        };
+
         next();
     } catch (error) {
         if (error.name === 'TokenExpiredError') {

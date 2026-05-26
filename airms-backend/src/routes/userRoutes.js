@@ -17,6 +17,7 @@ router.use(authMiddleware);
 router.get('/', checkPermission('user:read'), userController.getAll);
 router.get('/:id', checkPermission('user:read'), userController.getById);
 router.get('/:id/permissions', checkPermission('user:read'), userController.getUserPermissions);
+router.get('/:id/active-assignments', checkPermission('user:read'), userController.getActiveAssignments);
 
 // Legacy support
 router.get('/branch/:branch_id', checkPermission('user:read'), userController.getAll);

@@ -127,7 +127,8 @@ const RolesPage = () => {
     (r.description?.toLowerCase() || '').includes(search.toLowerCase())
   );
 
-  if (loading) return <LoadingSpinner />;
+
+
 
   const groupedPermissions = allPermissions.reduce((acc, perm) => {
     const group = perm.resource || 'System';
@@ -184,7 +185,16 @@ const RolesPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredRoles.map((role) => (
+              {loading ? (
+                <tr>
+                  <td colSpan="3" className="p-12 text-center flex justify-center"><LoadingSpinner /></td>
+                </tr>
+              ) : filteredRoles.length === 0 ? (
+                <tr>
+                  <td colSpan="3" className="p-12 text-center text-slate-400 italic">No blueprints established yet.</td>
+                </tr>
+              ) : (
+                filteredRoles.map((role) => (
                 <tr key={role.id} className="group hover:bg-slate-50/80 transition-all duration-300">
                   <td className="p-8">
                     <div className="flex items-center gap-4">
@@ -207,7 +217,8 @@ const RolesPage = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>

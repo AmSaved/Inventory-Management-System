@@ -49,6 +49,10 @@ const StoreItem = sequelize.define('StoreItem', {
     },
     notes: {
         type: DataTypes.TEXT
+    },
+    custom_fields: {
+        type: DataTypes.JSONB,
+        defaultValue: {}
     }
 }, {
     tableName: 'store_items',

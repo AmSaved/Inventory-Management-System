@@ -32,7 +32,7 @@ const TransferItem = sequelize.define('TransferItem', {
         type: DataTypes.JSON
     },
     condition: {
-        type: DataTypes.STRING(20)
+        type: DataTypes.STRING(100)
     }
 }, {
     tableName: 'transfer_items',

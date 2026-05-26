@@ -3,16 +3,11 @@ const logger = require('../config/logger');
 const hierarchyService = require('../services/hierarchyService');
 
 const getEffectivePermissions = async (user) => {
-    // 1. Request-Level Cache Check
-    // If we've already calculated permissions for this specific request, return them immediately.
     if (user.permissions_cache) return user.permissions_cache;
-    
-    // Check if the request object is available (via a global hack or passed context)
-    // In our case, we'll rely on the user object being the one attached to the request.
     
     const permissionSet = new Set();
 
-    // PHASE 1: Fetch Primary Role permissions (FAST)
+    // PHASE 1: Fetch Primary Role permissions
     if (user.role_id) {
         const primaryRole = await Role.findByPk(user.role_id, {
             include: [{ 
@@ -25,23 +20,7 @@ const getEffectivePermissions = async (user) => {
         primaryRole?.permissions?.forEach(p => permissionSet.add(p.name));
     }
 
-    // PHASE 2: Fetch Secondary Roles permissions (FAST)
-    const dbUser = await User.findByPk(user.id, { attributes: ['id'] });
-    if (dbUser) {
-        const secondaryRoles = await dbUser.getRoles({
-            include: [{ 
-                model: Permission, 
-                as: 'permissions', 
-                attributes: ['name'], 
-                through: { attributes: [] } 
-            }]
-        });
-        secondaryRoles?.forEach(r => {
-            r.permissions?.forEach(p => permissionSet.add(p.name));
-        });
-    }
-
-    // PHASE 3: Fetch Direct Permissions (FAST)
+    // PHASE 2: Fetch Direct Permissions
     const directPerms = await UserPermission.findAll({
         where: {
             user_id: user.id,
@@ -55,8 +34,6 @@ const getEffectivePermissions = async (user) => {
     });
 
     const finalPermissions = Array.from(permissionSet);
-    
-    // Store in cache for this request lifecycle
     user.permissions_cache = finalPermissions;
 
     return finalPermissions;
@@ -68,27 +45,16 @@ const checkPermission = (requiredPermission) => {
             if (!req.user) return res.status(401).json({ success: false, message: 'Authentication required' });
 
             const user = req.user;
-            if (!user.company_id) return res.status(403).json({ success: false, message: 'User not associated with a company' });
-
-            // 1. Get permissions (efficiently cached on the user object for the request duration)
             const allPermissions = await getEffectivePermissions(user);
+            // Log user info and permissions for debugging
+            logger.debug(`Auth Debug: User ID=${user.id}, Role=${user.role ? user.role.name : 'none'}, Permissions=${JSON.stringify(allPermissions)}`);
             req.userPermissions = allPermissions;
 
-            // 2. Fast-path for Super Admins
+            // Global SuperAdmin check
             const isSuperAdmin = (user.role && user.role.level >= 100) || allPermissions.includes('system:manage');
-            
-            // 3. Simple organizational requirement check
-            const hasGlobalAccess = isSuperAdmin || allPermissions.includes('workflow:process') || allPermissions.includes('user:read');
-            if (!user.org_node_id && !hasGlobalAccess) {
-                return res.status(403).json({ 
-                    success: false, 
-                    message: 'Access Denied: You must be assigned to an organizational node or have global management permissions.' 
-                });
-            }
 
-            // 4. Permission check with hierarchical matching
+            // Permission check
             const requiredPerms = Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission];
-            
             const hasPermission = isSuperAdmin || allPermissions.some(userPerm => 
                 requiredPerms.some(reqPerm => 
                     userPerm === reqPerm || userPerm.startsWith(`${reqPerm}-`) || userPerm.startsWith(`${reqPerm}:`)
@@ -96,16 +62,11 @@ const checkPermission = (requiredPermission) => {
             );
 
             if (!hasPermission) {
-                return res.status(403).json({ success: false, message: 'Insufficient permissions' });
+                return res.status(403).json({ 
+                    success: false, 
+                    message: `Insufficient permissions. Required: ${requiredPerms.join(' or ')}` 
+                });
             }
-
-            // 5. LAZY SCOPE: We only calculate allowedNodes IF explicitly requested by the controller
-            // Or we attach a getter function to be efficient
-            req.getAuthorizedNodes = async () => {
-                if (req._authorizedNodesCache) return req._authorizedNodesCache;
-                req._authorizedNodesCache = await hierarchyService.getAllowedNodes(user, allPermissions);
-                return req._authorizedNodesCache;
-            };
 
             next();
         } catch (error) {
@@ -113,63 +74,32 @@ const checkPermission = (requiredPermission) => {
             return res.status(500).json({ success: false, message: 'Permission check failed' });
         }
     };
-};
-
-/**
- * Middleware to check if a user has access to a specific organization node.
- * Logic: User can access if:
- * 1. They are a Company Admin (Level 90+)
- * 2. They are assigned to the target Node
- * 3. They are assigned to an ancestor of the target Node
- */
-const checkHierarchyScope = async (req, res, next) => {
-    try {
-        const user = req.user;
-        // The target node ID can be in params, body, or query
-        const targetNodeId = req.params.nodeId || req.body.org_node_id || req.query.org_node_id || req.params.id;
-
-        if (!targetNodeId) {
-            return next();
-        }
-
-        const allPermissions = await getEffectivePermissions(user);
-        const allowedNodes = await hierarchyService.getAllowedNodes(user, allPermissions);
-
-        if (allowedNodes !== null && !allowedNodes.includes(Number(targetNodeId))) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied: Target node is outside your organizational visibility scope'
-            });
-        }
-
-        next();
-    } catch (error) {
-        logger.error('Hierarchy scope check error:', error);
-        return res.status(500).json({ success: false, message: 'Scope validation failed' });
-    }
 };
 
 const checkAnyPermission = (permissions) => {
     return async (req, res, next) => {
         try {
-            if (!req.user) {
-                return res.status(401).json({ success: false, message: 'Authentication required' });
-            }
+            if (!req.user) return res.status(401).json({ success: false, message: 'Authentication required' });
 
             const user = req.user;
             const allPermissions = await getEffectivePermissions(user);
-            if (allPermissions.includes('system:manage') || (user.role && user.role.level >= 100)) return next();
+            // Log user info and permissions for debugging
+            logger.debug(`Auth Debug: User ID=${user.id}, Role=${user.role ? user.role.name : 'none'}, Permissions=${JSON.stringify(allPermissions)}`);
+            
+            const isSuperAdmin = (user.role && user.role.level >= 100) || allPermissions.includes('system:manage');
+            if (isSuperAdmin) return next();
 
             const hasAny = permissions.some(reqPerm => 
                 allPermissions.some(userPerm => 
-                    userPerm === reqPerm || 
-                    userPerm.startsWith(`${reqPerm}-`) || 
-                    userPerm.startsWith(`${reqPerm}:`)
+                    userPerm === reqPerm || userPerm.startsWith(`${reqPerm}-`) || userPerm.startsWith(`${reqPerm}:`)
                 )
             );
 
             if (!hasAny) {
-                return res.status(403).json({ success: false, message: 'Insufficient permissions' });
+                return res.status(403).json({ 
+                    success: false, 
+                    message: `Insufficient permissions. Required one of: ${permissions.join(', ')}` 
+                });
             }
 
             next();
@@ -178,6 +108,25 @@ const checkAnyPermission = (permissions) => {
             return res.status(500).json({ success: false, message: 'Permission check failed' });
         }
     };
+};
+
+const checkHierarchyScope = async (req, res, next) => {
+    try {
+        const user = req.user;
+        const targetNodeId = req.params.nodeId || req.body.org_node_id || req.query.org_node_id || req.params.id;
+        if (!targetNodeId) return next();
+
+        const allPermissions = await getEffectivePermissions(user);
+        const allowedNodes = await hierarchyService.getAllowedNodes(user, allPermissions);
+
+        if (allowedNodes !== null && !allowedNodes.includes(Number(targetNodeId))) {
+            return res.status(403).json({ success: false, message: 'Access denied: Outside organizational scope' });
+        }
+        next();
+    } catch (error) {
+        logger.error('Hierarchy scope check error:', error);
+        return res.status(500).json({ success: false, message: 'Scope validation failed' });
+    }
 };
 
 module.exports = {

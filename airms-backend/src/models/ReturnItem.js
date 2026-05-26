@@ -29,7 +29,7 @@ const ReturnItem = sequelize.define('ReturnItem', {
         }
     },
     condition: {
-        type: DataTypes.STRING(20)
+        type: DataTypes.STRING(100)
     },
     remarks: {
         type: DataTypes.TEXT

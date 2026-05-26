@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   X, Search, Info, Trash2, Edit3, Send, 
   QrCode, MoreHorizontal, AlertTriangle, Box,
-  GitFork, MessageSquareWarning, ArrowLeftRight, Layers
+  GitFork, MessageSquareWarning, ArrowLeftRight, Layers,
+  PackageMinus
 } from 'lucide-react';
 
 const UnitLedgerModal = ({ 
@@ -17,6 +19,7 @@ const UnitLedgerModal = ({
   onReplenish,
   onSplit 
 }) => {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   if (!item) return null;
 
@@ -63,8 +66,8 @@ const UnitLedgerModal = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
-      <div className="bg-white rounded-[45px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white p-4 animate-in fade-in duration-300">
+      <div className="bg-white rounded-[45px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
         
         {/* Header */}
         <div className="bg-slate-950 p-8 flex items-center justify-between shrink-0">
@@ -125,67 +128,67 @@ const UnitLedgerModal = ({
         </div>
 
         {/* Ledger Table */}
-        <div className="flex-1 overflow-y-auto p-8">
-           <div className="rounded-[30px] border border-slate-100 overflow-hidden shadow-sm">
-              <table className="w-full">
-                 <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100">
-                       <th className="px-6 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Unit Identity</th>
-                       <th className="px-6 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Registry / Location</th>
-                       <th className="px-6 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Qty</th>
-                       <th className="px-6 py-4 text-right text-[9px] font-black text-slate-400 uppercase tracking-widest">Unit Operations</th>
-                    </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-50">
-                    {filteredUnits.map((u, idx) => (
-                       <tr key={u.virtualId} className="group hover:bg-slate-50/50 transition-all">
-                          <td className="px-6 py-4">
-                             <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${u.type === 'serialized' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                   {u.type === 'serialized' ? <QrCode size={18} /> : <Box size={18} />}
-                                </div>
-                                <div>
-                                   <div className={`font-mono text-xs font-bold tracking-tight ${u.type === 'serialized' ? 'text-slate-900' : 'text-slate-400 italic'}`}>
-                                      {u.displaySerial}
-                                   </div>
-                                   <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                      Registry #{u.id} · {u.status}
-                                   </div>
-                                </div>
-                             </div>
-                          </td>
-                          <td className="px-6 py-4">
-                             <div className="text-xs font-bold text-slate-700">{u.location_details || u.organizationNode?.name || 'Unassigned'}</div>
-                             <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{u.batch_number || 'No Batch Data'}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                             <span className="text-sm font-black text-slate-900">1</span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                             <div className="flex items-center justify-end gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                                <ToolButton icon={<Info size={14} />} title="Inspect Unit" onClick={() => onIdentity(u)} />
-                                <ToolButton icon={<Edit3 size={14} />} title="Adjust Unit" onClick={() => onAdjust(u)} />
-                                <ToolButton icon={<ArrowLeftRight size={14} />} title="Internal Transfer" onClick={() => onTransfer(u)} />
-                                <ToolButton icon={<PackageMinus size={14} />} title="Discharge Unit" onClick={() => navigate(`/discharge?inventory_id=${u.id}`)} color="red" />
-                                <ToolButton icon={<QrCode size={14} />} title="Print Identity Label" onClick={() => onQr(u)} />
-                                <ToolButton icon={<MessageSquareWarning size={14} />} title="Report Issue" onClick={() => onReport(u)} color="amber" />
-                                <ToolButton icon={<Trash2 size={14} />} title="Decommission Unit" onClick={() => onDecommission(u)} color="red" />
-                             </div>
-                          </td>
-                       </tr>
-                    ))}
-                    {filteredUnits.length === 0 && (
-                      <tr>
-                        <td colSpan="4" className="py-20 text-center">
-                          <Box className="mx-auto text-slate-100 mb-4" size={48} />
-                          <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No matching units in registry</p>
-                        </td>
-                      </tr>
-                    )}
-                 </tbody>
-              </table>
+          <div className="flex-1 overflow-y-auto p-8">
+           <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
+            <table className="w-full bg-white">
+              <thead>
+               <tr className="bg-green-600">
+                <th className="px-5 py-3 text-left text-[12px] font-bold text-white uppercase tracking-[0.2em]">Unit Identity</th>
+                <th className="px-5 py-3 text-left text-[12px] font-bold text-white uppercase tracking-[0.2em]">Registry / Location</th>
+                <th className="px-5 py-3 text-left text-[12px] font-bold text-white uppercase tracking-[0.2em]">Qty</th>
+                <th className="px-5 py-3 text-right text-[12px] font-bold text-white uppercase tracking-[0.2em]">Unit Operations</th>
+               </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+               {filteredUnits.map((u, idx) => (
+                <tr key={u.virtualId} className="group hover:bg-green-50 transition-all">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${u.type === 'serialized' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                        {u.type === 'serialized' ? <QrCode size={18} /> : <Box size={18} />}
+                      </div>
+                      <div>
+                        <div className={`font-mono text-sm font-bold tracking-tight ${u.type === 'serialized' ? 'text-slate-900' : 'text-slate-400 italic'}`}>
+                          {u.displaySerial}
+                        </div>
+                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                          Registry #{u.id} · {u.status}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="text-sm font-bold text-slate-700">{u.location_details || u.organizationNode?.name || 'Unassigned'}</div>
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{u.batch_number || 'No Batch Data'}</div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="text-sm font-black text-slate-900">1</span>
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
+                      <ToolButton icon={<Info size={14} />} title="Inspect Unit" onClick={() => onIdentity(u)} />
+                      <ToolButton icon={<Edit3 size={14} />} title="Adjust Unit" onClick={() => onAdjust(u)} />
+                      <ToolButton icon={<ArrowLeftRight size={14} />} title="Internal Transfer" onClick={() => onTransfer(u)} />
+                      <ToolButton icon={<PackageMinus size={14} />} title="Discharge Unit" onClick={() => navigate(`/discharge?inventory_id=${u.id}`)} color="red" />
+                      <ToolButton icon={<QrCode size={14} />} title="Print Identity Label" onClick={() => onQr(u)} />
+                      <ToolButton icon={<MessageSquareWarning size={14} />} title="Report Issue" onClick={() => onReport(u)} color="black" />
+                      <ToolButton icon={<Trash2 size={14} />} title="Decommission Unit" onClick={() => onDecommission(u)} color="red" />
+                    </div>
+                  </td>
+                </tr>
+               ))}
+               {filteredUnits.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="py-20 text-center">
+                   <Box className="mx-auto text-slate-100 mb-4" size={48} />
+                   <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No matching units in registry</p>
+                  </td>
+                </tr>
+               )}
+              </tbody>
+            </table>
            </div>
-        </div>
+          </div>
 
         {/* Footer info */}
         <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
@@ -204,16 +207,17 @@ const UnitLedgerModal = ({
 
 const ToolButton = ({ icon, title, onClick, color = 'slate' }) => {
   const colors = {
-    slate: 'hover:text-blue-600 hover:border-blue-200',
-    purple: 'hover:text-purple-600 hover:border-purple-200',
-    amber: 'hover:text-amber-600 hover:border-amber-200',
-    red: 'hover:text-red-600 hover:border-red-200'
+    slate: 'text-slate-600 hover:text-blue-600 hover:border-blue-200',
+    purple: 'text-purple-600 hover:text-purple-700 hover:border-purple-200',
+    amber: 'text-amber-500 hover:text-amber-600 hover:border-amber-200',
+    red: 'text-red-500 hover:text-red-600 hover:border-red-200'
   };
   return (
     <button 
       onClick={onClick} 
       title={title}
-      className={`w-9 h-9 rounded-xl bg-white border border-slate-100 text-slate-400 shadow-sm flex items-center justify-center transition-all ${colors[color]}`}
+      className={`w-9 h-9 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center transition-all ${colors[color]} opacity-90 hover:opacity-100`}
+      style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.04))' }}
     >
       {icon}
     </button>

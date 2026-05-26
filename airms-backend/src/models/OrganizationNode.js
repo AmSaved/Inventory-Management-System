@@ -81,7 +81,39 @@ const OrganizationNode = sequelize.define('OrganizationNode', {
     tableName: 'organization_nodes',
     timestamps: true,
     createdAt: 'created_at',
-    updatedAt: 'updated_at'
+    updatedAt: 'updated_at',
+    hooks: {
+        beforeValidate: async (node, options) => {
+            if (!node.code || node.code.trim() === '') {
+                const prefix = (node.name || 'NODE')
+                    .trim()
+                    .replace(/[^a-zA-Z0-9]/g, '')
+                    .substring(0, 4)
+                    .toUpperCase();
+                let isUnique = false;
+                let attempts = 0;
+                let generatedCode = '';
+                const model = sequelize.models.OrganizationNode || OrganizationNode;
+                while (!isUnique && attempts < 15) {
+                    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                    generatedCode = `${prefix}-${randomSuffix}`;
+                    
+                    const existingNode = await model.findOne({
+                        where: { company_id: node.company_id, code: generatedCode },
+                        transaction: options.transaction
+                    });
+                    if (!existingNode) {
+                        isUnique = true;
+                    }
+                    attempts++;
+                }
+                if (!isUnique) {
+                    generatedCode = `${prefix}-${Date.now().toString().slice(-4)}`;
+                }
+                node.code = generatedCode;
+            }
+        }
+    }
 });
 
 module.exports = OrganizationNode;

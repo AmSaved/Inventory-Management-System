@@ -76,11 +76,16 @@ const inventoryController = {
             
             const { count, rows } = await Inventory.findAndCountAll({
                 where,
+                attributes: [
+                    'id', 'product_id', 'org_node_id', 'quantity', 'status', 
+                    'serial_number', 'batch_number', 'location_details', 'updated_at',
+                    'custom_fields'
+                ],
                 include: [
                     {
                         model: Product,
                         as: 'product',
-                        attributes: ['id', 'name', 'sku', 'category', 'sub_category', 'brand', 'model'],
+                        attributes: ['id', 'name', 'sku', 'category', 'model'],
                         where: {
                             ...(category ? { category } : {}),
                             ...(search ? {
@@ -99,7 +104,8 @@ const inventoryController = {
                 ],
                 limit: parseInt(limit),
                 offset: parseInt(offset),
-                order: [['updated_at', 'DESC']]
+                order: [['updated_at', 'DESC']],
+                distinct: true // Ensure count is correct with includes
             });
 
             res.json({
@@ -189,7 +195,8 @@ const inventoryController = {
                 expiry_date,
                 condition,
                 assignment_notes,
-                expected_return_date
+                expected_return_date,
+                custom_fields
             } = req.body;
             const company_id = req.user.company_id;
 
@@ -199,8 +206,41 @@ const inventoryController = {
                 return res.status(403).json({ success: false, message: 'Access denied: Cannot initialize inventory in nodes outside your visibility scope' });
             }
 
+            const product = await Product.findOne({ where: { id: product_id, company_id } });
+            if (!product) {
+                return res.status(400).json({ success: false, message: 'Product not found' });
+            }
+
+            if (serial_number && typeof serial_number === 'string' && serial_number.trim().length > 0) {
+                const existingSerial = await Inventory.findOne({
+                    where: {
+                        company_id,
+                        serial_number: serial_number.trim(),
+                        quantity: { [Op.gt]: 0 }
+                    },
+                    include: [{
+                        model: Product,
+                        as: 'product',
+                        where: {
+                            name: product.name
+                        }
+                    }]
+                });
+                if (existingSerial) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Cannot intake item. "${product.name}" with serial number "${serial_number}" already exists (this item is already exist).`
+                    });
+                }
+            }
+
             const existing = await Inventory.findOne({
-                where: { product_id, org_node_id, company_id }
+                where: { 
+                    product_id, 
+                    org_node_id, 
+                    company_id,
+                    serial_number: (serial_number && typeof serial_number === 'string' && serial_number.trim().length > 0) ? serial_number.trim() : null
+                }
             });
 
             if (existing) {
@@ -237,6 +277,7 @@ const inventoryController = {
                 condition,
                 assignment_notes,
                 expected_return_date,
+                custom_fields,
                 last_counted_at: new Date()
             });
 

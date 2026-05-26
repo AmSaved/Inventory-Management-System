@@ -24,7 +24,7 @@ class RequestService {
             await request.update({ 
                 status: 'fulfilled', 
                 completed_date: new Date(),
-                workflow_status: options.workflowStatus || 'Fulfilled (Final)'
+                workflow_status: options.workflowStatus || 'Fulfilled'
             }, { transaction: t });
 
             // 2. Parse Logistics Notes
@@ -125,8 +125,11 @@ class RequestService {
                             }
                         );
 
-                        // Link RequestItem to specific physical inventory
-                        await item.update({ inventory_id: allocatedInventoryId }, { transaction: t });
+                        // Link RequestItem to specific physical inventory and set product_id
+                        await item.update({ 
+                            inventory_id: allocatedInventoryId,
+                            product_id: invItem.product_id
+                        }, { transaction: t });
                         serialNumber = invItem.serial_number || `SN-${invItem.id}`;
                     } else {
                         // FALLBACK: Auto-generate / Subtract from generic pool
