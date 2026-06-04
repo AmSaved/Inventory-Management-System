@@ -78,7 +78,7 @@ class HierarchyService {
         return await OrganizationNode.findAll({
             where: { 
                 parent_id: nodeId,
-                status: { [Op.ne]: 'archived' }
+                status: 'active'
             },
             include: [{ model: OrganizationType, as: 'type' }]
         });
@@ -126,12 +126,13 @@ class HierarchyService {
         if (seedPaths.length === 0) return [];
 
         // Get all descendants for all seed paths in one query
+        // Only include 'active' nodes — inactive nodes are excluded from scoping (like archived)
         const descendants = await OrganizationNode.findAll({
             where: {
                 [Op.or]: seedPaths.map(p => ({
                     path: { [Op.like]: `${p}%` }
                 })),
-                status: { [Op.ne]: 'archived' }
+                status: 'active'
             },
             attributes: ['id'],
             raw: true
@@ -177,6 +178,54 @@ class HierarchyService {
         if (extraIds.length === 0) return allowedNodeIds;
 
         return [...new Set([...allowedNodeIds, ...extraIds])];
+    }
+
+    /**
+     * Get all Node IDs a user is allowed to SEE in the org tree.
+     * Mirrors getAllowedNodes but includes inactive nodes (only excludes archived).
+     * Use ONLY for tree display in OrganizationManagement — NOT for data-access scoping.
+     */
+    async getAllowedNodesForTree(user, permissions = []) {
+        if (!user) return [];
+
+        const hasGlobalVisibility = (user.role?.level >= 100) ||
+                                     permissions.includes('hierarchy:all:view') ||
+                                     permissions.includes('system:manage');
+
+        if (hasGlobalVisibility) return null;
+
+        const seedPaths = [];
+
+        if (user.organizationNode && user.organizationNode.path) {
+            seedPaths.push(user.organizationNode.path);
+        } else if (user.org_node_id) {
+            const node = await OrganizationNode.findByPk(user.org_node_id, { attributes: ['path'] });
+            if (node && node.path) seedPaths.push(node.path);
+        }
+
+        if (user.authorizedNodes && user.authorizedNodes.length > 0) {
+            user.authorizedNodes.forEach(node => {
+                if (node.path && !seedPaths.includes(node.path)) {
+                    seedPaths.push(node.path);
+                }
+            });
+        }
+
+        if (seedPaths.length === 0) return [];
+
+        // Include inactive — only exclude archived — so org admins can still see & reactivate their inactive branches
+        const descendants = await OrganizationNode.findAll({
+            where: {
+                [Op.or]: seedPaths.map(p => ({
+                    path: { [Op.like]: `${p}%` }
+                })),
+                status: { [Op.ne]: 'archived' }
+            },
+            attributes: ['id'],
+            raw: true
+        });
+
+        return [...new Set(descendants.map(d => d.id))];
     }
 
     /**

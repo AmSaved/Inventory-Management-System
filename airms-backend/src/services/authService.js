@@ -105,6 +105,11 @@ class AuthService {
                 throw new Error('Account is deactivated');
             }
 
+            // Check if the user's assigned organization node is inactive
+            if (user.organizationNode && user.organizationNode.status === 'inactive') {
+                throw new Error('Your organization node is currently inactive. Contact your administrator.');
+            }
+
             // Validate password
             const isValidPassword = await user.validatePassword(password);
             if (!isValidPassword) {

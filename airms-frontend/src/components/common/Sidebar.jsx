@@ -81,7 +81,7 @@ const MAJOR_CATEGORIES = [
       { name: 'Return Item Requests', href: '/requests/returns', permissions: ['return:approve'], icon: <RotateCcw size={14} /> },
       { name: 'Discharge requests', href: '/requests/discharge', permissions: ['discharge:approve'], icon: <Truck size={14} /> },
       { name: 'Inventory Transfer requests', href: '/requests/inventory', permissions: ['transfer:approve'], icon: <Search size={14} /> },
-      { name: 'Return requests', href: '/requests/inventory-returns', permissions: ['stock:return:approve'], icon: <RotateCcw size={14} /> },
+      { name: 'Inventory Return requests', href: '/requests/inventory-returns', permissions: ['stock:return:approve'], icon: <RotateCcw size={14} /> },
     ]
   },
   {

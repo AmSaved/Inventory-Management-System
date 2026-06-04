@@ -46,7 +46,7 @@ const authMiddleware = async (req, res, next) => {
                     {
                         model: OrganizationNode,
                         as: 'organizationNode',
-                        attributes: ['id', 'name', 'code', 'path']
+                        attributes: ['id', 'name', 'code', 'path', 'status']
                     },
                     {
                         model: OrganizationNode,
@@ -76,6 +76,14 @@ const authMiddleware = async (req, res, next) => {
             return res.status(401).json({
                 success: false,
                 message: 'User account is inactive'
+            });
+        }
+
+        // Block users whose assigned organization node is inactive
+        if (user.organizationNode && user.organizationNode.status === 'inactive') {
+            return res.status(403).json({
+                success: false,
+                message: 'Your organization node is currently inactive. Contact your administrator.'
             });
         }
 

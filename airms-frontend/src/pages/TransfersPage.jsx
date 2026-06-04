@@ -71,6 +71,26 @@ const TransfersPage = () => {
   const [qrModalItem, setQrModalItem] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
+  const getAvailableQtyForCategory = (category) => {
+    if (!category || !sourceInventory) return 0;
+    return sourceInventory
+      .filter(i => i.product?.category === category && i.status === 'available')
+      .reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+  };
+
+  const getTotalRequestedQtyForCategory = (category, excludeDestIdx = null, excludeItemIdx = null) => {
+    let total = 0;
+    destinations.forEach((dest, destIdx) => {
+      dest.items.forEach((item, itemIdx) => {
+        if (destIdx === excludeDestIdx && itemIdx === excludeItemIdx) return;
+        if (item.category === category) {
+          total += Number(item.quantity || 0);
+        }
+      });
+    });
+    return total;
+  };
+
   // Fetch nodes for dropdowns
   React.useEffect(() => {
     // Fetch nodes regardless of modal status now that form is on page
@@ -110,10 +130,9 @@ const TransfersPage = () => {
     }
   }, [searchParams]);
 
-  // Fetch inventory when source node changes
   React.useEffect(() => {
     if (sourceNodeId) {
-      api.get(`/inventory?org_node_id=${sourceNodeId}`).then(res => {
+      api.get(`/inventory?org_node_id=${sourceNodeId}&limit=5000`).then(res => {
         const inv = res.data.data || [];
         setSourceInventory(inv);
 
@@ -227,11 +246,38 @@ const TransfersPage = () => {
   const handleUpdateItem = (destIndex, itemIndex, field, value) => {
     const newDest = [...destinations];
     const item = newDest[destIndex].items[itemIndex];
-    item[field] = value;
 
-    if (field === 'category') {
-      item.quantity = 1;
-      item.serial_numbers = [];
+    if (field === 'quantity') {
+      if (value === '' || isNaN(parseInt(value))) {
+        item.quantity = '';
+        setDestinations(newDest);
+        return;
+      }
+      const category = item.category;
+      let qty = Math.max(0, parseInt(value) || 0);
+      if (category) {
+        const available = getAvailableQtyForCategory(category);
+        const otherRequested = getTotalRequestedQtyForCategory(category, destIndex, itemIndex);
+        const maxAllowedForThisLine = Math.max(0, available - otherRequested);
+        
+        if (qty > maxAllowedForThisLine) {
+          qty = maxAllowedForThisLine;
+          toast.error(`Only ${maxAllowedForThisLine} additional items available for category "${category}" (Total branch stock: ${available})`, { id: 'qty-limit-toast' });
+        }
+        item.quantity = qty;
+        
+        if ((item.serial_numbers?.length || 0) > qty) {
+          item.serial_numbers = item.serial_numbers.slice(0, qty);
+        }
+      } else {
+        item.quantity = qty;
+      }
+    } else {
+      item[field] = value;
+      if (field === 'category') {
+        item.quantity = 1;
+        item.serial_numbers = [];
+      }
     }
 
     setDestinations(newDest);
@@ -349,6 +395,24 @@ const TransfersPage = () => {
           isSubmittingRef.current = false;
           return toast.error(`Physical mismatch: Select exactly ${item.quantity} items for category ${item.category}`);
         }
+      }
+    }
+
+    // Validate quantities against total available stock in branch
+    const categoryTotals = {};
+    for (const dest of destinations) {
+      for (const item of dest.items) {
+        if (item.category) {
+          categoryTotals[item.category] = (categoryTotals[item.category] || 0) + Number(item.quantity || 0);
+        }
+      }
+    }
+
+    for (const [category, totalRequested] of Object.entries(categoryTotals)) {
+      const available = getAvailableQtyForCategory(category);
+      if (totalRequested > available) {
+        isSubmittingRef.current = false;
+        return toast.error(`Insufficient inventory: requested ${totalRequested} items of category "${category}", but only ${available} are available in this branch.`);
       }
     }
 
@@ -598,14 +662,16 @@ const TransfersPage = () => {
                                 </div>
 
                                 <div className="space-y-1">
-                                  <label className="text-xs font-medium text-slate-500 ml-1">Quantity</label>
+                                  <label className="text-xs font-medium text-slate-500 ml-1">
+                                    Quantity {item.category && `(Max: ${Math.max(0, getAvailableQtyForCategory(item.category) - getTotalRequestedQtyForCategory(item.category, destIndex, itemIndex))})`}
+                                  </label>
                                   <input
                                     type="number"
                                     min="1"
                                     disabled={!item.category}
                                     className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500 transition-all text-sm disabled:opacity-50"
                                     value={item.quantity}
-                                    onChange={(e) => handleUpdateItem(destIndex, itemIndex, 'quantity', parseInt(e.target.value))}
+                                    onChange={(e) => handleUpdateItem(destIndex, itemIndex, 'quantity', e.target.value)}
                                   />
                                 </div>
 
@@ -889,14 +955,16 @@ const TransfersPage = () => {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-slate-500 ml-1">Transfer Amount</label>
+                          <label className="text-xs font-medium text-slate-500 ml-1">
+                            Transfer Amount {item.category && `(Max: ${Math.max(0, getAvailableQtyForCategory(item.category) - getTotalRequestedQtyForCategory(item.category, destIndex, itemIndex))})`}
+                          </label>
                           <input
                             type="number"
                             min="1"
                             disabled={!item.category}
                             className="w-full h-14 px-6 bg-white border-2 border-slate-100 rounded-2xl font-medium text-slate-900 outline-none focus:border-blue-500 transition-all text-sm disabled:opacity-50"
                             value={item.quantity}
-                            onChange={(e) => handleUpdateItem(destIndex, itemIndex, 'quantity', parseInt(e.target.value))}
+                            onChange={(e) => handleUpdateItem(destIndex, itemIndex, 'quantity', e.target.value)}
                           />
                         </div>
 
@@ -982,13 +1050,32 @@ const TransfersPage = () => {
                 <input
                   type="number"
                   min={1}
-                  value={destinations[activeDestIndex]?.items[activeItemIndex]?.quantity || 1}
+                  value={destinations[activeDestIndex]?.items[activeItemIndex]?.quantity || ''}
                   onChange={(e) => {
-                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                    const val = e.target.value;
                     const next = [...destinations];
-                    next[activeDestIndex].items[activeItemIndex].quantity = val;
-                    if ((next[activeDestIndex].items[activeItemIndex].serial_numbers?.length || 0) > val) {
-                      next[activeDestIndex].items[activeItemIndex].serial_numbers = next[activeDestIndex].items[activeItemIndex].serial_numbers.slice(0, val);
+                    const item = next[activeDestIndex].items[activeItemIndex];
+                    if (val === '' || isNaN(parseInt(val))) {
+                      item.quantity = '';
+                      setDestinations(next);
+                      return;
+                    }
+                    const parsedVal = Math.max(0, parseInt(val) || 0);
+                    const category = item.category;
+
+                    const available = getAvailableQtyForCategory(category);
+                    const otherRequested = getTotalRequestedQtyForCategory(category, activeDestIndex, activeItemIndex);
+                    const maxAllowedForThisLine = Math.max(0, available - otherRequested);
+                    
+                    let qty = parsedVal;
+                    if (qty > maxAllowedForThisLine) {
+                      qty = maxAllowedForThisLine;
+                      toast.error(`Only ${maxAllowedForThisLine} additional items available for category "${category}" (Total branch stock: ${available})`, { id: 'qty-limit-toast' });
+                    }
+
+                    item.quantity = qty;
+                    if ((item.serial_numbers?.length || 0) > qty) {
+                      item.serial_numbers = item.serial_numbers.slice(0, qty);
                     }
                     setDestinations(next);
                   }}

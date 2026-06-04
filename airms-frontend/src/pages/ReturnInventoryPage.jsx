@@ -274,8 +274,19 @@ const ReturnInventoryPage = () => {
                               {new Date(form.created_at).toLocaleDateString()}
                             </span>
                           </div>
-                          <div className={`font-bold text-sm tracking-tight ${selectedForm?.id === form.id ? 'text-white' : 'text-slate-900'}`}>
-                            {form.items?.length} Resource Classes
+                          <div 
+                            className={`font-bold text-sm tracking-tight ${selectedForm?.id === form.id ? 'text-white' : 'text-slate-900'} truncate`}
+                            title={form.items?.map(item => {
+                              const name = item.product?.name;
+                              const qty = Number(item.quantity || 1);
+                              return name ? (qty > 1 ? `${name} (x${qty})` : name) : null;
+                            }).filter(Boolean).join(', ')}
+                          >
+                            {form.items?.map(item => {
+                              const name = item.product?.name;
+                              const qty = Number(item.quantity || 1);
+                              return name ? (qty > 1 ? `${name} (x${qty})` : name) : null;
+                            }).filter(Boolean).join(', ') || 'No Products'}
                           </div>
                           <div className={`text-xs mt-1 font-medium ${selectedForm?.id === form.id ? 'text-slate-300' : 'text-slate-500'}`}>
                             Source: {form.fromNode?.name || `Branch ${form.from_node_id}`}

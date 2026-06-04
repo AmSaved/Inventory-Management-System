@@ -23,7 +23,8 @@ import {
   LayoutGrid,
   Activity,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  Eye
 } from 'lucide-react';
 import Badge from '../ui/Badge';
 
@@ -211,7 +212,7 @@ const OrganizationManagement = () => {
     const loadingToast = toast.loading('Decommissioning Node and all contents...');
     try {
       await organizationService.deleteNode(id);
-      toast.success('Node and sub-hierarchy contents successfully expunged', { id: loadingToast });
+      toast.success('Node and sub-hierarchy contents successfully deleted', { id: loadingToast });
       setDeletingNodeId(null);
       setDeletePreview(null);
       fetchData();
@@ -225,14 +226,14 @@ const OrganizationManagement = () => {
     setDeletePreview(null);
   };
 
-  const handleToggleNodeStatus = async (id) => {
-    const loadingToast = toast.loading('Toggling Node Status...');
+  const handleToggleNodeStatus = async (node) => {
+    const newStatus = node.status === 'active' ? 'inactive' : 'active';
     try {
-      await organizationService.toggleNodeStatus(id);
-      toast.success('Node status updated successfully', { id: loadingToast });
+      await organizationService.toggleNodeStatus(node.id);
+      toast.success(newStatus === 'active' ? 'node actived' : 'node inactived');
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to toggle node status', { id: loadingToast });
+      toast.error('Failed to update node status');
     }
   };
 
@@ -295,7 +296,12 @@ const OrganizationManagement = () => {
             <h3 className="text-base font-bold text-slate-800">Branches</h3>
           </div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            {currentNodes.length} Active Nodes
+            {currentNodes.filter(n => n.status === 'active').length} Active
+            {currentNodes.some(n => n.status === 'inactive') && (
+              <span className="ml-2 text-amber-500">
+                · {currentNodes.filter(n => n.status === 'inactive').length} Inactive
+              </span>
+            )}
           </div>
         </div>
 
@@ -366,29 +372,49 @@ const OrganizationManagement = () => {
             return (
               <div
                 key={node.id}
-                className="bg-white rounded-xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col md:flex-row items-center justify-between gap-4"
+                className={`rounded-xl p-4 border shadow-sm transition-all duration-300 group flex flex-col md:flex-row items-center justify-between gap-4 ${
+                  node.status === 'inactive'
+                    ? 'bg-slate-50 border-slate-200 border-dashed opacity-70'
+                    : 'bg-white border-slate-100 hover:shadow-md'
+                }`}
               >
                 <div className="flex items-center gap-4 w-full md:w-auto">
-                  {/* Status Toggle Button in Front of Every Node */}
-                  <button
-                    onClick={() => handleToggleNodeStatus(node.id)}
-                    className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer ${node.status === 'active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-305 hover:bg-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
-                    title="Click to toggle status"
-                  >
-                    {node.status === 'active' ? 'Active' : 'Inactive'}
-                  </button>
-
-                  <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center shrink-0 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors duration-300">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-300 ${
+                    node.status === 'inactive'
+                      ? 'bg-slate-200 text-slate-400'
+                      : 'bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600'
+                  }`}>
                     <Building2 size={20} />
                   </div>
-                  <div className="flex-1 cursor-pointer group/name" onClick={() => navigate(`/dashboard?unit=${node.id}`)} title={`Switch to ${node.name} Dashboard`}>
-                    <div className="flex items-center gap-2.5">
-                      <h4 className="text-sm font-semibold text-slate-900 group-hover/name:text-blue-600 transition-colors">{node.name}</h4>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h4 className={`text-sm font-semibold transition-colors ${
+                        node.status === 'inactive'
+                          ? 'text-slate-400 italic'
+                          : 'text-slate-900'
+                      }`}>{node.name}</h4>
+                      {node.status === 'inactive' && (
+                        <span className="text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">
+                          Inactive Branch
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                  {/* Status Toggle — right side */}
+                  <button
+                    onClick={() => handleToggleNodeStatus(node)}
+                    className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer ${
+                      node.status === 'active'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                        : 'bg-amber-100 text-amber-700 border border-amber-300 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300'
+                    }`}
+                    title={node.status === 'active' ? 'Click to deactivate' : 'Click to activate'}
+                  >
+                    {node.status === 'active' ? 'Active' : 'Activate'}
+                  </button>
                   <button
                     onClick={() => handleDrillDown(node)}
                     className="flex items-center gap-2 px-3 py-1.5 bg-slate-950 text-white rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-blue-600 transition-all shadow-sm group/btn"
@@ -396,6 +422,7 @@ const OrganizationManagement = () => {
                     <span>Drill Down</span> <ArrowRight size={12} className="group-hover/btn:translate-x-1 transition-transform" />
                   </button>
                   <div className="flex gap-1.5">
+                    <button onClick={() => navigate(`/dashboard?unit=${node.id}`)} className="w-8 h-8 flex items-center justify-center bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all" title="View Dashboard"><Eye size={16} /></button>
                     <button onClick={() => handleOpenNodeModal(node, null)} className="w-8 h-8 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all" title="Add Child Node"><Plus size={16} /></button>
                     <button onClick={() => handleOpenNodeModal(null, node)} className="w-8 h-8 flex items-center justify-center bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-600 hover:text-white transition-all" title="Edit Node"><Edit3 size={16} /></button>
                     <button onClick={() => handleDeleteClick(node.id)} className="w-8 h-8 flex items-center justify-center bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-600 hover:text-white transition-all" title="Delete Node"><Trash2 size={16} /></button>

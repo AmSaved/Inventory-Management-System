@@ -305,6 +305,15 @@ const inventoryController = {
                 return res.status(403).json({ success: false, message: 'Access denied: Cannot initialize inventory in nodes outside your visibility scope' });
             }
 
+            // Block inventory creation in inactive nodes (applies even to Super Admins)
+            const targetNode = await OrganizationNode.findByPk(org_node_id, { attributes: ['id', 'status', 'name'] });
+            if (!targetNode) {
+                return res.status(404).json({ success: false, message: 'Organization node not found' });
+            }
+            if (targetNode.status === 'inactive') {
+                return res.status(403).json({ success: false, message: `Cannot add inventory: node "${targetNode.name}" is currently inactive.` });
+            }
+
             const product = await Product.findOne({ where: { id: product_id, company_id } });
             if (!product) {
                 return res.status(400).json({ success: false, message: 'Product not found' });
@@ -599,6 +608,18 @@ const inventoryController = {
             
             if (!fromAuthorized || !toAuthorized) {
                 return res.status(403).json({ success: false, message: 'Access denied: Transfer involves nodes outside your visibility scope' });
+            }
+
+            // Block transfers into/from inactive nodes (applies even to Super Admins)
+            const [fromNode, toNode] = await Promise.all([
+                OrganizationNode.findByPk(from_node_id, { attributes: ['id', 'status', 'name'] }),
+                OrganizationNode.findByPk(to_node_id, { attributes: ['id', 'status', 'name'] })
+            ]);
+            if (fromNode && fromNode.status === 'inactive') {
+                return res.status(403).json({ success: false, message: `Cannot transfer: source node "${fromNode.name}" is currently inactive.` });
+            }
+            if (toNode && toNode.status === 'inactive') {
+                return res.status(403).json({ success: false, message: `Cannot transfer: destination node "${toNode.name}" is currently inactive.` });
             }
 
             await inventoryService.transferBetweenNodes(

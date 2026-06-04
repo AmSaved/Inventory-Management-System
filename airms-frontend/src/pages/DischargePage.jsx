@@ -106,8 +106,34 @@ const DischargePage = () => {
   const [availablePhysicalItems, setAvailablePhysicalItems] = useState([]);
   const [loadingPhysical, setLoadingPhysical] = useState(false);
 
-  // Inline Split State
   const [splitState, setSplitState] = useState({ index: null, count: 2 });
+
+  const [sourceInventory, setSourceInventory] = useState([]);
+
+  const getAvailableQtyForProduct = (productId) => {
+    if (!productId || !sourceInventory) return 0;
+    return sourceInventory
+      .filter(i => String(i.product_id) === String(productId) && i.status === 'available')
+      .reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+  };
+
+  const getTotalRequestedQtyForProduct = (productId, excludeIndex = null) => {
+    let total = 0;
+    items.forEach((item, idx) => {
+      if (idx === excludeIndex) return;
+      if (String(item.product_id) === String(productId)) {
+        total += Number(item.quantity || 0);
+      }
+    });
+    return total;
+  };
+
+  const getAvailableProductsForLine = (selectedProductId) => {
+    return products.filter(p => {
+      if (selectedProductId && String(p.id) === String(selectedProductId)) return true;
+      return sourceInventory.some(i => String(i.product_id) === String(p.id) && i.status === 'available' && (Number(i.quantity) || 0) > 0);
+    });
+  };
 
   const { data: dischargeForms, pagination, loading: listLoading, refetch: refetchList } = useFetch(`/discharge`, {
     params: {
@@ -165,6 +191,16 @@ const DischargePage = () => {
       setFromUnitId(user.org_node_id);
     }
   }, [user, requestId]);
+
+  useEffect(() => {
+    if (fromUnitId) {
+      api.get(`/inventory?org_node_id=${fromUnitId}&limit=5000`).then(res => {
+        setSourceInventory(res.data.data || []);
+      });
+    } else {
+      setSourceInventory([]);
+    }
+  }, [fromUnitId]);
 
   // Handle URL Pre-fill for Product or Specific Inventory
   useEffect(() => {
@@ -316,11 +352,43 @@ const DischargePage = () => {
 
   const updateItem = (index, field, value) => {
     const newItems = [...items];
-    newItems[index][field] = value;
-    
-    // If quantity or product changes, we might need to reset serial numbers if they no longer match
-    if (field === 'product_id' || field === 'quantity') {
-      newItems[index].serial_numbers = [];
+    const item = newItems[index];
+
+    if (field === 'quantity') {
+      if (value === '' || isNaN(parseInt(value))) {
+        item.quantity = '';
+        setItems(newItems);
+        return;
+      }
+      const productId = item.product_id;
+      let qty = Math.max(0, parseInt(value) || 0);
+      if (productId) {
+        const available = getAvailableQtyForProduct(productId);
+        const otherRequested = getTotalRequestedQtyForProduct(productId, index);
+        const maxAllowedForThisLine = Math.max(0, available - otherRequested);
+        
+        if (qty > maxAllowedForThisLine) {
+          qty = maxAllowedForThisLine;
+          toast.error(`Only ${maxAllowedForThisLine} additional units available for this product (Total branch stock: ${available})`, { id: 'qty-limit-toast' });
+        }
+        item.quantity = qty;
+        
+        if ((item.serial_numbers?.length || 0) > qty) {
+          item.serial_numbers = item.serial_numbers.slice(0, qty);
+        }
+      } else {
+        item.quantity = qty;
+      }
+    } else {
+      item[field] = value;
+      if (field === 'product_id') {
+        item.quantity = 1;
+        item.serial_numbers = [];
+        const available = getAvailableQtyForProduct(value);
+        if (available === 0 && value) {
+          toast.error('This product is out of stock in the selected origin branch.', { id: 'stock-alert-toast' });
+        }
+      }
     }
     
     setItems(newItems);
@@ -457,6 +525,22 @@ const DischargePage = () => {
       
       if (selected !== required) {
         return toast.error(`Line ${i + 1}: Please select exactly ${required} physical items (currently ${selected})`);
+      }
+    }
+
+    // Validate quantities against total available stock in branch
+    const productTotals = {};
+    for (const item of items) {
+      if (item.product_id) {
+        productTotals[item.product_id] = (productTotals[item.product_id] || 0) + Number(item.quantity || 0);
+      }
+    }
+
+    for (const [productId, totalRequested] of Object.entries(productTotals)) {
+      const available = getAvailableQtyForProduct(productId);
+      if (totalRequested > available) {
+        const prodName = products.find(p => p.id.toString() === productId)?.name || `ID ${productId}`;
+        return toast.error(`Insufficient inventory: requested ${totalRequested} units of "${prodName}", but only ${available} are available in this branch.`);
       }
     }
     
@@ -598,7 +682,7 @@ const DischargePage = () => {
                         required
                       >
                         <option value="">Select product</option>
-                        {products?.map(p => <option key={p.id} value={p.id.toString()}>{p.name} — [{p.sku}]</option>)}
+                        {getAvailableProductsForLine(item.product_id).map(p => <option key={p.id} value={p.id.toString()}>{p.name} — [{p.sku}]</option>)}
                       </select>
 
                       <LiveStockBadge productId={item.product_id} nodeId={fromUnitId} />
@@ -620,6 +704,9 @@ const DischargePage = () => {
                         type="number" 
                         value={item.quantity} 
                         onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                        min="1"
+                        max={item.product_id ? Math.max(0, getAvailableQtyForProduct(item.product_id) - getTotalRequestedQtyForProduct(item.product_id, index)) : undefined}
+                        title={item.product_id ? `Max available: ${Math.max(0, getAvailableQtyForProduct(item.product_id) - getTotalRequestedQtyForProduct(item.product_id, index))}` : undefined}
                         className="w-16 h-9 shrink-0 border border-slate-200 bg-slate-50 rounded-xl font-bold text-sm text-blue-600 text-center shadow-inner focus:bg-white focus:border-blue-400 outline-none"
                         required 
                       />
@@ -938,14 +1025,32 @@ const DischargePage = () => {
                 <input
                   type="number"
                   min={1}
-                  value={items[activeItemIndex]?.quantity || 1}
+                  value={items[activeItemIndex]?.quantity || ''}
                   onChange={e => {
-                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                    const val = e.target.value;
                     const newItems = [...items];
-                    newItems[activeItemIndex].quantity = val;
-                    // Reset serial numbers if new quantity is less than selected
-                    if ((newItems[activeItemIndex].serial_numbers?.length || 0) > val) {
-                      newItems[activeItemIndex].serial_numbers = (newItems[activeItemIndex].serial_numbers || []).slice(0, val);
+                    const item = newItems[activeItemIndex];
+                    if (val === '' || isNaN(parseInt(val))) {
+                      item.quantity = '';
+                      setItems(newItems);
+                      return;
+                    }
+                    const parsedVal = Math.max(0, parseInt(val) || 0);
+                    const productId = item.product_id;
+
+                    const available = getAvailableQtyForProduct(productId);
+                    const otherRequested = getTotalRequestedQtyForProduct(productId, activeItemIndex);
+                    const maxAllowedForThisLine = Math.max(0, available - otherRequested);
+
+                    let qty = parsedVal;
+                    if (qty > maxAllowedForThisLine) {
+                      qty = maxAllowedForThisLine;
+                      toast.error(`Only ${maxAllowedForThisLine} additional units available for this product (Total branch stock: ${available})`, { id: 'qty-limit-toast' });
+                    }
+
+                    item.quantity = qty;
+                    if ((item.serial_numbers?.length || 0) > qty) {
+                      item.serial_numbers = (item.serial_numbers || []).slice(0, qty);
                     }
                     setItems(newItems);
                   }}
