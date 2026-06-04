@@ -144,7 +144,9 @@ const UserManagement = ({ orgNodeId, onBack }) => {
       const isLevelAllowed = role.level <= userMaxLevel;
 
       // 2. Node check: role must belong to same branch, sub-branch, or company-wide (null)
-      const isNodeAllowed = !role.org_node_id ||
+      // Super Admins (level >= 100) bypass the node check to see all roles.
+      const isSuperAdmin = user?.role?.level >= 100;
+      const isNodeAllowed = isSuperAdmin || !role.org_node_id ||
         role.org_node_id === user?.org_node_id ||
         user?.allowedNodes?.includes(role.org_node_id);
 

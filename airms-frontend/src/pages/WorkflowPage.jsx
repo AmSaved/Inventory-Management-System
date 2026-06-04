@@ -30,7 +30,9 @@ const WorkflowPage = () => {
       const isLevelAllowed = role.level <= userMaxLevel;
 
       // 2. Node/Hierarchy Filter: Only see roles in same organization node, its sub-nodes, or company level (null org_node_id)
-      const isNodeAllowed = !role.org_node_id || 
+      // Super Admins (level >= 100) bypass the node check to see all roles.
+      const isSuperAdmin = user?.role?.level >= 100;
+      const isNodeAllowed = isSuperAdmin || !role.org_node_id || 
                             role.org_node_id === user?.org_node_id || 
                             user?.allowedNodes?.includes(role.org_node_id);
       

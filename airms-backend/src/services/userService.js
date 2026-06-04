@@ -165,6 +165,17 @@ class UserService {
                 userData.username = userData.email.split('@')[0];
             }
 
+            // Clean empty strings for integer fields to prevent invalid input syntax errors in PostgreSQL
+            const integerFields = ['role_id', 'org_node_id', 'company_id', 'created_by'];
+            integerFields.forEach(field => {
+                if (userData[field] === '' || userData[field] === undefined) {
+                    userData[field] = null;
+                } else if (userData[field] !== null) {
+                    const parsed = parseInt(userData[field], 10);
+                    userData[field] = isNaN(parsed) ? null : parsed;
+                }
+            });
+
             const user = await User.create(userData);
 
             // Many-to-Many Role Assignment
@@ -202,6 +213,17 @@ class UserService {
             delete userData.refresh_token;
             delete userData.company_id;
             delete userData.created_by;
+
+            // Clean empty strings for integer fields to prevent invalid input syntax errors in PostgreSQL
+            const integerFields = ['role_id', 'org_node_id'];
+            integerFields.forEach(field => {
+                if (userData[field] === '' || userData[field] === undefined) {
+                    userData[field] = null;
+                } else if (userData[field] !== null) {
+                    const parsed = parseInt(userData[field], 10);
+                    userData[field] = isNaN(parsed) ? null : parsed;
+                }
+            });
 
             await user.update(userData);
 

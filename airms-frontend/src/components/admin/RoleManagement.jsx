@@ -254,7 +254,9 @@ const RoleManagement = ({ onBack }) => {
       const isLevelAllowed = role.level <= userMaxLevel;
 
       // 2. Node/Hierarchy Filter: Only see roles in same organization node, its sub-nodes, or company level (null org_node_id)
-      const isNodeAllowed = !role.org_node_id || 
+      // Super Admins (level >= 100) bypass the node check to see all roles.
+      const isSuperAdmin = currentUser?.role?.level >= 100;
+      const isNodeAllowed = isSuperAdmin || !role.org_node_id || 
                             role.org_node_id === currentUser?.org_node_id || 
                             currentUser?.allowedNodes?.includes(role.org_node_id);
 
