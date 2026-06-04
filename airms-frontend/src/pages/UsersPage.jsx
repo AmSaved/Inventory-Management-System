@@ -428,10 +428,30 @@ const UsersPage = () => {
               // Determine which node is selected and whether it is a root org
               const selectedNode = nodes.find(n => n.id === parseInt(formData.org_node_id));
               const isRootNode = selectedNode && !selectedNode.parent_id;
-              // Root org nodes → only roles >= 90 (Admin level); exclude super_admin (level 100) always
-              const assignableRoles = isRootNode
-                ? roles.filter(r => r.level >= 90 && r.level < 100)
-                : roles.filter(r => r.level < 100);
+              
+              const loggedInUserIsSuperAdmin = user?.role?.level >= 100;
+              let assignableRoles = [];
+
+              if (loggedInUserIsSuperAdmin) {
+                // If logged in as Super Admin, display roles created by a super admin (or system seed)
+                assignableRoles = roles.filter(r => 
+                  !r.created_by_id || r.roleRegistrar?.role?.level >= 100
+                );
+              } else {
+                // Org Admin: roles under level 100, and exclude roles created by a super admin except their own roles
+                const baseRoles = isRootNode
+                  ? roles.filter(r => r.level >= 90 && r.level < 100)
+                  : roles.filter(r => r.level < 100);
+
+                assignableRoles = baseRoles.filter(r => {
+                  const isCreatedBySuperAdmin = !r.created_by_id || r.roleRegistrar?.role?.level >= 100;
+                  if (isCreatedBySuperAdmin) {
+                    const isOwnRole = r.created_by_id === user.id || r.id === user.role_id;
+                    return isOwnRole;
+                  }
+                  return true;
+                });
+              }
               return (
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Assigned Role</label>

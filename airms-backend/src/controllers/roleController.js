@@ -83,11 +83,18 @@ const roleController = {
                         model: User,
                         as: 'roleRegistrar',
                         attributes: ['id', 'first_name', 'last_name'],
-                        include: [{
-                            model: OrganizationNode,
-                            as: 'organizationNode',
-                            attributes: ['id', 'name']
-                        }]
+                        include: [
+                            {
+                                model: OrganizationNode,
+                                as: 'organizationNode',
+                                attributes: ['id', 'name']
+                            },
+                            {
+                                model: Role,
+                                as: 'role',
+                                attributes: ['id', 'name', 'level']
+                            }
+                        ]
                     }
                 ]
             });

@@ -138,19 +138,34 @@ const UserManagement = ({ orgNodeId, onBack }) => {
 
   const filteredRoles = useMemo(() => {
     if (!roles) return [];
+    const isSuperAdmin = user?.role?.level >= 100;
+
     return roles.filter(role => {
       // 1. Level check: role level must be less than or equal to current user's level
       const userMaxLevel = user?.role?.level ?? 0;
       const isLevelAllowed = role.level <= userMaxLevel;
 
-      // 2. Node check: role must belong to same branch, sub-branch, or company-wide (null)
-      // Super Admins (level >= 100) bypass the node check to see all roles.
-      const isSuperAdmin = user?.role?.level >= 100;
-      const isNodeAllowed = isSuperAdmin || !role.org_node_id ||
-        role.org_node_id === user?.org_node_id ||
-        user?.allowedNodes?.includes(role.org_node_id);
+      if (isSuperAdmin) {
+        // Super Admin: display roles created by a super admin (or system seed)
+        const isCreatedBySuperAdmin = !role.created_by_id || 
+                                      role.roleRegistrar?.role?.level >= 100;
+        return isCreatedBySuperAdmin && isLevelAllowed;
+      } else {
+        // Org Admin: Node check + exclude roles created by a super admin except their own roles
+        const isNodeAllowed = !role.org_node_id ||
+          role.org_node_id === user?.org_node_id ||
+          user?.allowedNodes?.includes(role.org_node_id);
 
-      return isLevelAllowed && isNodeAllowed;
+        const isCreatedBySuperAdmin = !role.created_by_id || 
+                                      role.roleRegistrar?.role?.level >= 100;
+        if (isCreatedBySuperAdmin) {
+          const isOwnRole = role.created_by_id === user.id || 
+                            role.id === user.role_id;
+          return isOwnRole && isLevelAllowed && isNodeAllowed;
+        }
+
+        return isLevelAllowed && isNodeAllowed;
+      }
     });
   }, [roles, user]);
 
