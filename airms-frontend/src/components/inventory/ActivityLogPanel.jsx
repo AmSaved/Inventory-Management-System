@@ -4,10 +4,13 @@ import { X, History, Box, Activity, User as UserIcon, RefreshCw } from 'lucide-r
 import { format } from 'date-fns';
 
 const ActivityLogPanel = ({ isOpen, onClose }) => {
-  // We fetch when the panel is open
-  const { data: logs, loading, refetch } = useFetch('/activity?limit=50', {
-    // Only fetch if open, but useFetch might fetch on mount, so we handle it gracefully
-  });
+  const { data: logs, loading, refetch } = useFetch('/activity?limit=50');
+
+  React.useEffect(() => {
+    if (isOpen) {
+      refetch();
+    }
+  }, [isOpen, refetch]);
 
   if (!isOpen) return null;
 

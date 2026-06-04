@@ -31,32 +31,43 @@ const dischargeController = {
 
             const permissions = await getEffectivePermissions(req.user);
             const offset = (page - 1) * limit;
-            const allowedNodes = req.getAuthorizedNodes ? await req.getAuthorizedNodes() : await hierarchyService.getAllowedNodes(req.user, permissions);
+            const baseAllowedNodes = req.getAuthorizedNodes ? await req.getAuthorizedNodes() : await hierarchyService.getAllowedNodes(req.user, permissions);
+            // Expand to include archived nodes merged into our allowed branches
+            const allowedNodes = await hierarchyService.expandWithMergedSources(baseAllowedNodes, company_id);
 
-            // Hierarchical Scoping
+            // Hierarchical Scoping: show discharges where the user is SOURCE *or* TARGET branch
             if (node_id) {
                 const targetNodeId = Number(node_id);
-                // Security check: Is the requested node within the user's field of vision?
                 if (allowedNodes !== null && !allowedNodes.includes(targetNodeId)) {
                     return res.status(403).json({ success: false, message: 'Access denied: Targeted node is outside your visibility scope' });
                 }
-                
                 const nodeIds = await hierarchyService.getDescendants(targetNodeId);
-                where.from_node_id = { [Op.in]: nodeIds };
+                // Show forms where this node is either the source OR the destination
+                where[Op.or] = [
+                    { from_node_id: { [Op.in]: nodeIds } },
+                    { to_node_id: { [Op.in]: nodeIds } }
+                ];
             } else if (allowedNodes !== null) {
-                // Default to user's authorized field of vision
-                where.from_node_id = { [Op.in]: allowedNodes };
+                // Show forms where user's allowed nodes (incl. merged sources) appear as source OR destination
+                where[Op.or] = [
+                    { from_node_id: { [Op.in]: allowedNodes } },
+                    { to_node_id: { [Op.in]: allowedNodes } }
+                ];
             }
 
             if (status) where.status = status;
             if (discharge_type) where.discharge_type = discharge_type;
             
             if (search) {
-                where[Op.or] = [
-                    { discharge_number: { [Op.like]: `%${search}%` } },
-                    { status: { [Op.like]: `%${search}%` } },
-                    { discharge_type: { [Op.like]: `%${search}%` } }
-                ];
+                // Use Op.and so this doesn't overwrite the node-visibility Op.or above
+                where[Op.and] = where[Op.and] || [];
+                where[Op.and].push({
+                    [Op.or]: [
+                        { discharge_number: { [Op.like]: `%${search}%` } },
+                        { status: { [Op.like]: `%${search}%` } },
+                        { discharge_type: { [Op.like]: `%${search}%` } }
+                    ]
+                });
             }
             
             if (from_date || to_date) {
@@ -65,8 +76,6 @@ const dischargeController = {
                 if (to_date) where.created_at[Op.lte] = new Date(to_date);
             }
 
-            
-            
             const { count, rows } = await DischargeForm.findAndCountAll({
                 where,
                 include: [
@@ -87,24 +96,43 @@ const dischargeController = {
                 ],
                 limit: parseInt(limit),
                 offset: parseInt(offset),
-                order: [['created_at', 'DESC']]
+                order: [['created_at', 'DESC']],
+                distinct: true
             });
 
             const taggedRows = await Promise.all(rows.map(async (row) => {
                 const plain = row.get({ plain: true });
                 plain.can_action = false;
+                plain.can_acknowledge = false;
                 
+                // Tag can_action for approvers (pending workflow steps)
                 if (plain.status?.startsWith('pending') && plain.currentStep) {
-                    const userRoleId = Number(req.user.role?.id || req.user.role_id);
-                    const requiredRoleId = Number(plain.currentStep.required_role_id);
-                    
-                    // Simple logic: if the user's role matches the step's role, show the button.
-                    if (requiredRoleId && userRoleId === requiredRoleId) {
-                        plain.can_action = true;
-                    } else {
-                        // Fallback to service check for administrators/overrides
-                        plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions);
+                    plain.can_action = await workflowService.userCanApproveStep(req.user, row, plain.currentStep, permissions);
+
+                    // Branch-level source node enforcement: Approve/Reject buttons display ONLY at source node
+                    const sourceNodeId = plain.from_node_id || plain.org_node_id;
+                    if (sourceNodeId && req.user.org_node_id && Number(req.user.org_node_id) !== Number(sourceNodeId)) {
+                        plain.can_action = false;
                     }
+                }
+
+                // Tag can_acknowledge for the TARGET BRANCH:
+                // When discharge is completed (items dispatched), the receiving branch must confirm receipt.
+                if (plain.status === 'completed' && plain.to_node_id) {
+                    const isRecipient = plain.to_user_id && Number(plain.to_user_id) === Number(req.user.id);
+                    const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+                    const hasNodeAuthority = plain.to_node_id && (allowedNodes === null || allowedNodes.includes(Number(plain.to_node_id)));
+                    const isAtSourceBranch = req.user.org_node_id && Number(req.user.org_node_id) === Number(plain.from_node_id);
+                    
+                    let canAck = (isRecipient || isSuperAdmin || hasNodeAuthority) && !isAtSourceBranch;
+                    // Branch-level target node enforcement: Acknowledge Receipt button displays ONLY at target node
+                    const targetNodeId = plain.to_node_id || plain.target_node_id;
+                    if (targetNodeId && req.user.org_node_id && Number(req.user.org_node_id) !== Number(targetNodeId)) {
+                        canAck = false;
+                    }
+                    plain.can_acknowledge = canAck;
+                } else {
+                    plain.can_acknowledge = false;
                 }
                 
                 return plain;
@@ -155,13 +183,8 @@ const dischargeController = {
             const { items, ...dischargeData } = req.body;
             const company_id = req.user.company_id;
             
-            dischargeData.company_id = company_id;
-            dischargeData.created_by = req.user.id;
+            // Validate source node permission
             const fromNodeId = dischargeData.from_node_id || req.user.org_node_id;
-            dischargeData.from_node_id = fromNodeId;
-            dischargeData.status = 'pending';
-
-            // Deep Scoping Check
             const permissions = await getEffectivePermissions(req.user);
             const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
             if (!allowedNodes.includes(Number(fromNodeId))) {
@@ -169,84 +192,63 @@ const dischargeController = {
                 return res.status(403).json({ success: false, message: 'Access denied: Cannot issue items from a unit outside your visibility scope' });
             }
 
-            // Check inventory availability
-            for (const item of items) {
-                const availability = await inventoryService.checkAvailability(
-                    company_id, 
-                    dischargeData.from_node_id, 
-                    item.product_id, 
-                    item.quantity
-                );
-                if (!availability.available) {
-                    await t.rollback();
-                    return res.status(400).json({
-                        success: false,
-                        message: `Insufficient inventory for product ID ${item.product_id}`
-                    });
+            // Group items by to_node_id to create separate forms per destination
+            const groupedItems = items.reduce((acc, item) => {
+                const target = item.to_node_id || dischargeData.to_node_id || 'default';
+                if (!acc[target]) acc[target] = [];
+                acc[target].push(item);
+                return acc;
+            }, {});
+
+            const createdForms = [];
+
+            for (const [toNodeId, groupItems] of Object.entries(groupedItems)) {
+                // Check inventory availability for the whole group
+                for (const item of groupItems) {
+                    const availability = await inventoryService.checkAvailability(company_id, fromNodeId, item.product_id, item.quantity);
+                    if (!availability.available) {
+                        throw new Error(`Insufficient inventory for product ID ${item.product_id}`);
+                    }
                 }
-            }
 
-            // Smart Destination Mapping: Pick from first item if header is empty
-            if (items && items.length > 0) {
-                if (items[0].to_node_id) dischargeData.to_node_id = items[0].to_node_id;
-                if (items[0].to_user_id) dischargeData.to_user_id = items[0].to_user_id;
-            }
+                const form = await DischargeForm.create({
+                    ...dischargeData,
+                    company_id,
+                    created_by: req.user.id,
+                    from_node_id: fromNodeId,
+                    to_node_id: toNodeId === 'default' ? null : toNodeId,
+                    status: 'pending'
+                }, { transaction: t });
 
-            // 1. Create the form (defaults to pending)
-            const dischargeForm = await DischargeForm.create(dischargeData, { transaction: t });
-
-            // 2. Create the items
-            if (items && items.length > 0) {
-                await Promise.all(items.map(item => DischargeItem.create({
+                await Promise.all(groupItems.map(item => DischargeItem.create({
                     ...item,
-                    discharge_form_id: dischargeForm.id
+                    discharge_form_id: form.id
                 }, { transaction: t })));
-            }
 
-            // 3. Initialize dynamic workflow
-            const workflow = await workflowService.initializeWorkflow(dischargeForm, 'inventory_discharge', { transaction: t });
+                const workflow = await workflowService.initializeWorkflow(form, 'inventory_discharge', { transaction: t });
 
-            // 4. LOGIC: If no workflow exists (steps = 0 or no workflow record), execute IMMEDIATELY
-            let executionResult = null;
-            if (!dischargeForm.current_step_id) {
-                // Perform physical movement (Subtract from source, Add to target)
-                await inventoryService.executeDischarge(dischargeForm, req.user, { transaction: t });
-                
-                // Finalize status
-                await dischargeForm.update({ status: 'completed' }, { transaction: t });
-                
-                // If linked to a request, fulfill it
-                if (dischargeForm.request_id) {
-                    await Request.update(
-                        { status: 'fulfilled', completed_date: new Date() },
-                        { where: { id: dischargeForm.request_id, company_id }, transaction: t }
-                    );
+                if (!form.current_step_id) {
+                    await inventoryService.executeDischarge(form, req.user, { transaction: t });
+                    await form.update({ status: 'completed' }, { transaction: t });
+                    if (form.request_id) {
+                        await Request.update({ status: 'fulfilled', completed_date: new Date() }, { where: { id: form.request_id, company_id }, transaction: t });
+                    }
                 }
-                executionResult = 'auto-executed';
-            }
 
-            await ActivityLog.create({
-                company_id,
-                user_id: req.user.id,
-                action: 'CREATE_DISCHARGE',
-                resource: 'discharge_forms',
-                resource_id: dischargeForm.id,
-                details: { 
-                    discharge_number: dischargeForm.discharge_number,
-                    workflow_id: dischargeForm.workflow_id,
-                    current_step_id: dischargeForm.current_step_id,
-                    result: executionResult || 'pending_approval'
-                }
-            }, { transaction: t });
+                await ActivityLog.create({
+                    company_id,
+                    user_id: req.user.id,
+                    action: 'CREATE_DISCHARGE',
+                    resource: 'discharge_forms',
+                    resource_id: form.id,
+                    details: { discharge_number: form.discharge_number, result: form.current_step_id ? 'pending_approval' : 'auto-executed' }
+                }, { transaction: t });
+
+                createdForms.push(form);
+            }
 
             await t.commit();
-            
-            const isPending = !!dischargeForm.current_step_id;
-            return res.status(201).json({ 
-                success: true, 
-                message: isPending ? 'Discharge initialized: Pending workflow authorization' : 'Discharge authorized and executed successfully (No Workflow)', 
-                data: dischargeForm 
-            });
+            return res.status(201).json({ success: true, message: 'Discharge forms created successfully', data: createdForms });
         } catch (error) {
             if (t) await t.rollback();
             next(error);
@@ -275,7 +277,7 @@ const dischargeController = {
             // Deep Scoping Check
             const permissions = await getEffectivePermissions(req.user);
             const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-            if (!allowedNodes.includes(dischargeForm.from_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(dischargeForm.from_node_id)) {
                 await t.rollback();
                 return res.status(403).json({ success: false, message: 'Access denied: You are not authorized to execute discharges for this unit' });
             }
@@ -312,21 +314,27 @@ const dischargeController = {
      * Approve discharge form.
      */
     async approve(req, res, next) {
+        const t = await sequelize.transaction();
         try {
             const { id } = req.params;
             const company_id = req.user.company_id;
 
-            const form = await DischargeForm.findOne({ where: { id, company_id } });
-            if (!form) return res.status(404).json({ success: false, message: 'Not found' });
+            const form = await DischargeForm.findOne({ where: { id, company_id }, transaction: t });
+            if (!form) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Not found' });
+            }
 
             // Deep Scoping Check
             const permissions = await getEffectivePermissions(req.user);
             const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-            if (!allowedNodes.includes(form.from_node_id)) {
+            if (allowedNodes !== null && !allowedNodes.includes(form.from_node_id)) {
+                await t.rollback();
                 return res.status(403).json({ success: false, message: 'Access denied: Target unit is outside your visibility scope' });
             }
 
             if (form.status === 'completed' || form.status === 'approved') {
+                await t.rollback();
                 return res.status(400).json({ success: false, message: 'Form is already approved or completed' });
             }
 
@@ -334,15 +342,23 @@ const dischargeController = {
                 form, 
                 'inventory_discharge', 
                 req.user, 
-                req.body.notes || 'Step approved'
+                req.body.notes || 'Step approved',
+                'approve',
+                { transaction: t }
             );
 
+            await t.commit();
             res.json({ 
                 success: true, 
                 message: result?.isFinalStep ? 'Discharge workflow complete: Ready for execution' : 'Workflow step approved',
                 data: form 
             });
         } catch (error) {
+            if (t) await t.rollback();
+            // Return the correct HTTP status from the error if provided (e.g. 409 for stale inventory)
+            if (error.statusCode) {
+                return res.status(error.statusCode).json({ success: false, message: error.message });
+            }
             next(error);
         }
     },
@@ -367,10 +383,18 @@ const dischargeController = {
 
             if (!form) return res.status(404).json({ success: false, message: 'Not found' });
 
-            // Deep Scoping Check
+            // Deep Scoping Check — follow merged_into chain so users on consolidated
+            // branch can view discharge records that referenced old archived source/target branches
             const permissions = await getEffectivePermissions(req.user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
-            if (!allowedNodes.includes(form.from_node_id) && form.to_user_id !== req.user.id) {
+            const baseAllowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            const allowedNodes = await hierarchyService.expandWithMergedSources(baseAllowedNodes, company_id);
+            
+            const isAuthorized = allowedNodes === null || 
+                                 (form.from_node_id && allowedNodes.includes(Number(form.from_node_id))) || 
+                                 (form.to_node_id && allowedNodes.includes(Number(form.to_node_id))) || 
+                                 (form.to_user_id && Number(form.to_user_id) === Number(req.user.id));
+
+            if (!isAuthorized) {
                 return res.status(403).json({ success: false, message: 'Access denied: Form is outside your visibility scope' });
             }
 
@@ -381,22 +405,29 @@ const dischargeController = {
     },
 
     async reject(req, res, next) {
+        const t = await sequelize.transaction();
         try {
             const { id } = req.params;
             const company_id = req.user.company_id;
             const notes = req.body.notes || req.body.reason;
 
-            const form = await DischargeForm.findOne({ where: { id, company_id } });
-            if (!form) return res.status(404).json({ success: false, message: 'Not found' });
+            const form = await DischargeForm.findOne({ where: { id, company_id }, transaction: t });
+            if (!form) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Not found' });
+            }
 
             if (form.status === 'completed' || form.status === 'rejected') {
+                await t.rollback();
                 return res.status(400).json({ success: false, message: 'Form is already finalized' });
             }
 
-            await workflowService.rejectWorkflow(form, 'inventory_discharge', req.user, notes || 'Rejected via Ledger');
+            await workflowService.rejectWorkflow(form, 'inventory_discharge', req.user, notes || 'Rejected via Ledger', { transaction: t });
 
+            await t.commit();
             res.json({ success: true, message: "Discharge protocol rejected." });
         } catch (e) {
+            if (t) await t.rollback();
             next(e);
         }
     },
@@ -417,6 +448,99 @@ const dischargeController = {
 
             res.json({ success: true, message: "Transaction cancelled." });
         } catch (e) {
+            next(e);
+        }
+    },
+
+    /**
+     * Acknowledge physical receipt of a discharge (target branch confirms items arrived).
+     * Only users at the receiving (to_node_id) branch can acknowledge.
+     */
+    async acknowledge(req, res, next) {
+        const t = await sequelize.transaction();
+        try {
+            const { id } = req.params;
+            const company_id = req.user.company_id;
+
+            const form = await DischargeForm.findOne({
+                where: { id, company_id },
+                include: ['items'],
+                transaction: t
+            });
+
+            if (!form) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Discharge form not found' });
+            }
+
+            if (form.status !== 'completed') {
+                await t.rollback();
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Only completed discharges can be acknowledged. The source branch must execute the discharge first.' 
+                });
+            }
+
+            if (!form.to_node_id) {
+                await t.rollback();
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'This discharge has no designated target branch to acknowledge from.' 
+                });
+            }
+
+            // Security: recipient, super admin, or anyone with authority over destination node can acknowledge
+            const isRecipient = form.to_user_id && Number(form.to_user_id) === Number(req.user.id);
+            const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+            
+            const permissions = await getEffectivePermissions(req.user);
+            const allowedNodes = req.getAuthorizedNodes 
+                ? await req.getAuthorizedNodes() 
+                : await hierarchyService.getAllowedNodes(req.user, permissions);
+            const hasNodeAuthority = form.to_node_id && (allowedNodes === null || allowedNodes.includes(Number(form.to_node_id)));
+
+            const isAtSourceBranch = req.user.org_node_id && Number(req.user.org_node_id) === Number(form.from_node_id);
+            if (isAtSourceBranch) {
+                await t.rollback();
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: Personnel at the dispatching source branch cannot acknowledge physical receipt of this discharge.'
+                });
+            }
+
+            if (!isRecipient && !isSuperAdmin && !hasNodeAuthority) {
+                await t.rollback();
+                return res.status(403).json({ 
+                    success: false, 
+                    message: 'Only authorized personnel for the receiving branch can acknowledge this discharge receipt.' 
+                });
+            }
+
+            // Move status to acknowledged
+            await form.update({ 
+                status: 'acknowledged',
+                workflow_status: 'Receipt Acknowledged by Target Branch'
+            }, { transaction: t });
+
+            await ActivityLog.create({
+                company_id,
+                user_id: req.user.id,
+                action: 'ACKNOWLEDGE_RECEIPT',
+                resource: 'discharge_forms',
+                resource_id: id,
+                details: { 
+                    message: 'Target branch acknowledged physical receipt of discharged items.',
+                    acknowledged_at: new Date()
+                }
+            }, { transaction: t });
+
+            await t.commit();
+            res.json({ 
+                success: true, 
+                message: 'Receipt acknowledged. Items have been formally received by the target branch.' 
+            });
+        } catch (e) {
+            if (t) await t.rollback();
             next(e);
         }
     }

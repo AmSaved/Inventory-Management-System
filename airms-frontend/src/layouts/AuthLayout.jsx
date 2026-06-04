@@ -18,7 +18,7 @@ const AuthLayout = ({ children, title, subtitle }) => {
           100% { transform: translateY(0px); }
         }
         .animate-gradient-flow {
-          background: linear-gradient(-45deg, #0a0f1d, #1a163a, #082921, #250a32, #0c1020);
+          background: linear-gradient(-45deg, #050e14, #044b36, #1d4ed8, #0e7490, #0c1a30);
           background-size: 400% 400%;
           animation: gradientFlow 15s ease infinite;
         }
@@ -28,16 +28,16 @@ const AuthLayout = ({ children, title, subtitle }) => {
       `}</style>
       
       {/* LEFT SIDE: Beautiful Illustration & Smooth Animated Color Flow */}
-      <div className="hidden lg:flex lg:col-span-7 xl:col-span-8 animate-gradient-flow relative flex-col items-center justify-center p-16 text-white overflow-hidden">
+      <div className="hidden lg:flex lg:col-span-6 animate-gradient-flow relative flex-col items-center justify-center p-16 text-white overflow-hidden">
         {/* Abstract Glowing Orbs */}
-        <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-blue-500/5 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none" />
+        <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-emerald-500/5 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-blue-500/5 blur-[100px] pointer-events-none" />
 
         {/* Center Illustration Area */}
         <div className="flex flex-col items-center justify-center my-auto relative z-10 max-w-xl mx-auto text-center animate-float">
           <div className="relative group">
             {/* Soft decorative shadow under the image */}
-            <div className="absolute -inset-8 bg-gradient-to-tr from-blue-500/10 to-indigo-500/10 rounded-full opacity-35 blur-3xl" />
+            <div className="absolute -inset-8 bg-gradient-to-tr from-emerald-500/10 to-blue-500/10 rounded-full opacity-35 blur-3xl" />
             <img 
               src={loginIllustration} 
               alt="Inventory Management" 
@@ -48,20 +48,23 @@ const AuthLayout = ({ children, title, subtitle }) => {
       </div>
 
       {/* RIGHT SIDE: Interactive Login Panel */}
-      <div className="w-full lg:col-span-5 xl:col-span-4 flex flex-col justify-between p-6 sm:p-10 min-h-screen bg-slate-50/60 backdrop-blur-md">
-        
+      <div className="w-full lg:col-span-6 flex flex-col justify-between p-6 sm:p-10 min-h-screen bg-gradient-to-br from-blue-50/30 via-white to-indigo-50/20 relative overflow-hidden">
+        {/* Soft Decorative Blue/Indigo Glows for Premium Matching */}
+        <div className="absolute -top-12 -right-12 w-64 h-64 bg-blue-400/10 rounded-full blur-[80px] pointer-events-none" />
+        <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-indigo-400/10 rounded-full blur-[80px] pointer-events-none" />
+
         {/* Mobile Header (Hidden on Desktop) */}
-        <div className="flex lg:hidden items-center gap-2 mb-8">
-          <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md">
+        <div className="flex lg:hidden items-center gap-2 mb-8 relative z-10">
+          <div className="h-8 w-8 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-lg flex items-center justify-center shadow-md">
             <ShieldCheck className="h-4 w-4 text-white" />
           </div>
-          <span className="text-lg font-bold tracking-tight text-slate-900">AIRMS</span>
+          <span className="text-lg font-bold tracking-tight text-slate-900">IMS</span>
         </div>
 
-        <div className="my-auto max-w-md w-full mx-auto bg-white p-8 sm:p-10 rounded-2xl border border-slate-100/80 shadow-[0_20px_50px_rgba(0,0,0,0.04)] space-y-6 transition-all duration-300 hover:shadow-[0_30px_60px_rgba(0,0,0,0.06)]">
+        <div className="my-auto max-w-lg w-full mx-auto bg-white/90 backdrop-blur-md p-10 sm:p-12 rounded-2xl border border-blue-100/60 shadow-[0_20px_50px_rgba(37,99,235,0.04)] space-y-6 transition-all duration-300 hover:shadow-[0_30px_60px_rgba(37,99,235,0.08)] hover:border-blue-200/60 relative z-10">
           {/* Beautiful Top Icon for Dignity & Premium Feel */}
           <div className="flex justify-center">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <ShieldCheck className="text-white" size={24} />
             </div>
           </div>
@@ -81,8 +84,8 @@ const AuthLayout = ({ children, title, subtitle }) => {
         </div>
 
         {/* Footer info */}
-        <div className="text-center text-xs text-slate-400 mt-8 pt-6 border-t border-slate-100/60">
-          &copy; {new Date().getFullYear()} AIRMS Portal. All rights reserved.
+        <div className="text-center text-xs text-slate-400 mt-8 pt-6 border-t border-slate-100/60 relative z-10">
+          &copy; {new Date().getFullYear()} IMS Portal. All rights reserved.
         </div>
       </div>
       

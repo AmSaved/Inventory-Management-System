@@ -9,20 +9,31 @@ class UserService {
     async getAllUsers(companyId, page = 1, limit = 10, search = '', filters = {}) {
         try {
             const where = { company_id: companyId };
+            const andConditions = [];
 
             if (search) {
-                where[Op.or] = [
-                    { first_name: { [Op.iLike]: `%${search}%` } },
-                    { last_name: { [Op.iLike]: `%${search}%` } },
-                    { email: { [Op.iLike]: `%${search}%` } },
-                    { employee_id: { [Op.iLike]: `%${search}%` } }
-                ];
+                andConditions.push({
+                    [Op.or]: [
+                        { first_name: { [Op.iLike]: `%${search}%` } },
+                        { last_name: { [Op.iLike]: `%${search}%` } },
+                        { email: { [Op.iLike]: `%${search}%` } },
+                        { employee_id: { [Op.iLike]: `%${search}%` } }
+                    ]
+                });
             }
 
             if (filters.role_id) where.role_id = filters.role_id;
             if (filters.org_node_id) where.org_node_id = filters.org_node_id;
             if (filters.is_active !== undefined) where.is_active = filters.is_active;
             if (filters.created_by) where.created_by = filters.created_by;
+            
+            if (filters.custom_creator_filter) {
+                andConditions.push(filters.custom_creator_filter);
+            }
+
+            if (andConditions.length > 0) {
+                where[Op.and] = andConditions;
+            }
 
             const offset = (page - 1) * limit;
 
@@ -37,7 +48,14 @@ class UserService {
                     {
                         model: OrganizationNode,
                         as: 'organizationNode',
-                        attributes: ['id', 'name', 'code']
+                        attributes: ['id', 'name', 'code', 'manager_id'],
+                        include: [
+                            {
+                                model: User,
+                                as: 'manager',
+                                attributes: ['id', 'first_name', 'last_name']
+                            }
+                        ]
                     },
                     {
                         model: Role,

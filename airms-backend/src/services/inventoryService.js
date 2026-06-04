@@ -80,17 +80,28 @@ class InventoryService {
                     company_id: companyId,
                     org_node_id: nodeId, 
                     product_id: productId,
-                    serial_number: options.serialNumber || null
+                    serial_number: options.serialNumber || null,
+                    // Only touch items that are still physically present at this node
+                    status: { [Op.notIn]: ['discharged', 'decommissioned'] },
+                    quantity: { [Op.gt]: 0 }
                 },
                 transaction: options.transaction
             });
 
             if (!inventory) {
-                throw new Error('Inventory item not found');
+                const snPart = options.serialNumber ? ` (S/N: ${options.serialNumber})` : '';
+                throw new Error(
+                    `Item not found or already discharged${snPart}. ` +
+                    `It may have already been moved to another branch or discharged by a previous transaction.`
+                );
             }
 
             if (inventory.quantity < quantity) {
-                throw new Error('Insufficient inventory');
+                const snPart = options.serialNumber ? ` (S/N: ${options.serialNumber})` : '';
+                throw new Error(
+                    `Insufficient inventory${snPart}. ` +
+                    `Available: ${inventory.quantity}, Required: ${quantity}.`
+                );
             }
 
             const newQuantity = inventory.quantity - quantity;
@@ -147,11 +158,13 @@ class InventoryService {
 
             const oldStatus = inventory.status;
             
+            // Only update status and ownership — do NOT subtract quantity.
+            // The discharge flow already calls removeFromInventory() before creating
+            // assignments, so subtracting here causes a double-deduction.
             await inventory.update({
                 status: 'assigned',
                 assigned_to: userId,
                 assigned_at: new Date(),
-                quantity: Math.max(0, inventory.quantity - 1), // Decrease available count
                 assignment_notes: options.notes || 'Assigned via Request Approval'
             }, { transaction: options.transaction });
 
@@ -549,6 +562,56 @@ class InventoryService {
                 transaction: t 
             });
 
+            // ── PRE-VALIDATION: Check all serial numbers are still available BEFORE any writes ──
+            for (const item of items) {
+                const serialNumbers = item.serial_numbers || [];
+                if (serialNumbers.length > 0) {
+                    for (const sn of serialNumbers) {
+                        const inv = await Inventory.findOne({
+                            where: {
+                                company_id,
+                                org_node_id: dischargeForm.from_node_id,
+                                product_id: item.product_id,
+                                serial_number: sn,
+                                status: { [Op.notIn]: ['discharged', 'decommissioned'] },
+                                quantity: { [Op.gt]: 0 }
+                            },
+                            transaction: t
+                        });
+                        if (!inv) {
+                            const err = new Error(
+                                `Cannot execute discharge: Item with serial number "${sn}" is no longer available at this branch. ` +
+                                `It may have already been discharged or transferred by a previous transaction. ` +
+                                `Please reject this form and create a new discharge with currently available items.`
+                            );
+                            err.statusCode = 409;
+                            throw err;
+                        }
+                    }
+                } else {
+                    // Bulk (no serial): verify enough quantity exists
+                    const totalAvailable = await Inventory.sum('quantity', {
+                        where: {
+                            company_id,
+                            org_node_id: dischargeForm.from_node_id,
+                            product_id: item.product_id,
+                            status: { [Op.notIn]: ['discharged', 'decommissioned'] }
+                        },
+                        transaction: t
+                    }) || 0;
+                    if (totalAvailable < item.quantity) {
+                        const err = new Error(
+                            `Cannot execute discharge: Insufficient stock for product ID ${item.product_id}. ` +
+                            `Available: ${totalAvailable}, Required: ${item.quantity}. ` +
+                            `Please reject this form and create a new discharge with currently available items.`
+                        );
+                        err.statusCode = 409;
+                        throw err;
+                    }
+                }
+            }
+            // ── END PRE-VALIDATION ──
+
             for (const item of items) {
                 const targetUserId = item.to_user_id || dischargeForm.to_user_id;
                 const targetNodeId = item.to_node_id || dischargeForm.to_node_id;
@@ -592,38 +655,67 @@ class InventoryService {
                         );
                     }
                 } else if (isUserDischarge) {
-                    // 1. Subtract from source
+                    const targetUser = await User.findByPk(targetUserId, { transaction: t });
+
                     if (serialNumbers.length > 0) {
-                        for (const sn of serialNumbers) {
-                            await this.removeFromInventory(company_id, dischargeForm.from_node_id, item.product_id, 1, {
-                                userId: user.id,
-                                reference: `DISCHARGE-${dischargeForm.discharge_number}`,
-                                serialNumber: sn,
+                        // Serialized items: mark inventory record as 'assigned' (do NOT remove from total).
+                        // This keeps the item visible in the inventory ledger with status 'assigned to user'.
+                        for (let i = 0; i < serialNumbers.length; i++) {
+                            const sn = serialNumbers[i];
+                            const invRecord = await Inventory.findOne({
+                                where: {
+                                    company_id,
+                                    org_node_id: dischargeForm.from_node_id,
+                                    product_id: item.product_id,
+                                    serial_number: sn,
+                                    status: { [Op.notIn]: ['discharged', 'decommissioned', 'assigned'] }
+                                },
                                 transaction: t
                             });
+
+                            if (invRecord) {
+                                await invRecord.update({
+                                    status: 'assigned',
+                                    assigned_to: targetUserId,
+                                    assigned_at: new Date()
+                                }, { transaction: t });
+                            }
+
+                            await Assignment.create({
+                                company_id,
+                                discharge_item_id: item.id,
+                                product_id: item.product_id,
+                                user_id: targetUserId,
+                                org_node_id: targetUser ? targetUser.org_node_id : dischargeForm.from_node_id,
+                                serial_number: sn,
+                                inventory_id: invRecord ? invRecord.id : null,
+                                assigned_at: new Date(),
+                                status: 'active',
+                                condition_at_assignment: item.condition
+                            }, { transaction: t });
                         }
                     } else {
+                        // Bulk (non-serialized) items: remove from available stock as before.
+                        // Bulk items are fungible — no individual identity to track.
                         await this.removeFromInventory(company_id, dischargeForm.from_node_id, item.product_id, item.quantity, {
                             userId: user.id,
                             reference: `DISCHARGE-${dischargeForm.discharge_number}`,
                             transaction: t
                         });
-                    }
 
-                    // 2. Create assignments
-                    const targetUser = await User.findByPk(targetUserId, { transaction: t });
-                    for (let i = 0; i < item.quantity; i++) {
-                        await Assignment.create({
-                            company_id,
-                            discharge_item_id: item.id,
-                            product_id: item.product_id,
-                            user_id: targetUserId,
-                            org_node_id: targetUser ? targetUser.org_node_id : dischargeForm.from_node_id,
-                            serial_number: serialNumbers[i] || `SN-${Date.now()}-${item.id}-${i}`,
-                            assigned_at: new Date(),
-                            status: 'active',
-                            condition_at_assignment: item.condition
-                        }, { transaction: t });
+                        for (let i = 0; i < item.quantity; i++) {
+                            await Assignment.create({
+                                company_id,
+                                discharge_item_id: item.id,
+                                product_id: item.product_id,
+                                user_id: targetUserId,
+                                org_node_id: targetUser ? targetUser.org_node_id : dischargeForm.from_node_id,
+                                serial_number: `SN-${Date.now()}-${item.id}-${i}`,
+                                assigned_at: new Date(),
+                                status: 'active',
+                                condition_at_assignment: item.condition
+                            }, { transaction: t });
+                        }
                     }
                 } else {
                     // Generic release (no target) - just remove from source

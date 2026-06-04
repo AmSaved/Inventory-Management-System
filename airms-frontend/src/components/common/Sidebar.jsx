@@ -34,7 +34,7 @@ import {
   GitMerge,
   Undo2,
   Home,
-
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -42,6 +42,35 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // Optimized Sidebar Data Structure (Outside component to prevent re-creation)
 const MAJOR_CATEGORIES = [
+  {
+    id: 'governance-suite',
+    name: 'System Governance',
+    icon: <Compass size={18} />,
+    items: [
+      { name: 'Organization Hierarchy', href: '/dashboard?tab=structure', permissions: ['branch:read'], icon: <Map size={14} /> },
+      { name: 'Merge Branches', href: '/admin/merge-branches', permissions: ['branch:create'], icon: <GitMerge size={14} /> },
+      { name: 'Workflows', href: '/admin/workflows', permissions: ['workflow:manage'], icon: <Workflow size={14} /> },
+      { name: 'User Management', href: '/dashboard?tab=users', permissions: ['user:manage:all'], icon: <Users size={14} /> },
+      { name: 'Roles', href: '/dashboard?tab=roles', permissions: ['role:read'], icon: <ShieldCheck size={14} /> },
+      { name: 'Permissions', href: '/admin/permissions', permissions: ['permission:read'], icon: <Key size={14} /> },
+    ]
+  },
+  
+  {
+    id: 'logistics-suite',
+    name: 'Operations',
+    icon: <Zap size={18} />,
+    items: [
+      { name: 'Intake', href: '/store', permissions: ['stock:intake'], icon: <Store size={14} /> },
+      { name: 'Discharge', href: '/discharge', permissions: ['stock:discharge'], icon: <PackageCheck size={14} /> },
+      { name: 'Return', href: '/inventory/return', permissions: ['return:read'], icon: <RotateCcw size={14} /> },
+      { name: 'Transfer', href: '/transfers', permissions: ['stock:transfer'], icon: <ArrowLeftRight size={14} /> },
+      // { name: 'Report Center', href: '/issues', permissions: ['issue:read'], icon: <History size={14} /> },
+      { name: 'Inventories', href: '/inventory', permissions: ['inventory:view'], icon: <Package size={14} /> },
+      { name: 'Intake Form', href: '/dashboard?tab=products', permissions: ['product:read'], icon: <Boxes size={14} /> },
+      { name: 'Request Items', href: '/requests/new', permissions: ['request:create'], icon: <PlusSquare size={14} /> },
+    ]
+  },
   {
     id: 'approval-suite',
     name: 'Requests',
@@ -56,41 +85,26 @@ const MAJOR_CATEGORIES = [
     ]
   },
   {
-    id: 'governance-suite',
-    name: 'System Governance',
-    icon: <Compass size={18} />,
+    id: 'activity-suite',
+    name: 'Personal',
+    icon: <MessageSquare size={18} />,
     items: [
-      { name: 'Organization Hierarchy', href: '/dashboard?tab=structure', permissions: ['branch:read'], icon: <Map size={14} /> },
-      { name: 'Merge Branches', href: '/admin/merge-branches', permissions: ['branch:create'], icon: <GitMerge size={14} /> },
-      { name: 'Workflows', href: '/admin/workflows', permissions: ['workflow:manage'], icon: <Workflow size={14} /> },
-      { name: 'User Management', href: '/dashboard?tab=users', permissions: ['user:manage:all'], icon: <Users size={14} /> },
-      { name: 'Roles', href: '/dashboard?tab=roles', permissions: ['role:read'], icon: <ShieldCheck size={14} /> },
-      { name: 'Permissions', href: '/admin/permissions', permissions: ['permission:read'], icon: <Key size={14} /> },
+      { name: 'My Activity', href: '/my-activity', permissions: [], icon: <History size={14} /> },
+      { name: 'My Equipment', href: '/my-equipment', permissions: [], icon: <Package size={14} /> },
     ]
   },
-  {
-    id: 'logistics-suite',
-    name: 'Operations',
-    icon: <Zap size={18} />,
-    items: [
-      { name: 'Intake', href: '/store', permissions: ['stock:intake'], icon: <Store size={14} /> },
-      { name: 'Discharge', href: '/discharge', permissions: ['stock:discharge'], icon: <PackageCheck size={14} /> },
-      { name: 'Return', href: '/inventory/return', permissions: ['return:read'], icon: <RotateCcw size={14} /> },
-      { name: 'Transfer', href: '/transfers', permissions: ['stock:transfer'], icon: <ArrowLeftRight size={14} /> },
-      { name: 'Report Center', href: '/issues', permissions: ['issue:read'], icon: <History size={14} /> },
-      { name: 'Inventories', href: '/inventory', permissions: ['inventory:view'], icon: <Package size={14} /> },
-      { name: 'Form Submissions', href: '/dashboard?tab=products', permissions: ['product:read'], icon: <Boxes size={14} /> },
-    ]
-  },
-  {
-    id: 'intel-suite',
-    name: 'Business Intel',
-    icon: <BarChart3 size={18} />,
-    items: [
-      { name: 'Request Items', href: '/requests/new', permissions: ['request:create'], icon: <PlusSquare size={14} /> },
-      { name: 'Reports', href: '/reports', permissions: ['report:view'], icon: <FileText size={14} /> },
-    ]
-  }
+  // {
+  //   id: 'intel-suite',
+  //   name: 'Business Intel',
+  //   icon: <BarChart3 size={18} />,
+  //   items: [
+  //     // { name: 'Request Items', href: '/requests/new', permissions: ['request:create'], icon: <PlusSquare size={14} /> },
+  //    /* The line `{ name: 'Reports', href: '/reports', permissions: ['report:view'], icon: <FileText
+  //    size={14} /> },` is defining an item in the 'Business Intel' major category of the Sidebar
+  //    component. */
+  //     { name: 'Reports', href: '/reports', permissions: ['report:view'], icon: <FileText size={14} /> },
+  //   ]
+  // }
 ];
 
 
@@ -112,17 +126,39 @@ const Sidebar = ({ open }) => {
     return permissions.some(p => hasPermission(p));
   };
 
+  const checkActive = (href) => {
+    const currentPath = location.pathname + location.search;
+    if (href.includes('?')) {
+      return currentPath === href;
+    }
+    return location.pathname === href;
+  };
+
   return (
     <aside className={`fixed top-20 bottom-0 left-0 z-50 lg:z-30 w-64 transition-transform duration-300 ease-in-out border-r border-gray-200 bg-white ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
       <div className="h-full flex flex-col relative">
         <nav className="flex-1 px-4 py-6 overflow-y-auto space-y-6 custom-scrollbar relative z-10">
           {MAJOR_CATEGORIES.map((major) => {
-            const isInstitutionalOnly = user?.role?.level >= 100;
+            const isSuperAdmin = user?.role?.level >= 100 || 
+                                 user?.role?.name?.toLowerCase().includes('super') ||
+                                 user?.roles?.some(r => r.level >= 100 || r.name?.toLowerCase().includes('super'));
             const operationalSuites = ['approval-suite', 'logistics-suite'];
 
-            if (isInstitutionalOnly && operationalSuites.includes(major.id)) return null;
+            if (isSuperAdmin && operationalSuites.includes(major.id)) return null;
 
-            const visibleItems = major.items.filter(item => checkItemPermission(item.permissions));
+            // Superadmins don't manage org-level workflows or branch merges — filter those out
+            const superAdminExcludedItems = ['Merge Branches', 'Workflows'];
+            const items = (isSuperAdmin
+              ? major.items.filter(item => !superAdminExcludedItems.includes(item.name))
+              : major.items
+            ).map(item =>
+              isSuperAdmin && item.name === 'User Management'
+                ? { ...item, href: '/admin/users' }
+                : item
+            );
+
+            const visibleItems = items.filter(item => checkItemPermission(item.permissions));
+
             if (visibleItems.length === 0) return null;
 
             const isMajorExpanded = expandedMajors.includes(major.id);
@@ -150,33 +186,32 @@ const Sidebar = ({ open }) => {
                       exit={{ height: 0, opacity: 0 }}
                       className="space-y-1 pl-4 border-l border-white/5 ml-6"
                     >
-                      {visibleItems.map((item) => (
-                        <NavLink
-                          key={item.name}
-                          to={item.href}
-                          className={({ isActive }) => `
-                            flex items-center gap-4 px-5 py-3 rounded-2xl text-sm transition-all duration-300 relative group/link
-                            ${isActive
-                              ? 'bg-green-600 text-white font-bold shadow-lg shadow-green-500/20'
-                              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}
-                          `}
-                        >
-                          {({ isActive }) => (
-                            <>
-                              <div className={`transition-all duration-300 ${isActive ? 'text-white' : 'text-gray-400 group-hover/link:text-blue-600'}`}>
-                                {item.icon}
-                              </div>
-                              <span className="text-sm font-medium">{item.name}</span>
-                              {isActive && (
-                                <motion.div
-                                  layoutId="sidebar-active-dot"
-                                  className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full"
-                                />
-                              )}
-                            </>
-                          )}
-                        </NavLink>
-                      ))}
+                      {visibleItems.map((item) => {
+                        const isActive = checkActive(item.href);
+                        return (
+                          <NavLink
+                            key={item.name}
+                            to={item.href}
+                            className={`
+                              flex items-center gap-4 px-5 py-3 rounded-2xl text-sm transition-all duration-300 relative group/link
+                              ${isActive
+                                ? 'bg-green-600 text-white font-bold shadow-lg shadow-green-500/20'
+                                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}
+                            `}
+                          >
+                            <div className={`transition-all duration-300 ${isActive ? 'text-white' : 'text-gray-400 group-hover/link:text-blue-600'}`}>
+                              {item.icon}
+                            </div>
+                            <span className="text-sm font-medium">{item.name}</span>
+                            {isActive && (
+                              <motion.div
+                                layoutId="sidebar-active-dot"
+                                className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full"
+                              />
+                            )}
+                          </NavLink>
+                        );
+                      })}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -185,7 +220,7 @@ const Sidebar = ({ open }) => {
           })}
         </nav>
 
-        <div className="p-6 mt-auto border-t border-gray-100 relative z-10">
+        <div className="p-6 border-t border-gray-100 relative z-10">
           <button
             onClick={logout}
             className="w-full flex items-center gap-4 px-6 py-4 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-[1.5rem] transition-all duration-500 group"

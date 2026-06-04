@@ -113,7 +113,7 @@ const ReportsPage = () => {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-8 py-8 px-4 lg:px-6">
+    <div className="max-w-[1600px] mx-auto space-y-4 py-2 px-4 lg:px-6">
       {/* Premium Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-100 pb-6">
         <div className="space-y-2">
@@ -272,42 +272,41 @@ const ReportRenderer = ({ data, type }) => {
               <SummaryStat label="Total Quantity" value={data.summary?.total_quantity} color="emerald" />
               <SummaryStat label="Health Score" value="98.2%" color="amber" />
            </div>
-
-           <div className="overflow-hidden rounded-3xl border-2 border-slate-50">
-             <table className="min-w-full">
-                <thead className="bg-slate-50 border-b-2 border-slate-100">
-                  <tr>
-                    <th className="px-8 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Location</th>
-                    <th className="px-8 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</th>
-                    <th className="px-8 py-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Quantity</th>
-                    <th className="px-8 py-5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Valuation</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {data.items?.slice(0, 15).map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                      <td className="px-8 py-5">
-                         <div className="flex items-center gap-3">
-                           <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-                           <span className="text-xs font-black text-slate-950 uppercase">{item.organizationUnit?.name}</span>
-                         </div>
-                      </td>
-                      <td className="px-8 py-5">
-                         <div className="flex flex-col">
-                            <span className="text-xs font-bold text-slate-900 leading-none mb-1">{item.product?.name}</span>
-                            <span className="text-[9px] font-black text-slate-400 tracking-widest uppercase">{item.product?.sku}</span>
-                         </div>
-                      </td>
-                      <td className="px-8 py-5 text-center">
-                         <span className="font-black text-slate-900 tracking-tighter italic">{item.quantity}</span>
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                         <span className="font-black text-blue-600 tracking-tighter italic">{formatCurrency(item.total_value)}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-             </table>
+           <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <table className="w-full text-left">
+                 <thead>
+                   <tr className="bg-green-600 text-white">
+                     <th className="p-4 text-sm font-bold">Location</th>
+                     <th className="p-4 text-sm font-bold">Item Name</th>
+                     <th className="p-4 text-sm font-bold text-center">Quantity</th>
+                     <th className="p-4 text-sm font-bold text-right">Valuation</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                   {data.items?.slice(0, 15).map((item, idx) => (
+                     <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                       <td className="p-4 text-sm text-slate-600">
+                          <div className="flex items-center gap-3">
+                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                            <span className="text-xs font-black text-slate-950 uppercase">{item.organizationUnit?.name}</span>
+                          </div>
+                       </td>
+                       <td className="p-4 text-sm font-medium text-slate-900">
+                          <div className="flex flex-col">
+                             <span className="text-xs font-bold text-slate-900 leading-none mb-1">{item.product?.name}</span>
+                             <span className="text-[9px] font-black text-slate-400 tracking-widest uppercase">{item.product?.sku}</span>
+                          </div>
+                       </td>
+                       <td className="p-4 text-sm text-slate-600 text-center">
+                          <span className="font-black text-slate-900 tracking-tighter italic">{item.quantity}</span>
+                       </td>
+                       <td className="p-4 text-sm text-slate-600 text-right">
+                          <span className="font-black text-green-600 tracking-tighter italic">{formatCurrency(item.total_value)}</span>
+                       </td>
+                     </tr>
+                   ))}
+                 </tbody>
+              </table>
            </div>
         </div>
       </div>

@@ -138,91 +138,78 @@ const RolesPage = () => {
   }, {});
 
   return (
-    <div className="max-w-[1500px] mx-auto space-y-12 py-12 px-6 animate-fade-in text-slate-900">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8 border-b-2 border-slate-50 pb-12">
+    <div className="max-w-7xl mx-auto space-y-5 py-2 px-4">
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-slate-950 rounded-[32px] flex items-center justify-center shadow-2xl">
-            <Shield className="text-blue-400" size={32} />
+          <div className="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center">
+            <Shield size={20} />
           </div>
           <div>
-            <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic">Access Blueprints</h1>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] ml-1">Registered by Super Admin</p>
+            <h1 className="text-lg font-bold text-green-700">Roles Management</h1>
           </div>
         </div>
         <Button
           onClick={() => handleOpenModal()}
-          className="bg-blue-600 text-white h-16 px-10 rounded-3xl font-black uppercase text-xs tracking-widest shadow-xl"
+          className="bg-green-600 text-white h-9 px-4 rounded-lg font-bold text-sm hover:bg-green-700 transition-all shadow-sm"
         >
-          <Plus size={18} className="mr-3" /> Define New Role
+          + Define New Role
         </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6 items-center">
+      <div className="flex items-center gap-3">
         <div className="w-full max-w-md">
-            <Input
-              placeholder="Search by ID or Name..."
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  setSearch(searchValue);
-                }
-              }}
-              className="bg-gray-50 border-none shadow-inner"
-            />
-            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2 ml-2">Press Enter to Filter Roles</p>
-          </div>
+          <Input
+            placeholder="Search roles..."
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') setSearch(searchValue); }}
+            className="bg-gray-50 border-none shadow-inner"
+          />
+        </div>
+        <span className="text-sm text-slate-400">{filteredRoles.length} role{filteredRoles.length !== 1 ? 's' : ''}</span>
       </div>
 
-      <Card className="rounded-[40px] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-slate-100">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 border-b-2 border-slate-100">
-                <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">Role Name</th>
-                <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">Role Description</th>
-                <th className="p-8 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-green-600 text-white">
+              <th className="p-4 text-sm font-bold">Role Name</th>
+              <th className="p-4 text-sm font-bold">Level</th>
+              <th className="p-4 text-sm font-bold">Description</th>
+              <th className="p-4 text-sm font-bold text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr>
+                <td colSpan="4" className="p-12 text-center flex justify-center"><LoadingSpinner /></td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr>
-                  <td colSpan="3" className="p-12 text-center flex justify-center"><LoadingSpinner /></td>
-                </tr>
-              ) : filteredRoles.length === 0 ? (
-                <tr>
-                  <td colSpan="3" className="p-12 text-center text-slate-400 italic">No blueprints established yet.</td>
-                </tr>
-              ) : (
-                filteredRoles.map((role) => (
-                <tr key={role.id} className="group hover:bg-slate-50/80 transition-all duration-300">
-                  <td className="p-8">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-white rounded-2xl border-2 border-slate-100 flex items-center justify-center shadow-sm group-hover:scale-110 group-hover:border-blue-200 transition-all">
-                        <Lock className="text-slate-400 group-hover:text-blue-500" size={20} />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-[10px] tracking-tight uppercase italic">{role.name}</h4>
-                        <p className="text-[11px] text-blue-500 font-black uppercase tracking-widest mt-1">LVL-{role.level} Access Protocol</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-8">
-                      <h4 className="font-black text-slate-500 text-sm tracking-tight uppercase italic opacity-70">{role.description}</h4>
-                  </td>
-                  <td className="p-8 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all duration-300">
-                      <Button variant="ghost" onClick={() => handleOpenModal(role)} className="h-12 w-12 p-0 rounded-2xl bg-amber-50 text-amber-600 border-2 border-amber-100"><Edit3 size={18} /></Button>
-                      <Button variant="ghost" onClick={() => handleDelete(role.id)} className="h-12 w-12 p-0 rounded-2xl bg-rose-50 text-rose-600 border-2 border-rose-100"><Trash2 size={18} /></Button>
+            ) : filteredRoles.length === 0 ? (
+              <tr>
+                <td colSpan="4" className="p-12 text-center text-slate-400 text-sm">No roles found.</td>
+              </tr>
+            ) : (
+              filteredRoles.map((role) => (
+                <tr key={role.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="p-4 text-sm font-medium text-slate-900">{role.name.replace(/_/g, ' ')}</td>
+                  <td className="p-4 text-sm text-slate-600">Level {role.level}</td>
+                  <td className="p-4 text-sm text-slate-600">{role.description || '—'}</td>
+                  <td className="p-4 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => handleOpenModal(role)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Edit">
+                        <Edit3 size={16} />
+                      </button>
+                      <button onClick={() => handleDelete(role.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </td>
                 </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <Modal
         isOpen={modalOpen}

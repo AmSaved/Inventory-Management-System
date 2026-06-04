@@ -55,6 +55,9 @@ Inventory.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasMany(FormTemplate, { foreignKey: 'company_id', as: 'formTemplates' });
 FormTemplate.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
+FormTemplate.belongsTo(OrganizationNode, { foreignKey: 'org_node_id', as: 'organizationNode' });
+OrganizationNode.hasMany(FormTemplate, { foreignKey: 'org_node_id', as: 'formTemplates' });
+
 // ============================================
 // Organization Hierarchy Associations
 // ============================================
@@ -63,6 +66,10 @@ OrganizationNode.belongsTo(OrganizationType, { foreignKey: 'org_type_id', as: 't
 
 OrganizationNode.hasMany(OrganizationNode, { foreignKey: 'parent_id', as: 'children' });
 OrganizationNode.belongsTo(OrganizationNode, { foreignKey: 'parent_id', as: 'parent' });
+
+// Node Manager association
+OrganizationNode.belongsTo(User, { foreignKey: 'manager_id', as: 'manager' });
+User.hasMany(OrganizationNode, { foreignKey: 'manager_id', as: 'managedNodes' });
 
 OrganizationNode.hasMany(User, { foreignKey: 'org_node_id', as: 'users' });
 User.belongsTo(OrganizationNode, { foreignKey: 'org_node_id', as: 'organizationNode' });
@@ -149,6 +156,8 @@ RolePermission.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
 // ============================================
 Product.hasMany(Inventory, { foreignKey: 'product_id', as: 'inventory' });
 Inventory.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+Inventory.belongsTo(User, { as: 'assignedUser', foreignKey: 'assigned_to' });
+User.hasMany(Inventory, { as: 'assignedInventory', foreignKey: 'assigned_to' });
 
 Product.hasMany(RequestItem, { foreignKey: 'product_id', as: 'requestItems' });
 RequestItem.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
@@ -263,6 +272,8 @@ Assignment.belongsTo(DischargeItem, { foreignKey: 'discharge_item_id', as: 'disc
 // Asset Tracking Associations
 // ============================================
 Assignment.belongsTo(OrganizationNode, { foreignKey: 'org_node_id', as: 'organizationNode' });
+Assignment.belongsTo(Inventory, { foreignKey: 'serial_number', targetKey: 'serial_number', as: 'inventory' });
+Inventory.hasMany(Assignment, { foreignKey: 'serial_number', sourceKey: 'serial_number', as: 'assignments' });
 
 Return.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Return.belongsTo(User, { as: 'receiver', foreignKey: 'received_by' });

@@ -1,5 +1,6 @@
 
-const { Request, RequestItem, Assignment, User, sequelize } = require('../models');
+const { Request, RequestItem, Assignment, User, Inventory, sequelize } = require('../models');
+const { Op } = require('sequelize');
 const inventoryService = require('./inventoryService');
 const logger = require('../config/logger');
 
@@ -87,17 +88,38 @@ class RequestService {
                             actual_return_date: new Date() 
                         }, { transaction: t });
                         
-                        await inventoryService.addToInventory(
-                            companyId, 
-                            assignment.org_node_id, 
-                            assignment.product_id, 
-                            1, 
-                            { 
-                                userId: effectorUser?.id, 
-                                reference: `RET-${request.request_number}`,
-                                transaction: t 
-                            }
-                        );
+                        const inventoryItem = await Inventory.findOne({
+                            where: {
+                                company_id: companyId,
+                                [Op.or]: [
+                                    { id: assignment.inventory_id || 0 },
+                                    { serial_number: assignment.serial_number }
+                                ]
+                            },
+                            transaction: t
+                        });
+
+                        if (inventoryItem) {
+                            await inventoryItem.update({
+                                status: 'available',
+                                assigned_to: null,
+                                assigned_at: null,
+                                org_node_id: assignment.org_node_id,
+                                condition: logisticsNotes.condition || inventoryItem.condition
+                            }, { transaction: t });
+                        } else {
+                            await inventoryService.addToInventory(
+                                companyId, 
+                                assignment.org_node_id, 
+                                assignment.product_id, 
+                                1, 
+                                { 
+                                    userId: effectorUser?.id, 
+                                    reference: `RET-${request.request_number}`,
+                                    transaction: t 
+                                }
+                            );
+                        }
                     }
                 }
             } else {

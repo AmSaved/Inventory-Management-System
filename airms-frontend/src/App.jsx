@@ -42,6 +42,8 @@ import WorkflowPage from './pages/WorkflowPage';
 import ApprovalLedgerPage from './pages/ApprovalLedgerPage';
 import BranchMergePage from './pages/BranchMergePage';
 import ReturnInventoryPage from './pages/ReturnInventoryPage';
+import MyActivityPage from './pages/MyActivityPage';
+import MyEquipmentPage from './pages/MyEquipmentPage';
 
 // Layouts
 import MainLayout from './layouts/MainLayout';
@@ -64,6 +66,8 @@ function App() {
             {/* Protected Routes (MainLayout) */}
             <Route element={<MainLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/my-activity" element={<MyActivityPage />} />
+              <Route path="/my-equipment" element={<MyEquipmentPage />} />
               <Route path="/requests" element={<RequestsPage />} />
               <Route path="/requests/:type" element={<ApprovalLedgerPage />} />
               <Route path="/inventory" element={<InventoryPage />} />

@@ -26,17 +26,18 @@ router.get('/number/:request_number', checkPermission('request:read'), requestCo
 
 router.post('/', 
     checkPermission('request:create'), 
+    validate(createRequestValidation),
     requestController.create
 );
 
 router.put('/:id', 
-    checkPermission('request:update'), 
+    checkAnyPermission(['request:update', 'request:create']), 
     validate(updateRequestValidation), 
     requestController.update
 );
 
 router.post('/:id/cancel', 
-    checkPermission('request:update'), 
+    checkAnyPermission(['request:update', 'request:create']), 
     validate(cancelRequestValidation), 
     requestController.cancel
 );

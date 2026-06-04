@@ -33,6 +33,35 @@ const userController = {
                                  permissions.includes('system:manage') || 
                                  permissions.includes('workflow:process');
             
+            const isActualSuperAdmin = (req.user.role && req.user.role.level >= 100) || permissions.includes('system:manage');
+            
+            if (isActualSuperAdmin && !org_node_id) {
+                // Find all superadmin roles (level >= 100)
+                const superRoles = await Role.findAll({
+                    where: { level: { [Op.gte]: 100 } },
+                    attributes: ['id']
+                });
+                const superRoleIds = superRoles.map(r => r.id);
+
+                // Find all users who hold a superadmin role
+                const superAdminUsers = await User.findAll({
+                    where: {
+                        role_id: { [Op.in]: superRoleIds }
+                    },
+                    attributes: ['id']
+                });
+                const superAdminIds = superAdminUsers.map(u => u.id);
+
+                // Filter to show only users created by a super admin, system-created seed accounts, or users with super admin roles
+                filters.custom_creator_filter = {
+                    [Op.or]: [
+                        { created_by: { [Op.in]: [...superAdminIds, req.user.id] } },
+                        { created_by: null },
+                        { role_id: { [Op.in]: superRoleIds } }
+                    ]
+                };
+            }
+
             // 1. Efficiently get authorized nodes (with resilient fallback)
             const allowedNodes = req.getAuthorizedNodes 
                 ? await req.getAuthorizedNodes() 
@@ -162,8 +191,8 @@ const userController = {
             const hasHighLevelPower = permissions.includes('role:manage:all') || permissions.includes('system:manage');
             if (userData.role_id && !hasHighLevelPower) {
                 const targetRole = await Role.findByPk(userData.role_id);
-                if (targetRole && targetRole.level >= (req.user.role?.level || 0)) {
-                    return res.status(403).json({ success: false, message: 'Access denied: Cannot assign a role with equal or higher authority than your own' });
+                if (targetRole && targetRole.level > (req.user.role?.level || 0)) {
+                    return res.status(403).json({ success: false, message: 'Access denied: Cannot assign a role with higher authority than your own' });
                 }
             }
 
@@ -240,8 +269,8 @@ const userController = {
             const hasHighLevelPower = permissions.includes('role:manage:all') || permissions.includes('system:manage');
             if (userData.role_id && !hasHighLevelPower) {
                 const targetRole = await Role.findByPk(userData.role_id);
-                if (targetRole && targetRole.level >= (req.user.role?.level || 0)) {
-                    return res.status(403).json({ success: false, message: 'Access denied: Cannot assign a role with equal or higher authority than your own' });
+                if (targetRole && targetRole.level > (req.user.role?.level || 0)) {
+                    return res.status(403).json({ success: false, message: 'Access denied: Cannot assign a role with higher authority than your own' });
                 }
             }
 

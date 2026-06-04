@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import Card, { CardContent, CardHeader, CardTitle } from '../components/ui/Card';
-import Button from '../components/ui/Button';
-import Input from '../components/ui/Input';
 import { useFetch } from '../hooks/useFetch';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import { AlertTriangle, Package, FileText, ChevronLeft, ArrowRight, ShieldAlert } from 'lucide-react';
 
 const ReportProblemPage = () => {
   const navigate = useNavigate();
@@ -14,126 +12,178 @@ const ReportProblemPage = () => {
   const [inventoryId, setInventoryId] = useState(searchParams.get('inventory_id') || '');
   const [description, setDescription] = useState('');
   const [urgency, setUrgency] = useState('medium');
-  
+  const [submitting, setSubmitting] = useState(false);
+
+  const isEdit = searchParams.get('edit') === 'true';
+  const requestId = searchParams.get('id');
+
   const { data: assignments } = useFetch('/assignments/my-assignments');
   const { data: inventoryItem } = useFetch(inventoryId ? `/inventory/${inventoryId}` : null);
+  const assignmentsList = Array.isArray(assignments?.data) ? assignments.data : (Array.isArray(assignments) ? assignments : []);
+
+  useEffect(() => {
+    if (isEdit && requestId) {
+      const fetchRequestForEdit = async () => {
+        try {
+          const res = await api.get(`/requests/${requestId}`);
+          const request = res.data.data;
+          let parsedNotes = {};
+          if (request.notes) {
+            try { parsedNotes = JSON.parse(request.notes); } catch {}
+          }
+          setAssignmentId(parsedNotes.assignment_id || '');
+          setInventoryId(parsedNotes.inventory_id || '');
+          setUrgency(parsedNotes.urgency || request.priority || 'medium');
+          let loadedDescription = '';
+          if (request.items?.length > 0) {
+            const itemNotes = request.items[0].notes || '';
+            loadedDescription = itemNotes.startsWith('Problem reported: ') ? itemNotes.replace('Problem reported: ', '') : itemNotes;
+          }
+          setDescription(loadedDescription);
+        } catch {
+          toast.error('Failed to load problem report details');
+        }
+      };
+      fetchRequestForEdit();
+    }
+  }, [isEdit, requestId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!assignmentId && !inventoryId) {
-      return toast.error('Please select an asset or stock item with a problem');
-    }
-
+    if (!assignmentId && !inventoryId) return toast.error('Please select an asset or stock item');
+    setSubmitting(true);
     try {
-      const selectedAssignment = assignments?.data?.find(a => a.id === parseInt(assignmentId));
-      
+      const selectedAssignment = assignmentsList.find(a => String(a.id) === String(assignmentId));
       const payload = {
-        request_type: 'report',
-        purpose: inventoryId 
-          ? `Issue Report for Inventory Item: ${inventoryItem?.product?.name}. Details: ${description}`
-          : `Issue Report for assigned asset: ${selectedAssignment?.product?.name} (SN: ${selectedAssignment?.serial_number}). Details: ${description}`,
+        purpose: inventoryId
+          ? `Issue Report for Inventory: ${inventoryItem?.product?.name || 'Stock'}. Details: ${description}`
+          : `Issue Report for asset: ${selectedAssignment?.product?.name || 'Asset'} (SN: ${selectedAssignment?.serial_number || 'N/A'}). Details: ${description}`,
         priority: urgency,
         items: [{
           product_id: inventoryId ? inventoryItem?.product_id : selectedAssignment?.product_id,
           quantity_requested: 1,
           notes: `Problem reported: ${description}`
         }],
-        notes: JSON.stringify({ 
-          assignment_id: assignmentId || null, 
-          inventory_id: inventoryId || null,
-          urgency 
-        })
+        notes: JSON.stringify({ assignment_id: assignmentId || null, inventory_id: inventoryId || null, urgency, description })
       };
-
-      await api.post('/requests', payload);
-      toast.success('Problem report submitted. A manager will review it soon.');
+      if (isEdit && requestId) {
+        await api.put(`/requests/${requestId}`, payload);
+        toast.success('Problem report updated successfully');
+      } else {
+        await api.post('/requests', { request_type: 'report', ...payload });
+        toast.success('Problem report submitted');
+      }
       navigate('/dashboard');
-    } catch (error) {
-      toast.error('Failed to submit report');
+    } catch {
+      toast.error(isEdit ? 'Failed to update problem report' : 'Failed to submit report');
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  const fieldClass = "w-full h-9 bg-gray-50 border border-gray-200 rounded-lg px-3 text-sm font-medium text-gray-800 outline-none focus:bg-white focus:border-rose-500 focus:ring-2 focus:ring-rose-50 transition-all";
+  const labelClass = "block text-xs font-semibold text-gray-500 mb-1.5";
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center space-x-2 text-gray-500 mb-4">
-         <button onClick={() => navigate(-1)} className="hover:text-primary-600 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-         </button>
-         <span className="text-sm font-medium">Back to Dashboard</span>
+    <div className="max-w-2xl mx-auto py-2 px-4 space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-rose-600 transition-colors">
+          <ChevronLeft size={14} /> Back
+        </button>
+        <span className="text-gray-200">|</span>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-rose-600 rounded-lg flex items-center justify-center">
+            <AlertTriangle className="text-white" size={13} />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-gray-900">{isEdit ? 'Edit Problem Report' : 'Report a Problem'}</h1>
+            <p className="text-xs text-gray-400">Report an issue with an asset or stock item</p>
+          </div>
+        </div>
       </div>
 
-      <h1 className="text-3xl font-bold text-gray-900 font-display text-center flex items-center justify-center space-x-3">
-         <svg className="w-8 h-8 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-         <span>Report Product Issue</span>
-      </h1>
-      
-      <Card className="shadow-lg border-rose-100">
-        <CardHeader className="bg-rose-50/30 border-b border-rose-100">
-          <CardTitle className="text-rose-800">Problem Details</CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Affected Resource</label>
-              {inventoryId ? (
-                <div className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 font-bold text-slate-700 flex items-center gap-3">
-                   <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                   </div>
-                   <span>Stock Item: {inventoryItem?.product?.name || 'Loading...'}</span>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+          {/* Asset selection */}
+          <div className="px-5 py-4 border-b border-gray-50">
+            <div className="flex items-center gap-2 mb-3">
+              <Package size={13} className="text-rose-500" />
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Affected Resource</span>
+            </div>
+
+            {inventoryId ? (
+              <div>
+                <label className={labelClass}>Stock Item</label>
+                <div className="w-full h-9 bg-gray-50 border border-gray-200 rounded-lg px-3 flex items-center text-sm font-medium text-gray-700">
+                  {inventoryItem?.product?.name || <span className="text-gray-400 italic">Loading...</span>}
                 </div>
-              ) : (
-                <select 
-                  className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-rose-500"
-                  value={assignmentId}
-                  onChange={(e) => setAssignmentId(e.target.value)}
-                  required
-                >
-                  <option value="">Select an asset...</option>
-                  {assignments?.data?.map(a => (
-                    <option key={a.id} value={a.id}>{a.product?.name} (SN: {a.serial_number})</option>
+              </div>
+            ) : (
+              <div>
+                <label className={labelClass}>Your Assigned Asset <span className="text-red-400">*</span></label>
+                <select className={fieldClass} value={assignmentId} onChange={(e) => setAssignmentId(e.target.value)} required>
+                  <option value="">Select asset with issue...</option>
+                  {assignmentsList.map(a => (
+                    <option key={a.id} value={a.id}>{a.product?.name} — {a.serial_number}</option>
                   ))}
                 </select>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Urgency</label>
-              <select 
-                className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-rose-500"
-                value={urgency}
-                onChange={(e) => setUrgency(e.target.value)}
-                required
-              >
-                <option value="low">Low - Minor Issue</option>
-                <option value="medium">Medium - Affecting Work</option>
-                <option value="high">High - Total Breakdown / Urgent Replacement Needed</option>
-              </select>
+          {/* Urgency */}
+          <div className="px-5 py-4 border-b border-gray-50">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldAlert size={13} className="text-rose-500" />
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Urgency Level</span>
             </div>
+            <label className={labelClass}>How urgent is this issue?</label>
+            <select className={fieldClass} value={urgency} onChange={(e) => setUrgency(e.target.value)} required>
+              <option value="low">Low – Minor issue, not blocking work</option>
+              <option value="medium">Medium – Affecting productivity</option>
+              <option value="high">High – Total breakdown / urgent replacement needed</option>
+            </select>
+          </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Description of Problem</label>
-              <textarea 
-                className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-rose-500 h-32"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what is wrong with the product. Be as specific as possible (e.g., 'The screen stays black after turning it on')..."
-                required
-              />
+          {/* Description */}
+          <div className="px-5 py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FileText size={13} className="text-rose-500" />
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Problem Description</span>
             </div>
+            <label className={labelClass}>Describe the issue <span className="text-red-400">*</span></label>
+            <textarea
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 outline-none focus:bg-white focus:border-rose-500 focus:ring-2 focus:ring-rose-50 transition-all resize-none"
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what is wrong. Be specific, e.g. 'Screen stays black after turning on'..."
+              required
+            />
+          </div>
+        </div>
 
-            <Button type="submit" size="lg" className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-4">
-               Submit Problem Report
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-      
-      <div className="text-center bg-gray-50 p-4 rounded-lg">
-         <p className="text-xs text-gray-500">
-            Reporting a problem creates an official maintenance request that will be reviewed by the backend team and storage manager.
-         </p>
-      </div>
+        {/* Notice */}
+        <div className="flex items-start gap-3 px-4 py-3 bg-rose-50 border border-rose-100 rounded-xl">
+          <AlertTriangle size={14} className="text-rose-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-rose-700 leading-relaxed">
+            Reporting a problem creates an official maintenance request. It will be reviewed by the backend team and storage manager.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-3">
+          <button type="button" onClick={() => navigate(-1)}
+            className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all">
+            Cancel
+          </button>
+          <button type="submit" disabled={submitting}
+            className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-all shadow-sm">
+            {submitting ? 'Submitting...' : isEdit ? 'Save Changes' : 'Submit Report'}
+            {!submitting && <ArrowRight size={14} />}
+          </button>
+        </div>
+      </form>
     </div>
   );
 };

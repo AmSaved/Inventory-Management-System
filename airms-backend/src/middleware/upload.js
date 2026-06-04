@@ -88,10 +88,13 @@ const handleUploadError = (err, req, res, next) => {
             message: err.message
         });
     } else if (err) {
-        return res.status(400).json({
-            success: false,
-            message: err.message
-        });
+        if (err.message === 'Invalid file type. Only images, documents, and spreadsheets are allowed.') {
+            return res.status(400).json({
+                success: false,
+                message: err.message
+            });
+        }
+        return next(err);
     }
     next();
 };

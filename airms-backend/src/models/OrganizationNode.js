@@ -90,6 +90,14 @@ const OrganizationNode = sequelize.define('OrganizationNode', {
                     .replace(/[^a-zA-Z0-9]/g, '')
                     .substring(0, 4)
                     .toUpperCase();
+
+                // If company_id is not available (e.g. bulk update partial instance), 
+                // fall back to timestamp-based code without uniqueness check
+                if (!node.company_id) {
+                    node.code = `${prefix}-${Date.now().toString().slice(-6)}`;
+                    return;
+                }
+
                 let isUnique = false;
                 let attempts = 0;
                 let generatedCode = '';

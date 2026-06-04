@@ -63,6 +63,10 @@ const Return = sequelize.define('Return', {
         type: DataTypes.STRING(100),
         defaultValue: 'pending'
     },
+    workflow_status: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
     workflow_id: {
         type: DataTypes.INTEGER,
         references: {

@@ -275,7 +275,6 @@ const RoleManagement = ({ onBack }) => {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-green-700">Role Management</h1>
-            <p className="text-sm text-slate-500 mt-1">This is the role management of the Oromia Transport Agency Super Admin</p>
           </div>
         </div>
         
@@ -337,9 +336,6 @@ const RoleManagement = ({ onBack }) => {
                       <button onClick={() => handleDelete(role.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                         <Trash2 size={16} />
                       </button>
-                      <button className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" title="Permissions">
-                        <ShieldCheck size={16} />
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -392,120 +388,142 @@ const RoleManagement = ({ onBack }) => {
         confirmText="Save"
         cancelText="Cancel"
         maxWidth="max-w-7xl"
+        titleExtra={
+          <div className="relative w-56">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search permissions..."
+              className="w-full h-8 bg-slate-100 rounded-lg pl-8 pr-3 text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-green-400 transition-all"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+        }
       >
-        <div className="space-y-10 p-2 overflow-y-auto max-h-[75vh] custom-scrollbar pr-4">
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-               <div className="xl:col-span-1 space-y-6">
-                  <div className="flex items-center gap-3 px-1">
-                     <Zap className="text-green-600" size={18} />
-                     <h4 className="text-sm font-bold text-slate-900">General Information</h4>
-                  </div>
-                  <Input label="Role Name" placeholder="e.g. branch_admin" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="bg-slate-50 border-none h-12 rounded-xl font-medium" />
-                  <div className="space-y-2">
-                     <label className="text-xs font-bold text-slate-500 ml-1">
-                        Authority Level (Max Allowed: {currentUser?.role?.level ?? 10})
-                     </label>
-                     <input 
-                        type="number" 
-                        min="0" 
-                        max={currentUser?.role?.level ?? 10} 
-                        className="w-full h-12 bg-slate-50 border-none rounded-xl px-4 font-medium text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-green-500 transition-all"
-                        placeholder="e.g. 10" 
-                        value={formData.level ?? 10} 
-                        onChange={e => {
-                           const val = parseInt(e.target.value, 10);
-                           const maxLevel = currentUser?.role?.level ?? 10;
-                           setFormData({
-                              ...formData, 
-                              level: isNaN(val) ? '' : Math.min(val, maxLevel)
-                           });
-                        }}
-                     />
-                  </div>
-                  <div className="space-y-2">
-                     <label className="text-xs font-bold text-slate-500 ml-1">Description</label>
-                     <textarea 
-                        className="w-full h-32 bg-slate-50 border-none rounded-xl p-4 font-medium text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-green-500 transition-all resize-none" 
-                        placeholder="Define the role's responsibilities..." 
-                        value={formData.description || ''} 
-                        onChange={e => setFormData({...formData, description: e.target.value})}
-                     />
-                  </div>
-               </div>
+        <div className="space-y-6 p-2 overflow-y-auto max-h-[78vh] custom-scrollbar pr-3">
 
-               <div className="xl:col-span-2 space-y-6">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-1">
-                     <div className="flex items-center gap-3">
-                        <ShieldCheck className="text-green-600" size={18} />
-                        <h4 className="text-sm font-bold text-slate-900">Permissions</h4>
-                     </div>
-                     <div className="relative w-full md:w-64">
-                        <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="text" placeholder="Search permissions..." className="w-full h-10 bg-slate-50 rounded-xl pl-10 pr-4 font-medium text-sm text-slate-900 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                     </div>
-                  </div>
-
-                  <div className="space-y-8">
-                     {Object.entries(groupedPermissions).map(([catName, { config, perms }]) => (
-                        <div key={catName} className="space-y-4">
-                           <div 
-                              className="flex items-center gap-4 group/header cursor-pointer select-none" 
-                              onClick={() => handleGroupToggle(perms)}
-                           >
-                              <div className="w-8 h-8 bg-green-50 text-green-600 rounded-lg flex items-center justify-center text-xs shadow-sm shadow-green-100/50">{config.icon}</div>
-                              <span className="text-sm font-bold text-slate-900 group-hover/header:text-green-600 transition-colors">{catName}</span>
-                              <div className="flex-1 h-px bg-slate-100 group-hover/header:bg-green-100 transition-colors" />
-                              
-                              <div className="flex items-center gap-3">
-                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover/header:text-green-600 transition-colors">
-                                    {perms.every(p => formData.permission_ids?.includes(p.id)) 
-                                       ? 'Deselect All' 
-                                       : perms.some(p => formData.permission_ids?.includes(p.id)) 
-                                       ? 'Select Remaining' 
-                                       : 'Select All Group'}
-                                 </span>
-                                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
-                                    perms.every(p => formData.permission_ids?.includes(p.id)) 
-                                       ? 'bg-green-600 text-white shadow-md shadow-green-200' 
-                                       : perms.some(p => formData.permission_ids?.includes(p.id)) 
-                                       ? 'bg-green-100 text-green-600 border border-green-300 shadow-inner' 
-                                       : 'bg-slate-50 text-slate-300 border border-slate-200 group-hover/header:border-green-300'
-                                 }`}>
-                                    {perms.every(p => formData.permission_ids?.includes(p.id)) 
-                                       ? <CheckCircle2 size={14} /> 
-                                       : perms.some(p => formData.permission_ids?.includes(p.id)) 
-                                       ? <div className="w-2 h-2 rounded-sm bg-green-600" /> 
-                                       : <Plus size={14} className="opacity-0 group-hover/header:opacity-100 text-green-500 transition-opacity" />
-                                    }
-                                 </div>
-                              </div>
-                           </div>
-                           
-                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {perms.map(perm => {
-                                 const active = formData.permission_ids?.includes(perm.id);
-                                 return (
-                                    <div 
-                                       key={perm.id} 
-                                       onClick={() => handlePermissionToggle(perm.id)}
-                                       className={`group p-4 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-between ${active ? 'bg-green-50 border-green-500 text-green-700' : 'bg-white border-slate-100 hover:border-green-200'}`}
-                                    >
-                                       <div className="flex-1">
-                                          <div className={`text-xs font-bold mb-1 ${active ? 'text-green-700' : 'text-slate-900'}`}>{perm.name}</div>
-                                          <div className="text-xs text-slate-500">{perm.description || 'System Access Token'}</div>
-                                       </div>
-                                       <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${active ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-300 group-hover:bg-green-100 group-hover:text-green-600'}`}>
-                                          {active ? <CheckCircle2 size={14} /> : <Plus size={14} />}
-                                       </div>
-                                    </div>
-                                 );
-                              })}
-                           </div>
-                        </div>
-                     ))}
-                  </div>
-               </div>
+          {/* ── ROW 1: Role Name · Authority Level · Description (horizontal) ── */}
+          <div className="grid grid-cols-3 gap-4">
+            {/* Role Name */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Role Name</label>
+              <input
+                type="text"
+                placeholder="e.g. branch_admin"
+                value={formData.name || ''}
+                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                className="w-full h-10 bg-slate-50 rounded-xl px-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-green-500 transition-all"
+              />
             </div>
+
+            {/* Authority Level */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">
+                Authority Level <span className="text-slate-300">(max {currentUser?.role?.level ?? 10})</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max={currentUser?.role?.level ?? 10}
+                placeholder="e.g. 10"
+                value={formData.level ?? 10}
+                onChange={e => {
+                  const val = parseInt(e.target.value, 10);
+                  const maxLevel = currentUser?.role?.level ?? 10;
+                  setFormData({ ...formData, level: isNaN(val) ? '' : Math.min(val, maxLevel) });
+                }}
+                className="w-full h-10 bg-slate-50 rounded-xl px-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-green-500 transition-all"
+              />
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Description</label>
+              <input
+                type="text"
+                placeholder="Define the role's responsibilities..."
+                value={formData.description || ''}
+                onChange={e => setFormData({ ...formData, description: e.target.value })}
+                className="w-full h-10 bg-slate-50 rounded-xl px-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-green-500 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* ── ROW 2: Permissions (3-column grid) ── */}
+          <div className="space-y-5 border-t border-slate-100 pt-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="text-green-600" size={15} />
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Permissions</h4>
+            </div>
+
+            <div className="space-y-6">
+              {Object.entries(groupedPermissions).map(([catName, { config, perms }]) => (
+                <div key={catName} className="space-y-3">
+                  {/* Category Header */}
+                  <div
+                    className="flex items-center gap-3 group/header cursor-pointer select-none"
+                    onClick={() => handleGroupToggle(perms)}
+                  >
+                    <div className="w-7 h-7 bg-green-50 text-green-600 rounded-lg flex items-center justify-center shadow-sm shadow-green-100/50">
+                      {config.icon}
+                    </div>
+                    <span className="text-xs font-bold text-slate-800 group-hover/header:text-green-600 transition-colors">{catName}</span>
+                    <div className="flex-1 h-px bg-slate-100 group-hover/header:bg-green-100 transition-colors" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover/header:text-green-600 transition-colors">
+                        {perms.every(p => formData.permission_ids?.includes(p.id))
+                          ? 'Deselect All'
+                          : perms.some(p => formData.permission_ids?.includes(p.id))
+                          ? 'Select Remaining'
+                          : 'Select All'}
+                      </span>
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${
+                        perms.every(p => formData.permission_ids?.includes(p.id))
+                          ? 'bg-green-600 text-white shadow-md shadow-green-200'
+                          : perms.some(p => formData.permission_ids?.includes(p.id))
+                          ? 'bg-green-100 text-green-600 border border-green-300'
+                          : 'bg-slate-50 text-slate-300 border border-slate-200 group-hover/header:border-green-300'
+                      }`}>
+                        {perms.every(p => formData.permission_ids?.includes(p.id))
+                          ? <CheckCircle2 size={12} />
+                          : perms.some(p => formData.permission_ids?.includes(p.id))
+                          ? <div className="w-1.5 h-1.5 rounded-sm bg-green-600" />
+                          : <Plus size={12} className="opacity-0 group-hover/header:opacity-100 text-green-500 transition-opacity" />
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Permission Cards — 3 columns */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {perms.map(perm => {
+                      const active = formData.permission_ids?.includes(perm.id);
+                      return (
+                        <div
+                          key={perm.id}
+                          onClick={() => handlePermissionToggle(perm.id)}
+                          className={`group p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between ${
+                            active ? 'bg-green-50 border-green-400 text-green-700' : 'bg-white border-slate-100 hover:border-green-200'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0 mr-2">
+                            <div className={`text-xs font-bold mb-0.5 truncate ${active ? 'text-green-700' : 'text-slate-800'}`}>{perm.name}</div>
+                            <div className="text-[11px] text-slate-400 leading-snug line-clamp-2">{perm.description || 'System Access Token'}</div>
+                          </div>
+                          <div className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center transition-all ${
+                            active ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-300 group-hover:bg-green-100 group-hover:text-green-600'
+                          }`}>
+                            {active ? <CheckCircle2 size={12} /> : <Plus size={12} />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

@@ -1,14 +1,15 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../../hooks/useFetch';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
+import Pagination from '../ui/Pagination';
 import Modal from '../common/Modal';
-import Input from '../ui/Input';
-import CascadingUnitSelector from '../common/CascadingUnitSelector';
 import userService from '../../services/userService';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../common/LoadingSpinner';
+import CascadingUnitSelector from '../common/CascadingUnitSelector';
 import { useAuth } from '../../hooks/useAuth';
 import QRCode from 'react-qr-code';
 import {
@@ -28,9 +29,14 @@ import {
   ShieldAlert,
   ArrowRight,
   ArrowLeft,
-  Eye,
   UserPlus,
-  MapPin
+  MapPin,
+  Power,
+  Eye,
+  EyeOff,
+  X,
+  Loader2,
+  Box
 } from 'lucide-react';
 
 const UserManagement = ({ orgNodeId, onBack }) => {
@@ -41,6 +47,7 @@ const UserManagement = ({ orgNodeId, onBack }) => {
   const [formData, setFormData] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -48,6 +55,33 @@ const UserManagement = ({ orgNodeId, onBack }) => {
   const [activeAssignments, setActiveAssignments] = useState([]);
   const [checkingAssignments, setCheckingAssignments] = useState(false);
   const [deletedUserIds, setDeletedUserIds] = useState([]);
+  const [showPassword, setShowPassword] = useState(false);
+  const [selectedUserForAssignments, setSelectedUserForAssignments] = useState(null);
+  const [assignmentsList, setAssignmentsList] = useState([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [assignmentsPanelOpen, setAssignmentsPanelOpen] = useState(false);
+
+  const handleShowAssignments = async (targetUser) => {
+    setSelectedUserForAssignments(targetUser);
+    setAssignmentsPanelOpen(true);
+    setAssignmentsLoading(true);
+    try {
+      const response = await userService.getActiveAssignments(targetUser.id);
+      setAssignmentsList(response || []);
+    } catch (error) {
+      console.error('Failed to load assignments:', error);
+      toast.error('Failed to load active assignments');
+      setAssignmentsList([]);
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  };
+
+  const handleCloseAssignments = () => {
+    setAssignmentsPanelOpen(false);
+    setSelectedUserForAssignments(null);
+    setAssignmentsList([]);
+  };
 
   const isSuperAdmin = user?.role?.level >= 100;
 
@@ -55,7 +89,12 @@ const UserManagement = ({ orgNodeId, onBack }) => {
   const userFetchUrl = useMemo(() => {
     let url = '/users';
     const params = new URLSearchParams();
+    params.append('page', String(page));
+    params.append('limit', '10');
 
+    if (search) {
+      params.append('search', search);
+    }
     if (orgNodeId) {
       params.append('org_node_id', orgNodeId);
     } else if (isSuperAdmin) {
@@ -64,25 +103,17 @@ const UserManagement = ({ orgNodeId, onBack }) => {
 
     const queryString = params.toString();
     return queryString ? `${url}?${queryString}` : url;
-  }, [orgNodeId, isSuperAdmin]);
+  }, [page, search, orgNodeId, isSuperAdmin]);
 
-  const { data: usersData, loading: usersLoading, refetch: refetchUsers } = useFetch(userFetchUrl);
+  const { data: usersData, pagination, loading: usersLoading, refetch: refetchUsers } = useFetch(userFetchUrl);
   const users = usersData?.data || usersData || [];
   const { data: roles } = useFetch('/roles');
+  const { data: nodesData } = useFetch('/organization/nodes');
+  const nodes = nodesData || [];
 
   const filteredUsers = useMemo(() => {
-    let result = users;
-    if (search) {
-      const term = search.toLowerCase();
-      result = users.filter(u =>
-        u.first_name?.toLowerCase().includes(term) ||
-        u.last_name?.toLowerCase().includes(term) ||
-        u.email?.toLowerCase().includes(term) ||
-        u.employee_id?.toLowerCase().includes(term)
-      );
-    }
-    return result.filter(u => !deletedUserIds.includes(u.id));
-  }, [users, search, deletedUserIds]);
+    return users.filter(u => !deletedUserIds.includes(u.id));
+  }, [users, deletedUserIds]);
 
   const handleOpenModal = (item = null) => {
     setEditingItem(item);
@@ -202,6 +233,18 @@ const UserManagement = ({ orgNodeId, onBack }) => {
 
   const isSuperAdminRole = roles?.filter(r => formData.role_ids?.includes(r.id)).some(r => r.level >= 100);
 
+  const handleToggleActive = async (targetUser) => {
+    const newValue = !targetUser.is_active;
+    try {
+      await userService.updateUser(targetUser.id, { is_active: newValue });
+      toast.success(`User ${newValue ? 'activated' : 'deactivated'}`);
+      refetchUsers();
+    } catch (error) {
+      console.error('Failed to toggle user status:', error);
+      toast.error('Failed to update user status');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-500">
       {/* HEADER SECTION */}
@@ -209,7 +252,8 @@ const UserManagement = ({ orgNodeId, onBack }) => {
         <div className="flex items-center gap-4">
           <button
             onClick={onBack || (() => navigate('/dashboard'))}
-            className="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center hover:bg-green-100 transition-colors"
+            className="w-10 h-10 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center hover:bg-slate-200 transition-colors"
+            title="Go back"
           >
             <ArrowLeft size={20} />
           </button>
@@ -231,6 +275,7 @@ const UserManagement = ({ orgNodeId, onBack }) => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   setSearch(searchTerm);
+                  setPage(1);
                 }
               }}
             />
@@ -253,6 +298,7 @@ const UserManagement = ({ orgNodeId, onBack }) => {
               <th className="p-4 text-sm font-bold">Full Name</th>
               <th className="p-4 text-sm font-bold">Email</th>
               <th className="p-4 text-sm font-bold">Phone Number</th>
+              <th className="p-4 text-sm font-bold">Branch</th>
               <th className="p-4 text-sm font-bold">Role</th>
               <th className="p-4 text-sm font-bold text-right">Actions</th>
             </tr>
@@ -260,31 +306,58 @@ const UserManagement = ({ orgNodeId, onBack }) => {
           <tbody className="divide-y divide-slate-100">
             {usersLoading ? (
               <tr>
-                <td colSpan="5" className="p-12 text-center flex justify-center"><LoadingSpinner /></td>
+                <td colSpan="6" className="p-12 text-center flex justify-center"><LoadingSpinner /></td>
               </tr>
             ) : filteredUsers.length === 0 ? (
               <tr>
-                <td colSpan="5" className="p-12 text-center text-slate-400 text-sm">No users found.</td>
+                <td colSpan="6" className="p-12 text-center text-slate-400 text-sm">No users found.</td>
               </tr>
             ) : (
               filteredUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="p-4 text-sm font-medium text-slate-900">{u.first_name} {u.last_name}</td>
+                  <td className="p-4 text-sm font-semibold text-slate-900">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-green-50 rounded-xl flex items-center justify-center text-green-600 font-bold text-sm shrink-0">
+                        {u.first_name?.charAt(0) || u.username?.charAt(0) || '?'}
+                      </div>
+                      <span className="font-bold text-slate-800">
+                        {u.first_name} {u.last_name}
+                      </span>
+                    </div>
+                  </td>
                   <td className="p-4 text-sm text-slate-600">{u.email}</td>
                   <td className="p-4 text-sm text-slate-600">{u.phone || 'N/A'}</td>
+                  <td className="p-4 text-sm text-slate-600">
+                    {u.organizationNode?.name || <span className="italic text-slate-300">—</span>}
+                  </td>
                   <td className="p-4 text-sm text-slate-600">
                     {u.roles?.map(r => r.name?.replace('_', ' ')).join(', ') || 'Staff'}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => handleShowAssignments(u)}
+                        className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="View Assigned Items"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleToggleActive(u)}
+                        title={u.is_active ? 'Deactivate User' : 'Activate User'}
+                        className={`p-2 rounded-lg transition-colors ${
+                          u.is_active
+                            ? 'text-emerald-600 hover:bg-emerald-50'
+                            : 'text-slate-400 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Power size={16} />
+                      </button>
                       <button onClick={() => handleOpenModal(u)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Edit">
                         <Edit3 size={16} />
                       </button>
                       <button onClick={() => initiateDelete(u)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete" disabled={checkingAssignments}>
                         <Trash2 size={16} />
-                      </button>
-                      <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="View/Toggle">
-                        <Eye size={16} />
                       </button>
                     </div>
                   </td>
@@ -293,6 +366,11 @@ const UserManagement = ({ orgNodeId, onBack }) => {
             )}
           </tbody>
         </table>
+        {pagination && (
+          <div className="p-4 border-t border-slate-100 flex justify-center">
+            <Pagination pagination={pagination} onPageChange={setPage} />
+          </div>
+        )}
       </div>
 
       {/* PROVISIONING MODAL */}
@@ -303,103 +381,96 @@ const UserManagement = ({ orgNodeId, onBack }) => {
         onConfirm={handleSubmit}
         confirmText="Save"
         cancelText="Cancel"
-        maxWidth="max-w-4xl"
+        maxWidth="max-w-3xl"
+        overflowVisible={true}
       >
-        <div className="space-y-10 p-2 overflow-y-auto max-h-[70vh] custom-scrollbar pr-4">
-          {/* SECTION 1: IDENTITY */}
-          <div className="space-y-6">
-            {/* <div className="flex items-center gap-3 px-2">
-              <Fingerprint className="text-blue-600" size={20} />
-
-            </div> */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Input label="First Name" value={formData.first_name || ''} onChange={e => setFormData({ ...formData, first_name: e.target.value })} className="bg-slate-50 border-none rounded-2xl h-14 font-black" />
-              <Input label="Last Name" value={formData.last_name || ''} onChange={e => setFormData({ ...formData, last_name: e.target.value })} className="bg-slate-50 border-none rounded-2xl h-14 font-black" />
-              <Input label="Email" type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="bg-slate-50 border-none rounded-2xl h-14 font-black" placeholder="j.doe@company.com" />
-              <Input label="Phone Number" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-slate-50 border-none rounded-2xl h-14 font-black" placeholder="+254 700 000 000" />
+        <div className="space-y-3 p-1">
+          {/* ROW 1: First Name | Last Name | Phone */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">First Name</label>
+              <input className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-green-300" value={formData.first_name || ''} onChange={e => setFormData({ ...formData, first_name: e.target.value })} placeholder="First name" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Last Name</label>
+              <input className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-green-300" value={formData.last_name || ''} onChange={e => setFormData({ ...formData, last_name: e.target.value })} placeholder="Last name" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Phone</label>
+              <input className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-green-300" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+254 700 000 000" />
             </div>
           </div>
 
-          {/* SECTION 2: SECURITY & ROLE */}
-          <div className="space-y-6 pt-6 border-t border-slate-100">
-            {/* <div className="flex items-center gap-3 px-2">
-              <ShieldAlert className="text-blue-600" size={20} />
+          {/* ROW 2: Email | Password */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Email</label>
+              <input type="email" className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-green-300" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="j.doe@company.com" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-3 pr-9 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-green-300"
+                  value={formData.password || ''}
+                  onChange={e => setFormData({ ...formData, password: e.target.value })}
+                  placeholder={editingItem ? 'Leave blank to keep' : '••••••••'}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+          </div>
 
-            </div> */}
-
-            <Input
-              label={editingItem ? "Password" : "Passoword"}
-              type="password"
-              value={formData.password || ''}
-              onChange={e => setFormData({ ...formData, password: e.target.value })}
-              className="bg-slate-950 text-black border-none rounded-2xl h-14 font-black placeholder:text-slate-700"
-              placeholder={editingItem ? "••••••••" : "********"}
-            />
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">Assign Roles</label>
+          {/* ROW 3: Assign Roles (cols 1 & 2) and Branch / Node (col 3) */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1 col-span-2 relative">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Assign Roles</label>
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl h-14 px-5 font-bold text-sm text-slate-700 focus:ring-2 focus:ring-green-500 outline-none flex items-center justify-between transition-all cursor-pointer"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg h-9 px-3 font-semibold text-sm text-slate-700 focus:ring-2 focus:ring-green-300 outline-none flex items-center justify-between cursor-pointer"
                 >
-                  <span className="truncate">
+                  <span className="truncate text-sm">
                     {formData.role_ids && formData.role_ids.length > 0
-                      ? roles
-                        ?.filter(r => formData.role_ids.includes(r.id))
-                        .map(r => r.name.toUpperCase().replace('_', ' '))
-                        .join(', ')
+                      ? roles?.filter(r => formData.role_ids.includes(r.id)).map(r => r.name).join(', ')
                       : 'Select Roles...'}
                   </span>
-                  <svg
-                    className={`h-5 w-5 text-slate-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
+                  <svg className={`h-4 w-4 text-slate-400 transition-transform shrink-0 ml-2 ${roleDropdownOpen ? 'rotate-180' : ''}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                 </button>
-
                 {roleDropdownOpen && (
                   <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setRoleDropdownOpen(false)}
-                    />
-
-                    <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-xl z-20 max-h-60 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                    <div className="fixed inset-0 z-10" onClick={() => setRoleDropdownOpen(false)} />
+                    {/* Opens UPWARD — bottom-full mb-1 — so it never covers Branch/Node or buttons */}
+                    <div className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-20 max-h-72 overflow-y-auto p-1.5 space-y-0.5">
                       {filteredRoles?.length === 0 ? (
-                        <div className="p-4 text-center text-slate-400 text-xs font-bold">
-                          No roles available in your scope
-                        </div>
+                        <div className="p-3 text-center text-slate-400 text-xs">No roles available</div>
                       ) : (
                         filteredRoles.map(role => {
                           const isChecked = formData.role_ids?.includes(role.id);
                           return (
-                            <div
-                              key={role.id}
-                              onClick={() => handleRoleToggle(role.id)}
-                              className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer select-none transition-all ${isChecked
-                                ? 'bg-green-50 text-green-700 font-bold'
-                                : 'hover:bg-slate-50 text-slate-700'
-                                }`}
+                            <div key={role.id} onClick={() => handleRoleToggle(role.id)}
+                              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ${
+                                isChecked ? 'bg-green-50 text-green-700 font-semibold' : 'hover:bg-slate-50 text-slate-700'
+                              }`}
                             >
-                              <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${isChecked
-                                ? 'bg-green-600 border-green-600 text-white'
-                                : 'border-slate-300 bg-white'
-                                }`}>
-                                {isChecked && <CheckCircle2 size={12} className="text-white" />}
+                              <div className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 transition-all ${
+                                isChecked ? 'bg-green-600 border-green-600' : 'border-slate-300 bg-white'
+                              }`}>
+                                {isChecked && <CheckCircle2 size={10} className="text-white" />}
                               </div>
-                              <div className="flex-1 text-xs">
-                                <span className="block font-bold">{role.name.toUpperCase().replace('_', ' ')}</span>
-                                <span className="block text-[10px] text-slate-500 font-normal">Level {role.level} • {role.description || 'Access Blueprint'}</span>
-                              </div>
+                              <span className="flex-1">{role.name}</span>
+                              <span className="text-xs text-slate-400 shrink-0">Lv.{role.level}</span>
                             </div>
                           );
                         })
@@ -409,34 +480,13 @@ const UserManagement = ({ orgNodeId, onBack }) => {
                 )}
               </div>
             </div>
-          </div>
 
-          {/* SECTION 3: DEPLOYMENT */}
-          <div className="space-y-6 pt-6 border-t border-slate-100">
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className={`space-y-3 transition-all duration-500 ${isSuperAdminRole ? 'opacity-30 grayscale pointer-events-none' : 'opacity-100'}`}>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">Node Assignment</label>
-                <CascadingUnitSelector
-                  value={formData.org_node_id}
-                  onChange={(id) => setFormData({ ...formData, org_node_id: id })}
-                  className="bg-slate-50 border-none h-14 rounded-2xl font-black"
-                />
-              </div>
-
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">Account Activation</label>
-                <div
-                  onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-                  className={`flex items-center gap-4 p-6 rounded-[2.5rem] border-2 transition-all cursor-pointer ${formData.is_active ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-lg shadow-emerald-100' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
-                >
-                  {formData.is_active ? <CheckCircle2 size={24} /> : <XCircle size={24} />}
-                  <div>
-                    <span className="block text-xs font-black uppercase tracking-widest">ACTIVE STATUS</span>
-
-                  </div>
-                </div>
-              </div>
+            <div className={`space-y-1 col-span-1 transition-all duration-300 ${isSuperAdminRole ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Branch / Node</label>
+              <CascadingUnitSelector
+                value={formData.org_node_id}
+                onChange={(nodeId) => setFormData({ ...formData, org_node_id: nodeId ? parseInt(nodeId) : null })}
+              />
             </div>
           </div>
         </div>
@@ -497,6 +547,120 @@ const UserManagement = ({ orgNodeId, onBack }) => {
           )}
         </div>
       </Modal>
+
+      {/* ACTIVE ASSIGNMENTS SLIDE-OVER PANEL */}
+      {assignmentsPanelOpen && createPortal(
+        <div className="fixed inset-0 z-50 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 overflow-hidden">
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300 ease-in-out opacity-100" 
+              onClick={handleCloseAssignments}
+            />
+
+            <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
+              <div className="pointer-events-auto w-screen max-w-md transform transition duration-300 ease-in-out translate-x-0">
+                <div className="flex h-full flex-col bg-white shadow-2xl overflow-y-auto">
+                  {/* Header */}
+                  <div className="px-6 py-6 bg-green-700 text-white flex items-center justify-between shrink-0">
+                    <div>
+                      <h2 className="text-lg font-bold flex items-center gap-2" id="slide-over-title">
+                        <Users size={18} /> Active Assignments
+                      </h2>
+                      {selectedUserForAssignments && (
+                        <p className="text-xs text-green-100 mt-1 font-semibold">
+                          {selectedUserForAssignments.first_name} {selectedUserForAssignments.last_name} ({selectedUserForAssignments.employee_id || 'System User'})
+                        </p>
+                      )}
+                    </div>
+                    <button 
+                      onClick={handleCloseAssignments} 
+                      className="p-1 rounded-full text-green-100 hover:text-white hover:bg-green-800 transition-colors focus:outline-none"
+                    >
+                      <X size={22} />
+                    </button>
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 py-6 px-6 bg-slate-50 overflow-y-auto">
+                    {assignmentsLoading ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-green-600">
+                        <Loader2 className="animate-spin mb-3" size={28} />
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading assignments...</p>
+                      </div>
+                    ) : assignmentsList.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-center p-4">
+                        <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-3">
+                          <Box size={24} />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-700">No Assignments</h3>
+                        <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
+                          This user does not currently hold any active assigned equipment.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {assignmentsList.map((assignment) => (
+                          <div key={assignment.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                            {/* Accent line */}
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500" />
+                            
+                            <div className="flex justify-between items-start gap-4">
+                              <div className="space-y-2">
+                                <div>
+                                  <h4 className="font-bold text-slate-800 text-sm leading-tight group-hover:text-green-700 transition-colors">
+                                    {assignment.product?.name || 'Unknown Item'}
+                                  </h4>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                                    {assignment.product?.sku || 'NO SKU'}
+                                  </p>
+                                </div>
+
+                                <div className="space-y-1.5 text-xs text-slate-600 font-medium">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Serial:</span>
+                                    <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{assignment.serial_number || 'N/A'}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Assigned:</span>
+                                    <span>{assignment.assigned_at ? new Date(assignment.assigned_at).toLocaleDateString() : 'N/A'}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Condition:</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      assignment.condition_at_assignment === 'new' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                      assignment.condition_at_assignment === 'good' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                      assignment.condition_at_assignment === 'fair' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                      'bg-rose-50 text-rose-700 border border-rose-200'
+                                    }`}>
+                                      {assignment.condition_at_assignment || 'good'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col items-center shrink-0 border border-slate-100 rounded-xl p-1.5 bg-slate-50/50 shadow-sm">
+                                <QRCode 
+                                  size={50} 
+                                  value={`${window.location.origin}/inventory/${assignment.product_id}`} 
+                                  viewBox="0 0 256 256" 
+                                  style={{ height: 'auto', maxWidth: '100%', width: '100%' }} 
+                                />
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-wider mt-1">QR Link</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

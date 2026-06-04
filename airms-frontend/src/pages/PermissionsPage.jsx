@@ -3,7 +3,7 @@ import PermissionManagement from '../components/admin/PermissionManagement';
 
 const PermissionsPage = () => {
   return (
-    <div className="max-w-[1200px] mx-auto py-10 px-6">
+    <div className="max-w-[1200px] mx-auto py-2 px-6">
       <PermissionManagement />
     </div>
   );

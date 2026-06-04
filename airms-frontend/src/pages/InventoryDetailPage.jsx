@@ -76,9 +76,7 @@ const InventoryDetailPage = () => {
                     {item.status.replace('_', ' ')}
                   </span>
                 </h1>
-                <p className="text-xs font-semibold text-slate-400 mt-1">
-                  Registered ID: {item.id}
-                </p>
+
               </div>
             </div>
             
@@ -95,7 +93,7 @@ const InventoryDetailPage = () => {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-6">
+      <div className="max-w-5xl mx-auto px-4 py-2">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           
           {/* Left Column: Specs & Details */}
@@ -124,18 +122,7 @@ const InventoryDetailPage = () => {
                     </label>
                     <p className="text-sm font-bold text-slate-900">{item.serial_number || 'N/A'}</p>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
-                      <Hash size={12} /> Batch / Lot
-                    </label>
-                    <p className="text-sm font-bold text-slate-900">{item.batch_number || 'N/A'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
-                      <Tag size={12} /> Stock Keeping Unit (SKU)
-                    </label>
-                    <p className="text-sm font-bold text-slate-900">{item.product?.sku}</p>
-                  </div>
+
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                       <Activity size={12} /> Condition
@@ -160,7 +147,6 @@ const InventoryDetailPage = () => {
                       <Building2 size={12} /> Assigned Branch
                     </label>
                     <p className="text-sm font-bold text-slate-900">{item.organizationNode?.name}</p>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase">{item.organizationNode?.code}</p>
                   </div>
                   
                   <div className="space-y-1">

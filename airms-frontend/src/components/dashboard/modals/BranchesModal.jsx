@@ -30,9 +30,7 @@ const BranchesModal = ({ branches, onClose, onSelect }) => {
                 </div>
                 <div>
                   <h3 className="font-bold text-lg text-slate-800 group-hover:text-blue-800 transition-colors">{branch.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                     <span className="text-[10px] font-black uppercase text-blue-500 bg-blue-50 px-2 py-0.5 rounded tracking-wider">{branch.code}</span>
-                  </div>
+
                 </div>
               </div>
               <div className="mt-4 md:mt-0 px-4">

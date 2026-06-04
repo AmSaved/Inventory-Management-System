@@ -112,7 +112,7 @@ const Header = ({ setSidebarOpen }) => {
               id: `fulfill-${req.id}`,
               type: 'fulfillment',
               title: 'Action Required',
-              description: `Request ${req.request_number} is awaiting receipt. Click to acknowledge.`,
+              description: `A request is awaiting receipt. Click to acknowledge.`,
               time: new Date(req.updated_at || req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               link: '/dashboard',
               raw: req
@@ -176,7 +176,7 @@ const Header = ({ setSidebarOpen }) => {
                 <input
                   id="search"
                   className="block w-full bg-slate-50/50 border border-slate-200 rounded-xl py-2 pl-4 pr-10 text-xs placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 shadow-sm transition-all"
-                  placeholder="Type to search assets, serials, SKUs or pages..."
+                  placeholder="Type to search assets, serials or pages..."
                   type="search"
                   name="search"
                   value={searchQuery}
@@ -248,7 +248,6 @@ const Header = ({ setSidebarOpen }) => {
                               </div>
                               <div className="text-[10px] text-slate-500 flex justify-between font-medium">
                                 <span>SN: {item.serial_number || 'N/A'}</span>
-                                <span>SKU: {item.product?.sku || 'N/A'}</span>
                               </div>
                             </button>
                           ))
@@ -352,7 +351,9 @@ const Header = ({ setSidebarOpen }) => {
                     {user?.first_name} {user?.last_name}
                   </span>
                   <span className="text-[10px] md:text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">
-                    {user?.role?.name?.replace(/_/g, ' ') || "USER"}
+                    {user?.roles && user.roles.length > 0 
+                      ? user.roles.map(r => r.name?.replace(/_/g, ' ')).join(', ') 
+                      : (user?.role?.name?.replace(/_/g, ' ') || "USER")}
                   </span>
                 </div>
                 

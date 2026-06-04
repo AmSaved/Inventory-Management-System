@@ -1,9 +1,44 @@
-const { FormTemplate } = require('../models');
+const { FormTemplate, OrganizationNode } = require('../models');
+const { Op } = require('sequelize');
+const hierarchyService = require('../services/hierarchyService');
+
+/**
+ * Resolve the org_node_id to scope a template to.
+ * Super admins (no org_node_id) → null (company-wide).
+ * Branch users → root node of their hierarchy.
+ */
+async function resolveTemplateOrgNode(user) {
+    if (!user.org_node_id) return null;
+    try {
+        const breadcrumb = await hierarchyService.getBreadcrumb(user.org_node_id);
+        if (breadcrumb && breadcrumb.length > 0) {
+            return breadcrumb[0].id; // root node of user's hierarchy
+        }
+    } catch (e) {
+        // Ignore and fall back to null
+    }
+    return user.org_node_id;
+}
+
+async function buildOrgNodeFilter(user) {
+    if (!user.org_node_id) {
+        // Super admin: see all templates for this company (no org_node restriction)
+        return {};
+    }
+    const rootNodeId = await resolveTemplateOrgNode(user);
+    if (!rootNodeId) return { org_node_id: -1 }; // Force empty result if root node is not found
+
+    return {
+        org_node_id: rootNodeId
+    };
+}
 
 exports.createTemplate = async (req, res) => {
     try {
         const { name, template_key, module, schema, icon, description, is_active } = req.body;
-        
+
+        const org_node_id = await resolveTemplateOrgNode(req.user);
+
         const template = await FormTemplate.create({
             name,
             template_key: template_key || `tpl_${Date.now()}`,
@@ -12,7 +47,9 @@ exports.createTemplate = async (req, res) => {
             icon,
             description,
             is_active: is_active !== undefined ? is_active : true,
-            company_id: req.user.company_id
+            company_id: req.user.company_id,
+            org_node_id,
+            created_by: req.user.id
         });
 
         res.status(201).json({
@@ -32,8 +69,13 @@ exports.createTemplate = async (req, res) => {
 
 exports.getTemplates = async (req, res) => {
     try {
+        const orgNodeFilter = await buildOrgNodeFilter(req.user);
+
         const templates = await FormTemplate.findAll({
-            where: { company_id: req.user.company_id },
+            where: {
+                company_id: req.user.company_id,
+                ...orgNodeFilter
+            },
             order: [['module', 'ASC'], ['name', 'ASC']]
         });
 
@@ -54,11 +96,14 @@ exports.getTemplates = async (req, res) => {
 exports.getTemplateByCategory = async (req, res) => {
     try {
         const { category } = req.params;
+        const orgNodeFilter = await buildOrgNodeFilter(req.user);
+
         const template = await FormTemplate.findOne({
-            where: { 
+            where: {
                 module: category, // Mapping category param to module for compatibility
                 company_id: req.user.company_id,
-                is_active: true
+                is_active: true,
+                ...orgNodeFilter
             }
         });
 
@@ -157,12 +202,15 @@ exports.deleteTemplate = async (req, res) => {
 exports.getTemplateByModuleAndKey = async (req, res) => {
     try {
         const { module, key } = req.params;
+        const orgNodeFilter = await buildOrgNodeFilter(req.user);
+
         const template = await FormTemplate.findOne({
-            where: { 
+            where: {
                 module,
                 template_key: key,
                 company_id: req.user.company_id,
-                is_active: true
+                is_active: true,
+                ...orgNodeFilter
             }
         });
 

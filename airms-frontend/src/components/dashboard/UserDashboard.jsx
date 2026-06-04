@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getAssetName } from '../../utils/assetName';
 import Button from '../ui/Button';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -19,7 +20,8 @@ import {
   AlertTriangle,
   User as UserIcon,
   MessageSquare,
-  Package
+  Package,
+  Shield
 } from 'lucide-react';
 import Modal from '../common/Modal';
 
@@ -85,7 +87,7 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
     try {
       await api.post('/requests', {
         request_type: 'transfer',
-        purpose: `Instant Transfer: ${transferAsset?.product?.name}. Justification: ${reason}`,
+        purpose: `Instant Transfer: ${getAssetName(transferAsset)}. Justification: ${reason}`,
         priority: 'medium',
         items: [{
           product_id: transferAsset.product_id,
@@ -114,7 +116,7 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
     try {
       await api.post('/requests', {
         request_type: 'return',
-        purpose: `Instant Return: ${returnAsset?.product?.name}`,
+        purpose: `Instant Return: ${getAssetName(returnAsset)}`,
         priority: 'medium',
         items: [{
           product_id: returnAsset.product_id,
@@ -140,7 +142,7 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
     try {
       await api.post('/requests', {
         request_type: 'issue',
-        purpose: `Issue Report: ${reportAsset?.product?.name}`,
+        purpose: `Issue Report: ${getAssetName(reportAsset)}`,
         priority: 'high',
         items: [{
           product_id: reportAsset.product_id,
@@ -264,7 +266,10 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
                 </div>
 
                 <div>
-                  <h4 className="text-lg font-black text-slate-900 tracking-tight leading-tight mb-2 group-hover:text-blue-600 transition-colors">{item.product?.name}</h4>
+                  <h4 className="text-lg font-black text-slate-900 tracking-tight leading-tight mb-2 group-hover:text-blue-600 transition-colors">{getAssetName(item)}</h4>
+                  {getAssetName(item) !== item.product?.name && item.product?.name && (
+                    <p className="text-[10px] text-slate-400 font-medium mb-1.5">{item.product.name}</p>
+                  )}
                   <div className="flex items-center gap-3">
                     <div className="px-3 py-1 bg-slate-50 border border-slate-100 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-widest">
                       SN: {item.serial_number || 'ST-N/A'}
@@ -302,64 +307,10 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
         {/* RECENT REQUESTS - STREAM VIEW */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 pt-8">
           <div className="lg:col-span-2 space-y-8">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-500">
-                <MessageSquare size={18} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tight">Activity Stream</h3>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Lifecycle of your Resource Requests</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {requests.map((req) => (
-                <div key={req.id} className="group flex items-center justify-between p-6 bg-white rounded-[2rem] border border-slate-100 hover:shadow-[0_20px_50px_rgba(0,0,0,0.05)] hover:-translate-y-1 transition-all duration-300">
-                  <div className="flex items-center gap-6">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all duration-500 ${req.status === 'fulfilled' ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white' : 'bg-slate-50 text-slate-400 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                      <Package size={24} />
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-900 tracking-tight text-base mb-1">
-                        {req.items?.[0]?.product?.name || req.product?.name || 'System Request'}
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[9px] font-black text-blue-500 uppercase tracking-[0.2em]">{req.request_number}</span>
-                        <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest truncate max-w-[200px]">{req.reason || req.purpose}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <Badge
-                      variant={
-                        req.status?.toLowerCase() === 'pending' || req.status?.toLowerCase().startsWith('pending') ? 'yellow'
-                          : req.status?.toLowerCase() === 'fulfilled' ? 'success'
-                            : req.status?.toLowerCase() === 'approved' ? 'success'
-                              : req.status?.toLowerCase() === 'rejected' ? 'danger'
-                                : 'gray'
-                      }
-                      className="px-4 py-1 text-[9px] font-black tracking-widest"
-                    >
-                      {req.status?.toLowerCase() === 'fulfilled' ? 'DEPLOYED / RECEIVED'
-                        : ((req.workflow_status ? req.workflow_status.replace(/\s*\(.*?\)\s*/g, '').trim() : '') || (req.status || 'Unknown').replace('_', ' ')).toUpperCase()}
-                    </Badge>
-                    {(req.status?.toLowerCase() === 'approved' || req.status?.toLowerCase() === 'pending_acknowledgment') && (
-                      <button
-                        onClick={() => handleFulfill(req.id, req.status)}
-                        className="bg-slate-950 hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-2xl shadow-xl transition-all"
-                      >
-                        Acknowledge Receipt
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {requests.length === 0 && <p className="text-slate-400 italic text-sm text-center py-10">No recent activity detected.</p>}
-            </div>
+            {/* Main content area - Activity Stream would go here if needed */}
           </div>
 
-          {/* SIDEBAR WIDGET: HELP / PROTOCOL */}
+          {/* SIDEBAR: HELP / PROTOCOL */}
           <div className="space-y-6">
             <div className="p-10 bg-slate-950 rounded-[3rem] shadow-2xl relative overflow-hidden group">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-transparent opacity-50"></div>
@@ -380,7 +331,88 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
         </div>
       </div>
 
-      {/* Modals - Keeping them but ensuring they use the premium button style */}
+      {/* MY EQUIPMENT SECTION */}
+      {myAssignments && myAssignments.length > 0 && (
+        <div className="space-y-4 pt-4">
+           <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-3">
+                 <div className="w-1.5 h-6 bg-blue-600 rounded-full" />
+                 <div>
+                    <h3 className="text-lg font-bold text-slate-900">My Equipment</h3>
+                    <p className="text-xs font-medium text-slate-500">Physical assets currently in your custody</p>
+                 </div>
+              </div>
+           </div>
+           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                 <thead>
+                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                       <th className="px-6 py-3 text-xs font-semibold text-slate-500">Asset Detail</th>
+                       <th className="px-6 py-3 text-xs font-semibold text-slate-500">Serial</th>
+                       <th className="px-6 py-3 text-xs font-semibold text-slate-500">State</th>
+                       <th className="px-6 py-3 text-xs font-semibold text-slate-500">Custody Date</th>
+                       <th className="px-6 py-3 text-xs font-semibold text-slate-500 text-right">Actions</th>
+                    </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-50">
+                    {myAssignments.map(asset => (
+                       <tr key={asset.id} className="group hover:bg-blue-50/30 transition-colors">
+                          <td className="px-6 py-4">
+                             <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all"><Package size={18} /></div>
+                                <div>
+                                   <div className="text-sm font-medium text-slate-900">{asset.product?.name}</div>
+                                   <div className="text-[9px] font-bold text-blue-500 uppercase tracking-wider mt-0.5">{asset.product?.brand || 'ASSET'}</div>
+                                </div>
+                             </div>
+                          </td>
+                          <td className="px-6 py-4">
+                             <div className="text-[10px] font-bold text-slate-900 uppercase tracking-tight">{asset.serial_number}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                             <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                asset.condition === 'new' ? 'bg-emerald-50 text-emerald-600' : 
+                                asset.condition === 'good' ? 'bg-blue-50 text-blue-600' : 
+                                'bg-amber-50 text-amber-600'
+                             }`}>
+                                {asset.condition || 'STANDARD'}
+                             </span>
+                          </td>
+                          <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                             {new Date(asset.assigned_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                             <div className="flex justify-end gap-2">
+                                <button 
+                                  onClick={() => setTransferAsset(asset)}
+                                  title="Initiate Transfer"
+                                  className="w-8 h-8 flex items-center justify-center bg-blue-50 text-blue-600 rounded-lg hover:bg-slate-950 hover:text-blue-400 transition-all"
+                                >
+                                   <ArrowLeftRight size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => setReturnAsset(asset)}
+                                  title="Return to Store"
+                                  className="w-8 h-8 flex items-center justify-center bg-teal-50 text-teal-600 rounded-lg hover:bg-slate-950 hover:text-teal-400 transition-all"
+                                >
+                                   <RotateCcw size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => setReportAsset(asset)}
+                                  title="Report Issue"
+                                  className="w-8 h-8 flex items-center justify-center bg-rose-50 text-rose-600 rounded-lg hover:bg-slate-950 hover:text-rose-400 transition-all"
+                                >
+                                   <AlertTriangle size={14} />
+                                </button>
+                             </div>
+                          </td>
+                       </tr>
+                    ))}
+                 </tbody>
+              </table>
+           </div>
+        </div>
+      )}
       <Modal
         isOpen={!!transferAsset}
         onClose={() => setTransferAsset(null)}
@@ -396,7 +428,10 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
             </div>
             <div>
               <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1">Target Resource</div>
-              <div className="text-xl font-black text-slate-900 italic uppercase tracking-tighter leading-none">{transferAsset?.product?.name}</div>
+              <div className="text-xl font-black text-slate-900 italic uppercase tracking-tighter leading-none">{getAssetName(transferAsset)}</div>
+              {getAssetName(transferAsset) !== transferAsset?.product?.name && transferAsset?.product?.name && (
+                <div className="text-[10px] text-slate-400 font-medium mt-1">{transferAsset.product.name}</div>
+              )}
               <div className="text-[10px] font-mono text-slate-500 mt-2 font-bold uppercase tracking-widest bg-white/50 px-2 py-0.5 rounded-full inline-block">SN: {transferAsset?.serial_number}</div>
             </div>
           </div>
@@ -449,7 +484,10 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
             </div>
             <div>
               <div className="text-[10px] font-black text-teal-400 uppercase tracking-[0.3em] mb-1">Returning Unit</div>
-              <div className="text-xl font-black text-slate-900 italic uppercase tracking-tighter leading-none">{returnAsset?.product?.name}</div>
+              <div className="text-xl font-black text-slate-900 italic uppercase tracking-tighter leading-none">{getAssetName(returnAsset)}</div>
+              {getAssetName(returnAsset) !== returnAsset?.product?.name && returnAsset?.product?.name && (
+                <div className="text-[10px] text-teal-500 font-medium mt-1">{returnAsset.product.name}</div>
+              )}
             </div>
           </div>
 
@@ -483,7 +521,10 @@ const UserDashboard = ({ data, pendingApprovals = [], onActionRefetch }) => {
             </div>
             <div>
               <div className="text-[10px] font-black text-rose-400 uppercase tracking-[0.3em] mb-1">Incident Reference</div>
-              <div className="text-xl font-black text-slate-900 italic uppercase tracking-tighter leading-none">{reportAsset?.product?.name}</div>
+              <div className="text-xl font-black text-slate-900 italic uppercase tracking-tighter leading-none">{getAssetName(reportAsset)}</div>
+              {getAssetName(reportAsset) !== reportAsset?.product?.name && reportAsset?.product?.name && (
+                <div className="text-[10px] text-rose-500 font-medium mt-1">{reportAsset.product.name}</div>
+              )}
             </div>
           </div>
 

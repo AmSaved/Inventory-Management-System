@@ -163,10 +163,14 @@ const requestController = {
                 // Show buttons for ANY active status (not finished/rejected/cancelled)
                 const isActionable = !['fulfilled', 'completed', 'rejected', 'cancelled'].includes(status);
                 
-                // Pending acknowledgment: show Acknowledge Receipt button to recipient only
+                // Pending acknowledgment: show Acknowledge Receipt button to recipient only (or receiving branch for returns)
                 if (status === 'pending_acknowledgment' || status === 'pending acknowledgment') {
-                    const targetId = plain.target_user_id || plain.requester_id;
-                    plain.can_acknowledge = Number(targetId) === Number(req.user.id);
+                    if (plain.request_type === 'return') {
+                        plain.can_acknowledge = plain.org_node_id && (allowedNodes === null || allowedNodes.includes(Number(plain.org_node_id)));
+                    } else {
+                        const targetId = plain.target_user_id || plain.requester_id;
+                        plain.can_acknowledge = Number(targetId) === Number(req.user.id);
+                    }
                     plain.can_action = false;
                     plain.is_pending_acknowledgment = true;
                     return plain;
@@ -265,9 +269,14 @@ const requestController = {
             }
 
             const plain = request.get({ plain: true });
+
             if (plain.status === 'pending_acknowledgment') {
-                const targetId = plain.target_user_id || plain.requester_id;
-                plain.can_acknowledge = Number(targetId) === Number(req.user.id);
+                if (plain.request_type === 'return') {
+                    plain.can_acknowledge = plain.org_node_id && (allowedNodes === null || allowedNodes.includes(Number(plain.org_node_id)));
+                } else {
+                    const targetId = plain.target_user_id || plain.requester_id;
+                    plain.can_acknowledge = Number(targetId) === Number(req.user.id);
+                }
                 plain.can_action = false;
             } else if (plain.currentStep) {
                 plain.can_action = await workflowService.userCanApproveStep(req.user, request, plain.currentStep, permissions);
@@ -364,17 +373,45 @@ const requestController = {
      * Update request details.
      */
     async update(req, res, next) {
+        const t = await sequelize.transaction();
         try {
             const { id } = req.params;
-            const updates = req.body;
+            const { items, ...updates } = req.body;
             const company_id = req.user.company_id;
 
-            const request = await Request.findOne({ where: { id, company_id } });
+            const request = await Request.findOne({ where: { id, company_id }, transaction: t });
             if (!request) {
+                await t.rollback();
                 return res.status(404).json({ success: false, message: 'Request not found' });
             }
 
-            await request.update(updates);
+            // Strictly enforce requester ownership
+            if (Number(request.requester_id) !== Number(req.user.id)) {
+                await t.rollback();
+                return res.status(403).json({ success: false, message: 'Only the requester can update this request' });
+            }
+
+            // Only allow updating if request is in pending status
+            const status = (request.status || '').toLowerCase();
+            if (status !== 'pending' && !status.startsWith('pending')) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'Cannot edit request at current status' });
+            }
+
+            await request.update(updates, { transaction: t });
+
+            if (items) {
+                await RequestItem.destroy({ where: { request_id: id }, transaction: t });
+                if (items.length > 0) {
+                    const requestItems = items.map(item => ({
+                        ...item,
+                        request_id: id
+                    }));
+                    await RequestItem.bulkCreate(requestItems, { transaction: t });
+                }
+            }
+
+            await t.commit();
 
             // Background logging
             ActivityLog.create({
@@ -384,13 +421,15 @@ const requestController = {
                 action: 'UPDATE',
                 resource: 'requests',
                 resource_id: id,
-                details: updates,
+                details: req.body,
                 ip_address: req.ip,
                 user_agent: req.get('User-Agent')
             }).catch(err => logger.error(`Background activity logging failed for request update:`, err));
 
-            res.json({ success: true, message: 'Request updated successfully', data: request });
+            const reloadedRequest = await Request.findByPk(id, { include: ['items'] });
+            res.json({ success: true, message: 'Request updated successfully', data: reloadedRequest });
         } catch (error) {
+            await t.rollback();
             next(error);
         }
     },
@@ -409,19 +448,20 @@ const requestController = {
                 return res.status(404).json({ success: false, message: 'Request not found' });
             }
 
-            if (!['pending_chairman', 'pending_storage'].includes(request.status)) {
-                return res.status(400).json({ success: false, message: 'Cannot cancel request at current status' });
+            // Strictly enforce requester ownership
+            if (Number(request.requester_id) !== Number(req.user.id)) {
+                return res.status(403).json({ success: false, message: 'Only the requester can cancel this request' });
             }
 
-            const permissions = await getEffectivePermissions(req.user);
-            const canManageAll = permissions.includes('request:manage:all') || permissions.includes('system:manage');
-
-            if (request.requester_id !== req.user.id && !canManageAll && !permissions.includes('request:delete')) {
-                return res.status(403).json({ success: false, message: 'Not authorized to cancel this request' });
+            // Only allow cancellation if status starts with pending
+            const status = (request.status || '').toLowerCase();
+            if (status !== 'pending' && !status.startsWith('pending')) {
+                return res.status(400).json({ success: false, message: 'Cannot cancel request at current status' });
             }
 
             await request.update({
                 status: 'cancelled',
+                workflow_status: 'Cancelled',
                 cancelled_at: new Date(),
                 cancelled_by: req.user.id,
                 notes: reason
@@ -537,11 +577,24 @@ const requestController = {
                 return res.status(404).json({ success: false, message: 'Request not found or not awaiting acknowledgment' });
             }
 
-            // Security: Only the designated recipient may acknowledge
-            const targetUserId = request.target_user_id || request.requester_id;
-            if (Number(targetUserId) !== Number(req.user.id)) {
-                await t.rollback();
-                return res.status(403).json({ success: false, message: 'Only the designated recipient can acknowledge receipt' });
+            // Security: Only the designated recipient (or receiving branch personnel for returns) may acknowledge
+            if (request.request_type === 'return') {
+                const permissions = req.userPermissions || await getEffectivePermissions(req.user);
+                const allowedNodes = req.getAuthorizedNodes 
+                    ? await req.getAuthorizedNodes() 
+                    : await hierarchyService.getAllowedNodes(req.user, permissions);
+                const hasNodeAuthority = request.org_node_id && (allowedNodes === null || allowedNodes.includes(Number(request.org_node_id)));
+
+                if (!hasNodeAuthority) {
+                    await t.rollback();
+                    return res.status(403).json({ success: false, message: 'Only authorized personnel for the receiving branch can acknowledge this return.' });
+                }
+            } else {
+                const targetUserId = request.target_user_id || request.requester_id;
+                if (Number(targetUserId) !== Number(req.user.id)) {
+                    await t.rollback();
+                    return res.status(403).json({ success: false, message: 'Only the designated recipient can acknowledge receipt' });
+                }
             }
 
             // Retrieve allocations saved during final approval

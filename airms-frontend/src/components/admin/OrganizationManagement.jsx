@@ -120,6 +120,20 @@ const OrganizationManagement = () => {
     setModalOpen(true);
   };
 
+  const handleOpenRootModal = () => {
+    setEditingNode(null);
+    setModalParentNode(null);
+    const defaultType = types.find(t => t.name.toLowerCase().includes('headquarters') || t.name.toLowerCase().includes('root')) || types[0];
+    setFormData({
+      parent_id: null,
+      org_type_id: defaultType?.id || '',
+      can_store_inventory: true,
+      name: ''
+    });
+    setModalOpen(true);
+  };
+
+
   const handleTypeSubmit = async (e) => {
     e?.preventDefault();
     const loadingToast = toast.loading('Calibrating Blueprint...');
@@ -204,18 +218,17 @@ const OrganizationManagement = () => {
             <p className="text-sm text-slate-500 mt-1">Manage the organizational structure and nodes of the company</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          {isOrgAdmin && (
-            <Button
-              onClick={() => handleOpenNodeModal()}
-              className="bg-blue-600 text-white h-11 px-6 rounded-lg font-bold text-sm hover:bg-blue-700 transition-all shadow-sm flex items-center gap-2"
-            >
-              <Plus size={16} />
-              <span>{navigationStack.length > 0 ? 'Add Child Node' : (isSuperAdmin ? 'Add Root Org' : 'Add Sub-Unit')}</span>
-            </Button>
-          )}
-        </div>
+        {isSuperAdmin && (
+          <Button
+            onClick={handleOpenRootModal}
+            className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all"
+          >
+            <Plus size={16} />
+            <span>Create Root Org</span>
+          </Button>
+        )}
       </div>
+
 
       {/* BREADCRUMB COMMAND BAR */}
       <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center overflow-x-auto no-scrollbar gap-2">

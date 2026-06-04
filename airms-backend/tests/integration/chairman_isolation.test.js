@@ -3,6 +3,7 @@ const request = require('supertest');
 const app = require('../../src/app');
 const { 
   Request, 
+  RequestItem,
   User, 
   Role, 
   Company, 
@@ -11,9 +12,113 @@ const {
   Workflow, 
   WorkflowStep, 
   WorkflowRoute, 
+  Permission,
+  RolePermission,
+  Approval,
+  Assignment,
+  ActivityLog,
+  UserRole,
+  UserNode,
+  UserPermission,
+  Inventory,
+  DischargeForm,
+  DischargeItem,
+  Return,
+  ReturnItem,
+  Transfer,
+  TransferItem,
+  Issue,
+  StoreForm,
+  StoreItem,
+  WorkflowStatus,
+  FormTemplate,
+  Product,
   sequelize 
 } = require('../../src/models');
 const { generateToken } = require('../../src/utils/helpers');
+
+async function cleanupCompanyData(companyName) {
+  const company = await Company.findOne({ where: { name: companyName } });
+  if (!company) return;
+
+  const companyId = company.id;
+
+  await ActivityLog.destroy({ where: { company_id: companyId } });
+  await Issue.destroy({ where: { company_id: companyId } });
+  
+  const returns = await Return.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const returnIds = returns.map(r => r.id);
+  if (returnIds.length > 0) {
+    await ReturnItem.destroy({ where: { return_id: returnIds } });
+  }
+  await Return.destroy({ where: { company_id: companyId } });
+
+  const transfers = await Transfer.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const transferIds = transfers.map(t => t.id);
+  if (transferIds.length > 0) {
+    await TransferItem.destroy({ where: { transfer_id: transferIds } });
+  }
+  await Transfer.destroy({ where: { company_id: companyId } });
+
+  await Assignment.destroy({ where: { company_id: companyId } });
+
+  const dischargeForms = await DischargeForm.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const dischargeFormIds = dischargeForms.map(df => df.id);
+  if (dischargeFormIds.length > 0) {
+    await DischargeItem.destroy({ where: { discharge_form_id: dischargeFormIds } });
+  }
+  await DischargeForm.destroy({ where: { company_id: companyId } });
+
+  const storeForms = await StoreForm.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const storeFormIds = storeForms.map(sf => sf.id);
+  if (storeFormIds.length > 0) {
+    await StoreItem.destroy({ where: { store_form_id: storeFormIds } });
+  }
+  await StoreForm.destroy({ where: { company_id: companyId } });
+
+  const requests = await Request.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const requestIds = requests.map(r => r.id);
+  if (requestIds.length > 0) {
+    await RequestItem.destroy({ where: { request_id: requestIds } });
+    await Approval.destroy({ where: { request_id: requestIds } });
+  }
+  await Request.destroy({ where: { company_id: companyId } });
+
+  await Inventory.destroy({ where: { company_id: companyId } });
+
+  const workflows = await Workflow.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const workflowIds = workflows.map(w => w.id);
+  if (workflowIds.length > 0) {
+    await WorkflowRoute.destroy({ where: { workflow_id: workflowIds } });
+    await WorkflowStep.destroy({ where: { workflow_id: workflowIds } });
+  }
+  await Workflow.destroy({ where: { company_id: companyId } });
+  await WorkflowStatus.destroy({ where: { company_id: companyId } });
+
+  const users = await User.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const userIds = users.map(u => u.id);
+  if (userIds.length > 0) {
+    await UserRole.destroy({ where: { user_id: userIds } });
+    await UserNode.destroy({ where: { user_id: userIds } });
+    await UserPermission.destroy({ where: { user_id: userIds } });
+  }
+  await User.destroy({ where: { company_id: companyId } });
+
+  const roles = await Role.findAll({ where: { company_id: companyId }, attributes: ['id'] });
+  const roleIds = roles.map(r => r.id);
+  if (roleIds.length > 0) {
+    await RolePermission.destroy({ where: { role_id: roleIds } });
+  }
+  await Role.destroy({ where: { company_id: companyId } });
+
+  await FormTemplate.destroy({ where: { company_id: companyId } });
+  await Product.destroy({ where: { company_id: companyId } });
+  await OrganizationNode.destroy({ where: { company_id: companyId } });
+  await OrganizationType.destroy({ where: { company_id: companyId } });
+
+  await Company.destroy({ where: { id: companyId } });
+}
+
 
 // Mock notification service
 jest.mock('../../src/services/notificationService', () => ({
@@ -36,28 +141,43 @@ describe('Chairman Departmental Isolation Integration Tests', () => {
 
   beforeAll(async () => {
     await sequelize.authenticate();
+    await cleanupCompanyData('Chairman Isolation Test Company');
 
     // 1. Setup Company
-    company = await Company.findOne({ where: { name: 'Chairman Isolation Test Company' } }) 
-        || await Company.create({ name: 'Chairman Isolation Test Company' });
+    company = await Company.create({ name: 'Chairman Isolation Test Company' });
 
     // 2. Setup Hierarchy
-    orgType = await OrganizationType.findOne({ where: { company_id: company.id } }) 
-        || await OrganizationType.create({ name: 'Department Type', code: 'CI_DT', company_id: company.id });
+    orgType = await OrganizationType.create({ name: 'Department Type', code: 'CI_DT', company_id: company.id });
     
-    deptA = await OrganizationNode.findOne({ where: { name: 'Dept A', company_id: company.id } })
-        || await OrganizationNode.create({ name: 'Dept A', code: 'DA01', company_id: company.id, org_type_id: orgType.id });
+    deptA = await OrganizationNode.create({ name: 'Dept A', code: 'DA01', company_id: company.id, org_type_id: orgType.id });
     await deptA.update({ path: `/${deptA.id}/` });
 
-    deptB = await OrganizationNode.findOne({ where: { name: 'Dept B', company_id: company.id } })
-        || await OrganizationNode.create({ name: 'Dept B', code: 'DB01', company_id: company.id, org_type_id: orgType.id });
+    deptB = await OrganizationNode.create({ name: 'Dept B', code: 'DB01', company_id: company.id, org_type_id: orgType.id });
     await deptB.update({ path: `/${deptB.id}/` });
 
     // 3. Setup Roles
-    userRole = await Role.findOne({ where: { name: 'user_ci_role', company_id: company.id } })
-        || await Role.create({ name: 'user_ci_role', level: 20, company_id: company.id });
-    chairmanRole = await Role.findOne({ where: { name: 'chairman_ci_role', company_id: company.id } })
-        || await Role.create({ name: 'chairman_ci_role', level: 80, company_id: company.id });
+    userRole = await Role.create({ name: 'user_ci_role', level: 20, company_id: company.id });
+    chairmanRole = await Role.create({ name: 'chairman_ci_role', level: 80, company_id: company.id });
+
+    // 3b. Setup Permissions & Role Associations
+    const [permCreateRequest] = await Permission.findOrCreate({
+      where: { name: 'request:create' },
+      defaults: { description: 'Create request', resource: 'request', action: 'create' }
+    });
+    const [permReadRequest] = await Permission.findOrCreate({
+      where: { name: 'request:read' },
+      defaults: { description: 'Read request', resource: 'request', action: 'read' }
+    });
+    const [permApproveRequest] = await Permission.findOrCreate({
+      where: { name: 'request:approve' },
+      defaults: { description: 'Approve request', resource: 'request', action: 'approve' }
+    });
+
+    await RolePermission.findOrCreate({ where: { role_id: userRole.id, permission_id: permCreateRequest.id } });
+    await RolePermission.findOrCreate({ where: { role_id: userRole.id, permission_id: permReadRequest.id } });
+
+    await RolePermission.findOrCreate({ where: { role_id: chairmanRole.id, permission_id: permReadRequest.id } });
+    await RolePermission.findOrCreate({ where: { role_id: chairmanRole.id, permission_id: permApproveRequest.id } });
 
     // 4. Setup Users
     const rand = Math.floor(Math.random() * 10000);
@@ -108,24 +228,7 @@ describe('Chairman Departmental Isolation Integration Tests', () => {
   });
 
   afterAll(async () => {
-    // Cleanup in correct dependency order
-    if (workflow) {
-      await WorkflowRoute.destroy({ where: { workflow_id: workflow.id } });
-      await WorkflowStep.destroy({ where: { workflow_id: workflow.id } });
-      await workflow.destroy();
-    }
-
-    await Request.destroy({ where: { company_id: company.id } });
-
-    if (userA) await User.destroy({ where: { id: userA.id } });
-    if (chairmanA) await User.destroy({ where: { id: chairmanA.id } });
-    if (chairmanB) await User.destroy({ where: { id: chairmanB.id } });
-
-    if (userRole) await Role.destroy({ where: { id: userRole.id } });
-    if (chairmanRole) await Role.destroy({ where: { id: chairmanRole.id } });
-
-    if (deptA) await OrganizationNode.destroy({ where: { id: deptA.id } });
-    if (deptB) await OrganizationNode.destroy({ where: { id: deptB.id } });
+    await cleanupCompanyData('Chairman Isolation Test Company');
   });
 
   test('Chairman A should see requests from User A (same department)', async () => {

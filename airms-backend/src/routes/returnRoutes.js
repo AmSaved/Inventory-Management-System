@@ -45,6 +45,11 @@ router.post('/:id/process',
     returnController.process
 );
 
+router.post('/:id/acknowledge',
+    checkAnyPermission(['return:process', 'return:update', 'stock:return:approve']),
+    returnController.acknowledge
+);
+
 router.post('/:id/reject', 
     checkAnyPermission(['return:process', 'return:update', 'stock:return:reject']), 
     validate(rejectReturnValidation), 

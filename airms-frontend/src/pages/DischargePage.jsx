@@ -8,16 +8,19 @@ import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Modal from '../components/common/Modal';
+import LoadingSpinner from '../components/common/LoadingSpinner';
 import Badge from '../components/ui/Badge';
 import Pagination from '../components/ui/Pagination';
 import CascadingUnitSelector from '../components/common/CascadingUnitSelector';
 import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx';
+import QRCode from 'react-qr-code';
+import { getAssetName } from '../utils/assetName';
 import { 
   Building2, 
   User as UserIcon, 
   ArrowRight, 
   Package, 
-  Split, 
   Trash2, 
   Plus, 
   Zap, 
@@ -30,7 +33,8 @@ import {
   Upload,
   Layers,
   Cpu,
-  RefreshCw
+  RefreshCw,
+  Eye
 } from 'lucide-react';
 
 const LiveStockBadge = ({ productId, nodeId }) => {
@@ -56,10 +60,10 @@ const LiveStockBadge = ({ productId, nodeId }) => {
   if (!productId || !nodeId) return null;
 
   return (
-    <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 ${stock === 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
-      <div className={`w-2 h-2 rounded-full animate-pulse ${stock === 0 ? 'bg-red-600' : 'bg-emerald-600'}`} />
-      <span className="text-[10px] font-black uppercase tracking-widest">
-        {loading ? 'CALCULATING...' : `IN STOCK: ${stock}`}
+    <div className={`px-2 py-1 rounded-lg border flex items-center gap-1.5 ${stock === 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+      <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${stock === 0 ? 'bg-red-600' : 'bg-emerald-600'}`} />
+      <span className="text-[9px] font-black uppercase tracking-widest">
+        {loading ? 'CALC...' : `STOCK: ${stock}`}
       </span>
     </div>
   );
@@ -90,11 +94,20 @@ const DischargePage = () => {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewingDischarge, setViewingDischarge] = useState(null);
+  const [serialInfoMap, setSerialInfoMap] = useState({});
+  const [qrModalItem, setQrModalItem] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  
   // Physical Selection State
   const [selectionModalOpen, setSelectionModalOpen] = useState(false);
   const [activeItemIndex, setActiveItemIndex] = useState(null);
   const [availablePhysicalItems, setAvailablePhysicalItems] = useState([]);
   const [loadingPhysical, setLoadingPhysical] = useState(false);
+
+  // Inline Split State
+  const [splitState, setSplitState] = useState({ index: null, count: 2 });
 
   const { data: dischargeForms, pagination, loading: listLoading, refetch: refetchList } = useFetch(`/discharge`, {
     params: {
@@ -121,6 +134,21 @@ const DischargePage = () => {
   
   const products = Array.isArray(productsData) ? productsData : (productsData?.products || productsData?.data || []);
   const fullTree = Array.isArray(treeData) ? treeData : (treeData?.data || []);
+
+  // Flatten the org tree to count all available destination branches (excluding source)
+  const flattenTree = (nodes, excludeId) => {
+    const result = [];
+    const traverse = (list) => {
+      for (const node of (list || [])) {
+        if (String(node.id) !== String(excludeId)) result.push(node);
+        if (node.children?.length) traverse(node.children);
+      }
+    };
+    traverse(nodes);
+    return result;
+  };
+  const availableDestinations = flattenTree(fullTree, fromUnitId);
+  const maxSplitBranches = availableDestinations.length;
   
   // Reset page when search or branch filter changes
   useEffect(() => {
@@ -188,6 +216,51 @@ const DischargePage = () => {
     }
   }, [requestId]);
 
+  const handleViewDetails = async (form) => {
+    setLoadingDetails(true);
+    try {
+      const response = await api.get(`/discharge/${form.id}`);
+      const detail = response.data.data;
+      setViewingDischarge(detail);
+      setSerialInfoMap({});
+      setViewModalOpen(true);
+
+      const items = detail?.items || [];
+      const infoMap = {};
+      const serialsToFetch = [];
+
+      items.forEach(it => {
+        if (it.serial_numbers?.length) {
+          serialsToFetch.push(...it.serial_numbers);
+        } else if (it.serial_number) {
+          serialsToFetch.push(it.serial_number);
+        }
+      });
+
+      await Promise.all(serialsToFetch.map(async (sn) => {
+        try {
+          const res = await api.get(`/inventory`, { params: { serial_number: sn, limit: 1 } });
+          const list = res?.data?.data || res?.data || [];
+          if (list.length > 0) {
+            const inv = list[0];
+            const resolvedName = getAssetName(inv, false);
+            const branchName = inv.organizationNode?.name || 'Authorized Branch';
+            infoMap[sn] = {
+              name: resolvedName,
+              branchName: branchName
+            };
+          }
+        } catch (_) {}
+      }));
+      setSerialInfoMap(infoMap);
+    } catch (e) {
+      console.error('Could not retrieve discharge details', e);
+      toast.error('Could not retrieve discharge details');
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
   const handleAddItem = () => {
     setItems([...items, { product_id: '', to_unit_id: '', quantity: 1, batch_number: '', serial_numbers: [], condition: 'new' }]);
   };
@@ -200,35 +273,45 @@ const DischargePage = () => {
   const handleSplitItem = (index) => {
     const item = items[index];
     const totalQty = parseInt(item.quantity) || 0;
-    if (totalQty <= 1) return toast.error('Cannot split quantity of 1');
+    if (totalQty <= 1) return toast.error('Cannot split a quantity of 1');
+    // Toggle the inline split panel for this item
+    setSplitState(prev =>
+      prev.index === index ? { index: null, count: 2 } : { index, count: 2 }
+    );
+  };
 
-    const splitInput = window.prompt("In how many branches to split?", "2");
-    const splitCount = parseInt(splitInput);
+  const confirmSplit = (index) => {
+    const item = items[index];
+    const totalQty = parseInt(item.quantity) || 0;
+    const splitCount = parseInt(splitState.count);
 
-    if (!splitCount || splitCount < 2) return;
-    if (splitCount > totalQty) return toast.error(`Maximum possible splits for this quantity is ${totalQty}`);
+    if (!splitCount || splitCount < 2) return toast.error('Enter at least 2 branches');
+    if (splitCount > totalQty) return toast.error(`Quantity is ${totalQty} — cannot split into more branches than items`);
+    if (maxSplitBranches > 0 && splitCount > maxSplitBranches) {
+      return toast.error(`Only ${maxSplitBranches} destination branch${maxSplitBranches !== 1 ? 'es' : ''} available — cannot split into ${splitCount}`);
+    }
 
     const baseQty = Math.floor(totalQty / splitCount);
     const remainder = totalQty % splitCount;
-    
+
     const newItems = [...items];
     const itemTemplate = { ...item };
-    
-    // Remove the original item so we can replace it with the new batch
     newItems.splice(index, 1);
 
     const generatedItems = [];
     for (let i = 0; i < splitCount; i++) {
       generatedItems.push({
         ...itemTemplate,
-        quantity: i === splitCount - 1 ? (baseQty + remainder) : baseQty,
-        serial_numbers: [] // Clear SNs for new branches
+        to_unit_id: '',
+        quantity: i === splitCount - 1 ? baseQty + remainder : baseQty,
+        serial_numbers: []
       });
     }
 
     newItems.splice(index, 0, ...generatedItems);
     setItems(newItems);
-    toast.success(`Successfully fractured item into ${splitCount} distribution lines.`);
+    setSplitState({ index: null, count: 2 });
+    toast.success(`Split into ${splitCount} branch lines`);
   };
 
   const updateItem = (index, field, value) => {
@@ -259,6 +342,7 @@ const DischargePage = () => {
           product_id: item.product_id,
           org_node_id: fromUnitId,
           status: 'available',
+          exact_node: 'true',
           limit: 200 // Show up to 200 available items
         }
       });
@@ -316,33 +400,49 @@ const DischargePage = () => {
     a.click();
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target.result;
-      const rows = text.split('\n').slice(1);
-      const newItems = rows.map(row => {
-        const [sku, qty, sns, cond, batch] = row.split(',').map(s => s?.trim());
-        if (!sku) return null;
-        const prod = products.find(p => p.sku === sku);
-        return {
-          product_id: prod ? prod.id.toString() : '',
-          to_unit_id: '',
-          quantity: parseInt(qty) || 1,
-          serial_numbers: sns ? sns.replace(/"/g, '').split(',').map(s => s.trim()) : [],
-          condition: cond || 'new',
-          batch_number: batch || ''
-        };
-      }).filter(Boolean);
-      
+
+    try {
+      let rows = [];
+      if (/\.xlsx?$/i.test(file.name)) {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      } else {
+        const text = await file.text();
+        rows = text.split('\n').slice(1).map(row => row.split(',').map(cell => cell.trim()));
+      }
+
+      const newItems = rows
+        .map(row => {
+          const [sku, qty, sns, cond, batch] = row;
+          if (!sku) return null;
+          const prod = products.find(p => p.sku === sku);
+          return {
+            product_id: prod ? prod.id.toString() : '',
+            to_unit_id: '',
+            quantity: parseInt(qty) || 1,
+            serial_numbers: sns ? String(sns).replace(/"/g, '').split(',').map(s => s.trim()).filter(Boolean) : [],
+            condition: cond || 'new',
+            batch_number: batch || ''
+          };
+        })
+        .filter(Boolean);
+
       if (newItems.length > 0) {
         setItems(newItems);
         toast.success(`Imported ${newItems.length} distribution lines.`);
+      } else {
+        toast.error('No valid rows were found in the uploaded file.');
       }
-    };
-    reader.readAsText(file);
+    } catch (error) {
+      console.error('Bulk import failed:', error);
+      toast.error('Unable to parse the selected file. Please use a valid CSV or XLSX file.');
+    } finally {
+      e.target.value = null;
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -374,7 +474,7 @@ const DischargePage = () => {
            to_user_id: null
         }))
       });
-      toast.success('Discharged successfully');
+      toast.success('Discharged request sent successfully');
       navigate('/dashboard');
     } catch (error) {
       const errorData = error.response?.data;
@@ -418,55 +518,35 @@ const DischargePage = () => {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-6 py-6 px-4 lg:px-6">
+    <div className="max-w-[1200px] mx-auto space-y-4 pt-2 pb-4 px-4 md:px-6">
       {/* Dynamic Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between border-b border-slate-100 pb-4">
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-             <div className="w-11 h-11 bg-slate-900 rounded-xl flex items-center justify-center shadow-sm">
-               <Zap className="text-blue-500 fill-blue-500" size={20} />
-             </div>
-             <div>
-               <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Discharge Inventories to Branches</h1>
-             </div>
-          </div>
-
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
-             <button 
-               onClick={() => setView('new')}
-               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === 'new' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-             >
-               Discharge
-             </button>
-             <button 
-               onClick={() => setView('list')}
-               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === 'list' ? 'bg-white text-blue-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-             >
-               Discharge History
-             </button>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2 border-b border-slate-100">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-100">
+              <Zap className="text-white" size={18} />
+            </div>
+            <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Discharge Inventories to Branches</h1>
           </div>
         </div>
-
         <div className="flex items-center gap-3">
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv" />
-          
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-             <button type="button" onClick={handleDownloadTemplate} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all group relative">
-               <Download size={16} />
-               <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Template</span>
-             </button>
-             <button type="button" onClick={() => fileInputRef.current.click()} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all group relative">
-               <Upload size={16} />
-               <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Bulk CSV</span>
-             </button>
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
+            <button onClick={() => setView('new')} className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${view === 'new' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Discharge</button>
+            <button onClick={() => setView('list')} className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${view === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Discharge History</button>
           </div>
-
+          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv,.xlsx,.xls" />
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
+            <button type="button" onClick={handleDownloadTemplate} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all group relative">
+              <Download size={16} />
+              <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Template</span>
+            </button>
+            <button type="button" onClick={() => fileInputRef.current.click()} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-blue-600 transition-all group relative">
+              <Upload size={16} />
+              <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Bulk CSV/XLSX</span>
+            </button>
+          </div>
           {view === 'new' && (
-            <Button 
-              type="button" 
-              onClick={handleAddItem}
-              className="bg-slate-950 hover:bg-black text-white font-bold h-10 px-4 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-xs"
-            >
+            <Button type="button" onClick={handleAddItem} className="bg-slate-950 hover:bg-black text-white font-bold h-9 px-3 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-xs">
               <Plus size={14} strokeWidth={2.5} /> Add manual item
             </Button>
           )}
@@ -474,185 +554,186 @@ const DischargePage = () => {
       </div>
       
       {view === 'new' ? (
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-          {/* Logistics Panel */}
-          <div className="xl:col-span-4 space-y-6">
-             <Card className="rounded-2xl border-none shadow-sm bg-white overflow-hidden ring-1 ring-slate-100">
-                  <div className="bg-gradient-to-br from-slate-50 via-slate-100 to-white p-5 relative overflow-hidden h-full flex flex-col justify-center">
-                   <div className="absolute -right-4 -top-4 w-32 h-32 bg-blue-600/20 rounded-full blur-3xl opacity-50" />
-                   <h3 className="text-slate-900 text-base font-bold tracking-tight leading-tight mb-4">Inventory Origin</h3>
-                    
-                   <div className="space-y-4 relative z-10">
-                     <div className="space-y-1">
-                         <label className="text-xs font-semibold text-slate-500 ml-1"></label>
-                         <CascadingUnitSelector 
-                           value={fromUnitId}
-                           onChange={setFromUnitId}
-                           initialTree={fullTree}
-                           loading={treeLoading}
-                           className="bg-white"
-                         />
-                     </div>
-                   </div>
-                 </div>
-              </Card>
-
-              <div className="bg-white rounded-2xl p-5 ring-1 ring-slate-200 flex items-center justify-between shadow-sm">
-                 <div>
-                   <div className="text-xs font-bold text-blue-600 mb-1">Issue Payload</div>
-                   <div className="text-3xl font-bold text-slate-900 tracking-tight">
-                     {items.length}
-                   </div>
-                 </div>
-                 <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm">
-                   <CheckCircle2 className="text-white" size={24} />
-                 </div>
-              </div>
-          </div>
-
-          {/* Assets Processing Panel */}
-          <div className="xl:col-span-8 space-y-6">
-             <div className="space-y-6">
-                {items.map((item, index) => (
-                  <Card key={index} className="relative rounded-2xl border-none bg-white shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden ring-1 ring-slate-100 group">
-                     <div className="flex flex-col">
-                        <div className="absolute right-4 top-1/2 hidden lg:flex flex-col items-center gap-2 -translate-y-1/2">
-                           <div className="w-8 h-8 rounded-lg bg-slate-900 text-blue-500 flex items-center justify-center text-xs font-bold italic">
-                              0{index + 1}
-                           </div>
-                           <button 
-                              type="button" 
-                              onClick={() => handleRemoveItem(index)}
-                              className="w-8 h-8 rounded-lg bg-white text-slate-600 hover:text-red-500 hover:bg-slate-100 transition-colors shadow-sm grid place-items-center border border-slate-100"
-                           >
-                             <Trash2 size={14} />
-                           </button>
-                        </div>
-                        <div className="flex-1 p-5 space-y-6">
-                           <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
-                              <div className="space-y-1 flex-1 w-full max-w-lg">
-                                 <label className="text-xs font-semibold text-slate-500 ml-1">Category</label>
-                                 <select
-                                   className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-4 font-semibold text-sm text-slate-900 focus:bg-white transition-all outline-none"
-                                   value={item.product_id}
-                                   onChange={(e) => updateItem(index, 'product_id', e.target.value)}
-                                   required
-                                 >
-                                   <option value="">Select product</option>
-                                   {products?.map(p => <option key={p.id} value={p.id.toString()}>{p.name} — [{p.sku}]</option>)}
-                                 </select>
-                              </div>
-
-                              <div className="space-y-1 w-full lg:w-auto text-right">
-                                 <label className="text-xs font-semibold text-slate-500 ml-1 block">Discharge Amount</label>
-                                 <div className="flex items-center justify-end gap-2">
-                                    <LiveStockBadge productId={item.product_id} nodeId={fromUnitId} />
-                                    <button type="button" onClick={() => handleSplitItem(index)} className="p-2.5 bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-white transition-all shadow-sm border border-slate-100">
-                                       <Split size={14} />
-                                    </button>
-                                    <Input 
-                                      type="number" 
-                                      value={item.quantity} 
-                                      onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                                      className="w-20 h-10 border border-slate-200 bg-slate-50 rounded-lg font-bold text-sm text-blue-600 text-center shadow-inner"
-                                      required 
-                                    />
-                                 </div>
-                              </div>
-                           </div>
-
-                           {(() => {
-                             const selectedP = products?.find(p => p.id.toString() === item.product_id);
-                             if (!selectedP) return null;
-                             return (
-                                 <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in duration-300">
-                                    <div className="space-y-0.5">
-                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Category</div>
-                                       <div className="text-[10px] font-bold text-slate-900 truncate uppercase">{selectedP.category} / {selectedP.sub_category}</div>
-                                    </div>
-                                    <div className="space-y-0.5">
-                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Brand / Model</div>
-                                       <div className="text-[10px] font-bold text-slate-900 truncate uppercase">{selectedP.brand} {selectedP.model}</div>
-                                    </div>
-                                    <div className="space-y-0.5">
-                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">UOM Unit</div>
-                                       <div className="text-[10px] font-bold text-slate-900 uppercase">{selectedP.unit}</div>
-                                    </div>
-                                    <div className="space-y-0.5 text-right">
-                                       <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">SKU</div>
-                                       <div className="text-[10px] font-mono font-bold text-blue-500">{selectedP.sku}</div>
-                                    </div>
-                                 </div>
-                              );
-                           })()}
-
-                           <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex flex-col gap-2">
-                              <label className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider ml-1">Target Destination</label>
-                              <CascadingUnitSelector 
-                                key={`target-node-${index}-${fromUnitId}`}
-                                value={item.to_unit_id}
-                                sourceNodeId={fromUnitId}
-                                initialTree={fullTree}
-                                loading={treeLoading}
-                                onChange={(val) => updateItem(index, 'to_unit_id', val)}
-                                className="bg-white rounded-lg"
-                              />
-                           </div>
-
-                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-semibold text-slate-500 ml-1">Condition State</label>
-                                  <select className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 font-semibold text-xs text-slate-600 outline-none" value={item.condition} onChange={(e) => updateItem(index, 'condition', e.target.value)}>
-                                     <option value="new">New</option>
-                                     <option value="good">Used</option>
-                                     <option value="damaged">Damaged</option>
-                                  </select>
-                              </div>
-                              <div className="space-y-1 md:col-span-2">
-                                  <label className="text-[10px] font-semibold text-slate-500 ml-1"></label>
-                                  <button
-                                    type="button"
-                                    onClick={() => openSelectionModal(index)}
-                                    className={`w-full h-10 rounded-lg font-bold px-4 text-xs transition-all flex items-center justify-between ${
-                                      item.serial_numbers?.length === parseInt(item.quantity) 
-                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' 
-                                        : 'bg-blue-600 text-white shadow-sm'
-                                    }`}
-                                  >
-                                    <span>
-                                      {item.serial_numbers?.length === parseInt(item.quantity) 
-                                        ? `✓ ${item.serial_numbers.length} ITEMS ALLOCATED` 
-                                        : `SELECT ${item.quantity} PHYSICAL ITEMS`}
-                                    </span>
-                                    <Layers size={14} />
-                                  </button>
-                                  {item.serial_numbers?.length > 0 && (
-                                    <div className="mt-1.5 flex flex-wrap gap-1 px-1">
-                                       {item.serial_numbers.map(sn => (
-                                         <span key={sn} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-bold">
-                                           {sn}
-                                         </span>
-                                       ))}
-                                    </div>
-                                  )}
-                              </div>
-                           </div>
-                        </div>
-                     </div>
-                  </Card>
-                ))}
+        <form onSubmit={handleSubmit} className="flex gap-4 items-start">
+          {/* LEFT COMPACT PANEL (sticky sidebar) - Exactly two rows */}
+          <div className="w-60 shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4 sticky top-4">
+             {/* Row 1: Origin Unit Display */}
+             <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5 block">Origin Branch</label>
+                <div className="text-xs font-bold text-slate-800 bg-slate-50 p-2.5 rounded-xl border border-slate-100 truncate" title={user?.organizationNode?.name || 'Current Node'}>
+                  {user?.organizationNode?.name || 'Current Node'}
+                </div>
              </div>
 
-             <div className="pt-4">
-                <Button 
-                  disabled={submitting}
-                  type="submit" 
-                  className="w-full bg-slate-950 h-12 rounded-lg hover:bg-black text-white font-bold text-sm transition-all flex items-center justify-center gap-3 shadow-md"
-                >
-                  {submitting ? 'Authenticating Issue...' : (
-                    <>Submit Manifest <ArrowRight size={16} /> </>
+             {/* Row 2: Payload Lines Count */}
+             <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Payload Lines</div>
+                  <div className="text-2xl font-bold text-slate-900 tracking-tight leading-none mt-1">
+                    {items.length}
+                  </div>
+                </div>
+                <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shadow-sm">
+                  <CheckCircle2 size={16} />
+                </div>
+             </div>
+          </div>
+
+          {/* RIGHT COMPACT PANEL (process lines) */}
+          <div className="flex-1 min-w-0 space-y-3">
+             {items.map((item, index) => {
+                const selectedP = products?.find(p => p.id.toString() === item.product_id);
+                return (
+                  <Card key={index} className="relative rounded-xl bg-white shadow-sm border border-slate-200 p-3 space-y-2.5">
+                    {/* TOP LINE: Index, Product Selection, Split + Qty — all in one row */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-6 h-6 shrink-0 rounded-lg bg-slate-900 text-blue-400 flex items-center justify-center text-xs font-bold italic">
+                        {index + 1}
+                      </div>
+                      
+                      <select
+                        className="flex-1 min-w-0 max-w-[18rem] h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-400 focus:bg-white transition-all"
+                        value={item.product_id}
+                        onChange={(e) => updateItem(index, 'product_id', e.target.value)}
+                        required
+                      >
+                        <option value="">Select product</option>
+                        {products?.map(p => <option key={p.id} value={p.id.toString()}>{p.name} — [{p.sku}]</option>)}
+                      </select>
+
+                      <LiveStockBadge productId={item.product_id} nodeId={fromUnitId} />
+
+                      <button 
+                        type="button" 
+                        onClick={() => handleSplitItem(index)} 
+                        className={`h-9 shrink-0 px-3 rounded-xl text-sm font-semibold flex items-center justify-center border transition-all ml-1 ${
+                          splitState.index === index
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                        title="Split into multiple branches"
+                      >
+                        Split
+                      </button>
+
+                      <input 
+                        type="number" 
+                        value={item.quantity} 
+                        onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                        className="w-16 h-9 shrink-0 border border-slate-200 bg-slate-50 rounded-xl font-bold text-sm text-blue-600 text-center shadow-inner focus:bg-white focus:border-blue-400 outline-none"
+                        required 
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => openSelectionModal(index)}
+                        className={`h-9 shrink-0 rounded-xl font-semibold px-2.5 text-[10px] transition-all flex items-center gap-1.5 ${
+                          item.serial_numbers?.length === parseInt(item.quantity)
+                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                            : 'bg-blue-600 text-white shadow-sm hover:bg-blue-500 border border-blue-600'
+                        }`}
+                      >
+                        <span className="truncate">{item.serial_numbers?.length === parseInt(item.quantity) ? 'Selected' : 'Select'}</span>
+                        <Layers size={10} className="shrink-0" />
+                      </button>
+                    </div>
+
+                    {/* METADATA PREVIEW ROW (compact inline text if product selected) */}
+                    {selectedP && (
+                      <div className="text-[10px] text-slate-500 bg-slate-50/50 px-2 py-1 rounded border border-slate-100 flex gap-4 truncate">
+                        <span><strong>Brand/Model:</strong> {selectedP.brand} {selectedP.model}</span>
+                        <span><strong>Category:</strong> {selectedP.category}</span>
+                        <span><strong>UOM:</strong> {selectedP.unit}</span>
+                      </div>
+                    )}
+
+                    {/* BOTTOM LINE: Destination dropdown, Allocate button, Delete row */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex-[2] min-w-0">
+                        <CascadingUnitSelector 
+                          key={`target-node-${index}-${fromUnitId}`}
+                          value={item.to_unit_id}
+                          sourceNodeId={fromUnitId}
+                          initialTree={fullTree}
+                          loading={treeLoading}
+                          onChange={(val) => updateItem(index, 'to_unit_id', val)}
+                          className="bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+
+                      {items.length > 1 && (
+                        <button 
+                           type="button" 
+                           onClick={() => handleRemoveItem(index)}
+                           className="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 hover:text-red-500 hover:bg-red-50 transition-colors border border-slate-200 flex items-center justify-center shrink-0"
+                           title="Remove line"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* ── INLINE SPLIT PANEL ── */}
+                    {splitState.index === index && (
+                      <div className="flex items-center gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <span className="text-[11px] font-bold text-blue-700 shrink-0">Split into</span>
+                        <input
+                          type="number"
+                          min={2}
+                          max={Math.min(parseInt(item.quantity) || 99, maxSplitBranches || 99)}
+                          value={splitState.count}
+                          onChange={e => setSplitState(prev => ({ ...prev, count: e.target.value }))}
+                          className="w-16 h-8 border border-blue-300 bg-white rounded-lg font-bold text-sm text-blue-700 text-center outline-none focus:border-blue-500"
+                          autoFocus
+                        />
+                        <span className="text-[11px] font-bold text-blue-700 shrink-0">branches</span>
+                        {maxSplitBranches > 0 && (
+                          <span className="text-[10px] text-blue-500 font-semibold shrink-0">
+                            (max: {Math.min(parseInt(item.quantity) || 99, maxSplitBranches)})
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => confirmSplit(index)}
+                          className="ml-auto h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm"
+                        >
+                          Confirm Split
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSplitState({ index: null, count: 2 })}
+                          className="h-8 px-3 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-lg border border-slate-200 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+
+                    {/* SERIAL NUMBERS PREVIEW (pills) */}
+                    {item.serial_numbers?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                         {item.serial_numbers.map(sn => (
+                           <span key={sn} className="px-1.5 py-0.5 bg-white text-slate-500 rounded text-[9px] font-bold border border-slate-100">
+                             {sn}
+                           </span>
+                         ))}
+                      </div>
+                    )}
+                  </Card>
+                );
+             })}
+
+             {/* Centered Submit Manifest Button at the bottom middle */}
+             <div className="pt-4 flex justify-center">
+                 <button 
+                   disabled={submitting}
+                   type="submit" 
+                   className="px-5 py-2 bg-slate-950 hover:bg-black text-white font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-md w-fit"
+                 >
+                  {submitting ? 'Authenticating...' : (
+                    <>Submit Discharge <ArrowRight size={13} /></>
                   )}
-                </Button>
+                </button>
              </div>
           </div>
         </form>
@@ -676,126 +757,164 @@ const DischargePage = () => {
            {(() => {
               const dischargeList = Array.isArray(dischargeForms) ? dischargeForms : (dischargeForms?.data || []);
               return (
-                <div className="space-y-6">
-                   <div className="grid grid-cols-1 gap-6">
-                      {dischargeList.map(form => (
-                        <Card key={form.id} className="rounded-xl border-none shadow-sm bg-white overflow-hidden ring-1 ring-slate-100 hover:shadow-md transition-all duration-300">
-                           <div className="flex flex-col xl:flex-row">
-                              <div className="p-5 flex-1 flex flex-col md:flex-row items-start md:items-center gap-4">
-                                 <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-blue-500 font-bold text-xs shadow-sm">
-                                    #{form.id}
-                                 </div>
-                                 <div className="space-y-2">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                       <h3 className="text-base font-bold text-slate-900 tracking-tight">{form.discharge_number}</h3>
-                                       <Badge className={`rounded-full px-2.5 py-0.5 font-semibold text-[10px] border shadow-sm ${
-                                         form.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                         form.status === 'approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                         form.status.startsWith('pending') ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'
-                                       }`}>
-                                         {form.status.replace('_', ' ')}
-                                       </Badge>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
-                                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                                          <Building2 size={12} className="text-blue-500" /> {form.fromNode?.name}
-                                        </div>
-                                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                                          <ArrowRight size={12} className="text-slate-300" /> {form.discharge_type === 'user' ? `${form.toUser?.first_name} ${form.toUser?.last_name}` : form.toNode?.name}
-                                       </div>
-                                    </div>
-                                 </div>
-                              </div>
-        
-                              <div className="bg-slate-50/50 p-5 flex items-center justify-center gap-3 border-l border-slate-100">
-                                 {(() => {
-                                    const userCanApprove = form.can_action && !form.approvals?.some(a => Number(a.user_id) === Number(user?.id));
+                <div className="space-y-4">
+                  <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-green-600 text-white">
+                          <th className="p-4 text-sm font-bold">From</th>
+                          <th className="p-4 text-sm font-bold">To</th>
+                          <th className="p-4 text-sm font-bold">Role</th>
+                          <th className="p-4 text-sm font-bold">Status</th>
+                          <th className="p-4 text-sm font-bold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {listLoading ? (
+                          <tr>
+                            <td colSpan="5" className="p-12 text-center"><LoadingSpinner /></td>
+                          </tr>
+                        ) : dischargeList.length === 0 ? (
+                          <tr>
+                            <td colSpan="5" className="p-12 text-center text-slate-400 text-sm">No discharge records found.</td>
+                          </tr>
+                        ) : (
+                          dischargeList.map(form => {
+                            const isTargetBranch = form.to_node_id && user?.org_node_id &&
+                              Number(form.to_node_id) === Number(user.org_node_id);
+                            const isAtSourceNode = form.from_node_id && user?.org_node_id &&
+                              Number(form.from_node_id) === Number(user.org_node_id);
+                            const userCanApprove = form.can_action &&
+                              !form.approvals?.some(a => Number(a.approver_id || a.user_id) === Number(user?.id));
 
-                                    if (!userCanApprove) return null;
-        
-                                    return (
-                                       <div className="flex gap-2">
-                                          <Button 
-                                            onClick={async () => {
-                                              try {
-                                                const res = await api.post(`/discharge/${form.id}/approve`, { notes: 'Authorized via Ledger' });
-                                                toast.success(res.data.message);
-                                                refetchList();
-                                                window.dispatchEvent(new Event('workflowUpdated'));
-                                              } catch (err) {
-                                                toast.error(err.response?.data?.message || 'Approval failed');
-                                              }
-                                            }}
-                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 h-10 rounded-lg text-xs transition-all"
-                                          >
-                                            Approve
-                                          </Button>
-                                          <Button 
-                                            onClick={async () => {
-                                              const reason = window.prompt("Reason for rejection:");
-                                              if (reason === null) return;
-                                              try {
-                                                await api.post(`/discharge/${form.id}/reject`, { notes: reason });
-                                                toast.success("Discharge protocol rejected.");
-                                                refetchList();
-                                                window.dispatchEvent(new Event('workflowUpdated'));
-                                              } catch (err) {
-                                                toast.error(err.response?.data?.message || 'Rejection failed');
-                                              }
-                                            }}
-                                            className="bg-red-500 hover:bg-red-400 text-white font-bold px-4 h-10 rounded-lg text-xs transition-all"
-                                          >
-                                            Reject
-                                          </Button>
-                                       </div>
-                                    );
-                                 })()}
-        
-                                 {form.status === 'approved' && (
-                                   <Button 
-                                     onClick={async () => {
-                                       try {
-                                         const res = await api.post(`/discharge/${form.id}/execute`, {});
-                                         toast.success(res.data.message);
-                                         refetchList();
-                                         window.dispatchEvent(new Event('workflowUpdated'));
-                                        } catch (err) {
-                                          const errorData = err.response?.data;
-                                          if (errorData?.errors && Array.isArray(errorData.errors)) {
-                                            errorData.errors.forEach(e => {
-                                              const field = e.path || e.field || 'Error';
-                                              const msg = e.msg || e.message || 'Validation failed';
-                                              toast.error(`${field}: ${msg}`);
-                                            });
-                                          } else {
-                                            toast.error(errorData?.message || 'Physical issue failed');
+                            return (
+                              <tr key={form.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="p-4 text-sm font-medium text-slate-900">{form.fromNode?.name || '—'}</td>
+                                <td className="p-4 text-sm text-slate-600">
+                                  {form.discharge_type === 'user'
+                                    ? `${form.toUser?.first_name} ${form.toUser?.last_name}`
+                                    : form.toNode?.name || '—'}
+                                </td>
+                                <td className="p-4 text-sm text-slate-600">
+                                  {form.to_node_id && user?.org_node_id && (
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                                      isTargetBranch
+                                        ? 'bg-purple-50 text-purple-600 border-purple-200'
+                                        : 'bg-slate-100 text-slate-500 border-slate-200'
+                                    }`}>
+                                      {isTargetBranch ? '↓ Receiving' : '↑ Dispatching'}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-4 text-sm text-slate-600">
+                                  <Badge className={`rounded-full px-2.5 py-0.5 font-semibold text-[10px] border ${
+                                    form.status === 'acknowledged' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                                    form.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    form.status === 'approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                    form.status.startsWith('pending') ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+                                  }`}>
+                                    {form.status.replace(/_/g, ' ')}
+                                  </Badge>
+                                </td>
+                                <td className="p-4 text-sm text-slate-600 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    {userCanApprove && (
+                                      <>
+                                        <Button
+                                          onClick={async () => {
+                                            try {
+                                              const res = await api.post(`/discharge/${form.id}/approve`, { notes: 'Authorized via Ledger' });
+                                              toast.success(res.data.message);
+                                              refetchList();
+                                              window.dispatchEvent(new Event('workflowUpdated'));
+                                            } catch (err) {
+                                              toast.error(err.response?.data?.message || 'Approval failed');
+                                            }
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 h-8 rounded-lg text-xs transition-all"
+                                        >
+                                          Approve
+                                        </Button>
+                                        <Button
+                                          onClick={async () => {
+                                            try {
+                                              await api.post(`/discharge/${form.id}/reject`, { reason: 'Rejected via Ledger' });
+                                              toast.success('Discharge protocol rejected.');
+                                              refetchList();
+                                              window.dispatchEvent(new Event('workflowUpdated'));
+                                            } catch (err) {
+                                              toast.error(err.response?.data?.message || 'Rejection failed');
+                                            }
+                                          }}
+                                          className="bg-red-500 hover:bg-red-400 text-white font-bold px-3 h-8 rounded-lg text-xs transition-all"
+                                        >
+                                          Reject
+                                        </Button>
+                                      </>
+                                    )}
+                                    {!isTargetBranch && form.status === 'approved' && (
+                                      <Button
+                                        onClick={async () => {
+                                          try {
+                                            const res = await api.post(`/discharge/${form.id}/execute`, {});
+                                            toast.success(res.data.message);
+                                            refetchList();
+                                            window.dispatchEvent(new Event('workflowUpdated'));
+                                          } catch (err) {
+                                            const errorData = err.response?.data;
+                                            if (errorData?.errors && Array.isArray(errorData.errors)) {
+                                              errorData.errors.forEach(e => {
+                                                const field = e.path || e.field || 'Error';
+                                                const msg = e.msg || e.message || 'Validation failed';
+                                                toast.error(`${field}: ${msg}`);
+                                              });
+                                            } else {
+                                              toast.error(errorData?.message || 'Physical issue failed');
+                                            }
                                           }
-                                        }
-                                     }}
-                                     className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 h-10 rounded-lg text-xs transition-all"
-                                   >
-                                     Execute discharge
-                                   </Button>
-                                 )}
-                                 <Button variant="ghost" className="h-10 px-4 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-all">Details
-                                 </Button>
-                              </div>
-                           </div>
-                        </Card>
-                      ))}
-                      {dischargeList.length === 0 && (
-                        <div className="py-16 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-3 opacity-50">
-                           <Zap size={40} className="text-slate-300" />
-                           <p className="font-bold text-xs text-slate-400">Distribution Ledger Empty</p>
-                        </div>
-                      )}
-                   </div>
-                   
-                   {pagination && pagination.pages > 1 && (
-                     <div className="flex justify-center pt-4">
-                        <Pagination pagination={pagination} onPageChange={setPage} />
-                     </div>
-                   )}
+                                        }}
+                                        className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 h-8 rounded-lg text-xs transition-all"
+                                      >
+                                        Execute
+                                      </Button>
+                                    )}
+                                    {form.can_acknowledge && !isAtSourceNode && (
+                                      <Button
+                                        onClick={async () => {
+                                          try {
+                                            const res = await api.post(`/discharge/${form.id}/acknowledge`, {});
+                                            toast.success(res.data.message);
+                                            refetchList();
+                                            window.dispatchEvent(new Event('workflowUpdated'));
+                                          } catch (err) {
+                                            toast.error(err.response?.data?.message || 'Acknowledgement failed');
+                                          }
+                                        }}
+                                        className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 h-8 rounded-lg text-xs transition-all flex items-center gap-1"
+                                      >
+                                        <CheckCircle2 size={12} /> Acknowledge
+                                      </Button>
+                                    )}
+                                    <button
+                                      onClick={() => handleViewDetails(form)}
+                                      className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
+                                      title="View Details"
+                                    >
+                                      <Eye size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {pagination && pagination.pages > 1 && (
+                    <Pagination pagination={pagination} onPageChange={setPage} />
+                  )}
                 </div>
               );
            })()}
@@ -809,12 +928,31 @@ const DischargePage = () => {
         title="Physical Asset Registry Allocation"
       >
         <div className="space-y-4 p-2">
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-3">
             <div>
               <p className="text-xs font-semibold text-blue-400 mb-0.5">Target Quantity</p>
-              <p className="text-lg font-bold text-white">
-                {items[activeItemIndex]?.serial_numbers?.length || 0} / {items[activeItemIndex]?.quantity || 0}
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-white">
+                  {items[activeItemIndex]?.serial_numbers?.length || 0} /
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={items[activeItemIndex]?.quantity || 1}
+                  onChange={e => {
+                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                    const newItems = [...items];
+                    newItems[activeItemIndex].quantity = val;
+                    // Reset serial numbers if new quantity is less than selected
+                    if ((newItems[activeItemIndex].serial_numbers?.length || 0) > val) {
+                      newItems[activeItemIndex].serial_numbers = (newItems[activeItemIndex].serial_numbers || []).slice(0, val);
+                    }
+                    setItems(newItems);
+                  }}
+                  className="w-16 h-8 ml-1 rounded-lg border border-slate-300 bg-white px-2 text-base font-bold text-blue-700 text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  style={{ minWidth: 0 }}
+                />
+              </div>
             </div>
             <div className="text-right">
               <p className="text-xs font-semibold text-slate-500 mb-0.5">Catalog Unit</p>
@@ -855,9 +993,6 @@ const DischargePage = () => {
                         <div className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-white animate-pulse' : 'bg-slate-200'}`} />
                         <div className="text-left">
                           <p className="text-xs font-bold tracking-tight">{inv.serial_number || `ITEM-${inv.id}`}</p>
-                          <p className={`text-[9px] font-semibold uppercase tracking-wider ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
-                            ID: {inv.id} {inv.batch_number ? `• BATCH: ${inv.batch_number}` : ''}
-                          </p>
                         </div>
                       </div>
                       {isPickedInOtherLine && <span className="text-[9px] font-bold">ALREADY ALLOCATED</span>}
@@ -876,6 +1011,143 @@ const DischargePage = () => {
           </Button>
         </div>
       </Modal>
+
+      {/* Details Modal */}
+      <Modal
+        isOpen={viewModalOpen}
+        onClose={() => { setViewModalOpen(false); setViewingDischarge(null); }}
+        title={`Asset Intelligence: Discharge Details`}
+        size="lg"
+      >
+        <div className="space-y-6 p-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] border-b border-gray-100 pb-2">
+              Discharge Routing
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-2">
+                <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Origin Node</p>
+                <p className="text-sm font-bold text-gray-800">{viewingDischarge?.fromNode?.name || 'Central Office'}</p>
+              </div>
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-2">
+                <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Destination Node / Recipient</p>
+                <p className="text-sm font-bold text-gray-800">{viewingDischarge?.discharge_type === 'user' ? `${viewingDischarge?.toUser?.first_name} ${viewingDischarge?.toUser?.last_name}` : viewingDischarge?.toNode?.name || 'N/A'}</p>
+              </div>
+            </div>
+
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] border-b border-gray-100 pb-2 mt-6">
+              Discharged Assets Breakdown
+            </h3>
+            
+            {loadingDetails ? (
+              <div className="text-center py-10 text-xs font-semibold text-slate-400 animate-pulse">Resolving Assets...</div>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-green-600 text-white">
+                        <th className="p-4 text-sm font-bold">Item Name</th>
+                        <th className="p-4 text-sm font-bold">ID / Serial Number (QR Code)</th>
+                        <th className="p-4 text-sm font-bold">Current Branch</th>
+                        <th className="p-4 text-sm font-bold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(viewingDischarge?.items || []).flatMap((item, idx) => {
+                        const specs = item.specifications ? (typeof item.specifications === 'string' ? JSON.parse(item.specifications) : item.specifications) : {};
+                        const category = item.product?.category || specs.category || 'General';
+
+                        let serials = [];
+                        if (item.serial_numbers && item.serial_numbers.length > 0) serials = item.serial_numbers;
+                        else if (item.serial_number) serials = [item.serial_number];
+                        else serials = ['PENDING-HANDOVER'];
+
+                        return serials.map((sn, sidx) => {
+                          const individualName =
+                            serialInfoMap[sn]?.name ||
+                            item.product?.name ||
+                            `Item #${item.product_id || item.id}`;
+
+                          const currentBranch =
+                            serialInfoMap[sn]?.branchName ||
+                            viewingDischarge?.fromNode?.name ||
+                            'Central Office';
+
+                          return (
+                            <tr key={`${idx}-${sidx}`} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-4 text-sm text-slate-600 align-middle">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-slate-900 text-sm">{individualName}</span>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Category: {category}</span>
+                                </div>
+                              </td>
+                              <td className="p-4 text-sm text-slate-600 align-middle">
+                                <div className="flex items-center gap-2">
+                                  {sn !== 'PENDING-HANDOVER' ? (
+                                    <>
+                                      <div
+                                        onClick={() => setQrModalItem({
+                                          id: item.id,
+                                          serial_number: sn,
+                                          name: individualName,
+                                          product: { ...(item.product || {}), name: individualName, sku: item.product?.sku || specs.sku || 'N/A', category }
+                                        })}
+                                        className="p-1 bg-white border border-slate-200 rounded shadow-sm hover:border-slate-400 hover:scale-105 transition-all cursor-pointer shrink-0"
+                                        title="Click to view QR label"
+                                      >
+                                        <QRCode value={JSON.stringify({ id: item.id, name: individualName, sku: item.product?.sku || specs.sku || 'N/A', serial: sn })} size={20} level="H" />
+                                      </div>
+                                      <span className="font-mono text-xs font-bold text-gray-800 bg-gray-50 px-2 py-0.5 border border-slate-200 rounded shadow-sm">{sn}</span>
+                                    </>
+                                  ) : (
+                                    <span className="font-mono text-xs font-semibold text-slate-400 italic">{sn}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4 text-sm text-slate-600 align-middle">
+                                <span className="bg-slate-100 text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider">{currentBranch}</span>
+                              </td>
+                              <td className="p-4 text-sm text-slate-600 align-middle">
+                                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold bg-slate-50 text-slate-600 border border-slate-200">{item.status || 'Selected'}</span>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Pop-up Identity Tag Modal */}
+      {qrModalItem && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setQrModalItem(null)} />
+          <div className="relative w-full max-w-sm bg-white rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+             <div className="p-4 text-center bg-slate-50 border-b border-slate-100">
+                <h3 className="text-sm font-bold text-slate-900 tracking-tight">Asset Identity Tag</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">{qrModalItem.name || qrModalItem.product?.name || 'Item'}</p>
+             </div>
+             <div className="p-6 flex flex-col items-center gap-4 bg-white">
+                <div className="p-3 bg-white rounded-xl shadow-sm ring-1 ring-slate-100">
+                   <QRCode value={JSON.stringify({ id: qrModalItem.id, name: qrModalItem.name || qrModalItem.product?.name || 'Item', sku: qrModalItem.product?.sku || 'N/A', serial: qrModalItem.serial_number })} size={180} level="H" />
+                </div>
+                <div className="text-center font-mono text-xs font-bold text-slate-900 uppercase tracking-widest mt-2 bg-slate-50 px-3 py-1 rounded border border-slate-200">
+                  {qrModalItem.serial_number}
+                </div>
+             </div>
+             <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
+                <button onClick={() => window.print()} className="flex-1 h-9 bg-slate-950 text-white font-semibold rounded-lg text-xs hover:bg-slate-900 transition-all shadow-sm">Print</button>
+                <button onClick={() => setQrModalItem(null)} className="flex-1 h-9 bg-slate-100 border border-slate-200 text-slate-600 font-semibold rounded-lg text-xs hover:bg-slate-200 transition-all">Close</button>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

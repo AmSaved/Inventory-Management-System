@@ -1,4 +1,4 @@
-const { Permission, UserPermission, Role, User, OrganizationNode } = require('../models');
+const { Permission, UserPermission, Role, User, OrganizationNode, UserRole } = require('../models');
 const logger = require('../config/logger');
 const hierarchyService = require('../services/hierarchyService');
 
@@ -7,17 +7,34 @@ const getEffectivePermissions = async (user) => {
     
     const permissionSet = new Set();
 
-    // PHASE 1: Fetch Primary Role permissions
+    // PHASE 1: Fetch Role permissions (Primary & Secondary Roles)
+    const roleIds = new Set();
     if (user.role_id) {
-        const primaryRole = await Role.findByPk(user.role_id, {
-            include: [{ 
-                model: Permission, 
-                as: 'permissions', 
-                attributes: ['name'], 
-                through: { attributes: [] } 
+        roleIds.add(Number(user.role_id));
+    }
+
+    // Retrieve secondary roles from UserRole table
+    const assignedUserRoles = await UserRole.findAll({
+        where: { user_id: user.id },
+        attributes: ['role_id'],
+        raw: true
+    });
+    assignedUserRoles.forEach(ur => roleIds.add(Number(ur.role_id)));
+
+    if (roleIds.size > 0) {
+        const rolesWithPermissions = await Role.findAll({
+            where: { id: { [require('sequelize').Op.in]: Array.from(roleIds) } },
+            include: [{
+                model: Permission,
+                as: 'permissions',
+                attributes: ['name'],
+                through: { attributes: [] }
             }]
         });
-        primaryRole?.permissions?.forEach(p => permissionSet.add(p.name));
+
+        for (const role of rolesWithPermissions) {
+            role.permissions?.forEach(p => permissionSet.add(p.name));
+        }
     }
 
     // PHASE 2: Fetch Direct Permissions

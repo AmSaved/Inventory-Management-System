@@ -110,11 +110,13 @@ const dashboardController = {
                 // --- CROSS-NODE LOGISTICS SCOPING ---
                 const transferWhere = { company_id };
                 const dischargeWhere = { company_id };
-                
+                const returnWhere = { company_id };
+
                 if (targetNodeIds !== null) {
                     const scopeOp = { [Op.in]: targetNodeIds };
                     transferWhere[Op.or] = [{ from_node_id: scopeOp }, { to_node_id: scopeOp }];
                     dischargeWhere[Op.or] = [{ from_node_id: scopeOp }, { to_node_id: scopeOp }];
+                    returnWhere[Op.or] = [{ from_node_id: scopeOp }, { to_node_id: scopeOp }];
                 }
 
                 const [
@@ -127,12 +129,7 @@ const dashboardController = {
                 ] = await Promise.all([
                     Transfer.count({ where: transferWhere }),
                     DischargeForm.count({ where: dischargeWhere }),
-                    Request.count({ 
-                        where: { 
-                            ...where, 
-                            request_type: { [Op.in]: ['return', 'returns'] } 
-                        } 
-                    }),
+                    Return.count({ where: returnWhere }),
                     Request.count({ 
                         where: { 
                             ...where, 
@@ -246,7 +243,30 @@ const dashboardController = {
             // 5. Always fetch the user's personal assignments (regardless of their admin level)
             const myAssignments = await Assignment.findAll({ 
                 where: { user_id: req.user.id, status: 'active', company_id }, 
-                include: ['product'] 
+                include: [
+                    'product',
+                    { model: Inventory, as: 'inventory', attributes: ['custom_fields'] }
+                ] 
+            });
+
+            // 6. Always fetch the user's personal requests/activities (regardless of their admin level)
+            const myRequests = await Request.findAll({ 
+                where: { 
+                    [Op.or]: [
+                        { requester_id: req.user.id },
+                        { target_user_id: req.user.id }
+                    ],
+                    company_id 
+                }, 
+                include: [
+                    {
+                        model: RequestItem,
+                        as: 'items',
+                        include: [{ model: Product, as: 'product' }]
+                    }
+                ],
+                limit: 10, 
+                order: [['created_at', 'DESC']] 
             });
 
             res.json({
@@ -256,7 +276,8 @@ const dashboardController = {
                     level_distribution: levelStats,
                     recent_activity: recentActivity,
                     pending_approvals: pendingApprovalListRaw,
-                    my_assignments: myAssignments
+                    my_assignments: myAssignments,
+                    my_requests: myRequests
                 }
             });
         } catch (error) {
@@ -296,7 +317,13 @@ const dashboardController = {
                     limit: 10, 
                     order: [['created_at', 'DESC']] 
                 }),
-                Assignment.findAll({ where: { user_id, status: 'active', company_id }, include: ['product'] }),
+                Assignment.findAll({ 
+                    where: { user_id, status: 'active', company_id }, 
+                    include: [
+                        'product',
+                        { model: Inventory, as: 'inventory', attributes: ['custom_fields'] }
+                    ] 
+                }),
                 Assignment.count({
                     where: { user_id, status: 'active', company_id, expected_return_date: { [Op.lt]: new Date() } }
                 }),

@@ -64,7 +64,7 @@ const MainLayout = () => {
         
         {/* Main Content Area - positioned below the header */}
         <main className={`flex-1 transition-all duration-500 ease-in-out ${sidebarOpen ? 'lg:ml-64' : 'ml-0'} flex flex-col min-h-[calc(100vh-80px)]`}>
-          <div className="p-4 lg:px-8 lg:pt-2 lg:pb-8 flex-grow">
+          <div className="p-3 lg:px-6 lg:pt-1 lg:pb-4 flex-grow">
             <Outlet />
           </div>
           

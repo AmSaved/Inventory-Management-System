@@ -41,21 +41,28 @@ const roleController = {
             const { only_mine } = req.query;
             const permissions = await getEffectivePermissions(req.user);
             const isSuperAdminRole = req.user.role?.name === 'super_admin';
-            const hasFullManagePower = isSuperAdminRole || permissions.includes('system:manage') || permissions.includes('role:manage:all');
 
-            let where = { company_id };
+            let where;
 
-            // All Admins see company roles + system roles, but local admins NEVER see the super_admin role
-            where = {
-                [Op.or]: [
-                    { company_id },
-                    { company_id: null }
-                ]
-            };
+            if (only_mine === 'true') {
+                // When only_mine=true (used by UsersPage role dropdown and RolesPage),
+                // return ONLY this company's own roles — no global/system roles.
+                // This ensures the admin can only assign roles they themselves manage.
+                where = { company_id };
+            } else {
+                // Default: return both company roles and global system roles,
+                // but always hide super_admin from non-super-admins.
+                where = {
+                    [Op.or]: [
+                        { company_id },
+                        { company_id: null }
+                    ]
+                };
+            }
 
+            // Non-super-admins can never see or assign the super_admin role
             if (!isSuperAdminRole) {
                 where[Op.and] = [
-                    // Case-insensitive exclusion of the super_admin role
                     sequelize.where(
                         sequelize.fn('LOWER', sequelize.col('Role.name')),
                         { [Op.ne]: 'super_admin' }

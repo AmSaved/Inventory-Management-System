@@ -108,7 +108,8 @@ const WorkflowPage = () => {
     setDesignMode('linear');
     setLinearSteps(['']);
     setFlows([{ id: Date.now(), from_status_id: '', to_status_id: '', role_id: '' }]);
-    setFormData({ name: '', resource_type: 'request', org_node_id: user?.org_node_id || null });
+    const defaultLabel = resourceTypes.find(r => r.value === 'request')?.label?.trim() || 'Request Item';
+    setFormData({ name: defaultLabel, resource_type: 'request', org_node_id: user?.org_node_id || null });
     setIsModalOpen(true);
   };
 
@@ -137,10 +138,6 @@ const WorkflowPage = () => {
   };
 
   const handleSave = async () => {
-    if (!formData.name) {
-      toast.error('Please provide an architecture name');
-      return;
-    }
 
     let payload = { ...formData };
 
@@ -207,7 +204,7 @@ const WorkflowPage = () => {
     }
   };
   return (
-    <div className="max-w-7xl mx-auto space-y-5 py-6 px-4">
+    <div className="max-w-7xl mx-auto space-y-5 py-2 px-4">
       {/* ... (header unchanged) */}
       {/* HEADER SECTION */}
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
@@ -220,7 +217,6 @@ const WorkflowPage = () => {
           </button>
           <div>
             <h1 className="text-lg font-bold text-green-700">Workflow Management</h1>
-            <p className="text-sm text-slate-500 mt-1">This is the workflow management of the Oromia Transport Agency Super Admin</p>
           </div>
         </div>
         
@@ -294,34 +290,26 @@ const WorkflowPage = () => {
         title={isEditing ? `Refining: ${formData.name}` : "Design Flow Rules"}
         onConfirm={handleSave}
         confirmText={isEditing ? "Save" : "Deploy Workflow"}
-        size="4xl"
+        size="lg"
       >
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-            <div>
-              <label className="text-xs font-semibold text-slate-500 ml-1">Workflow Name</label>
-              <Input
-                placeholder="e.g. Standard Asset Request Pipeline"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="h-10 mt-1 bg-white text-xs"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 ml-1">Trigger Resource</label>
-              <select
-                className="w-full h-10 mt-1 bg-white text-slate-900 border border-slate-200 outline-blue-500 rounded-lg px-4 text-xs font-semibold shadow-sm"
-                value={formData.resource_type}
-                onChange={(e) => setFormData({ ...formData, resource_type: e.target.value })}
-              >
-                {resourceTypes.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
+        <div className="space-y-3">
+          <div className="flex flex-col gap-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <label className="text-[10px] font-semibold text-slate-500 ml-1 uppercase tracking-wide">Trigger Resource</label>
+            <select
+              className="w-full h-8 mt-0.5 bg-white text-slate-900 border border-slate-200 outline-blue-500 rounded-lg px-3 text-xs font-semibold shadow-sm"
+              value={formData.resource_type}
+              onChange={(e) => {
+                const label = resourceTypes.find(r => r.value === e.target.value)?.label?.trim() || e.target.value;
+                setFormData({ ...formData, resource_type: e.target.value, name: label });
+              }}
+            >
+              {resourceTypes.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-4">
+          {/* <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-4">
             <button
               type="button"
               onClick={() => setDesignMode('linear')}
@@ -336,30 +324,30 @@ const WorkflowPage = () => {
             >
               Custom Node Mapping
             </button>
-          </div>
+          </div> */}
 
-          <div className="p-1">
-            <div className="flex items-center justify-between mb-4 mt-2">
-              <h3 className="font-bold text-slate-900 text-xs">
-                {designMode === 'linear' ? 'Approval Sequence (Ordered Roles)' : 'Transition Link Logic'}
+          <div className="p-0.5">
+            <div className="flex items-center justify-between mb-2 mt-1">
+              <h3 className="font-bold text-slate-900 text-[11px]">
+                {designMode === 'linear' ? 'Assign Approval Roles' : 'Transition Link Logic'}
               </h3>
-              <span className="text-xs text-slate-400 font-normal">
+              <span className="text-[10px] text-slate-400 font-normal">
                 {designMode === 'linear' ? 'Select roles in the order they should approve' : 'Construct rules representing status links'}
               </span>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
               {designMode === 'linear' ? (
                 /* LINEAR MODE */
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {linearSteps.map((roleId, idx) => (
-                    <div key={idx} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl shadow-sm group animate-in fade-in slide-in-from-left-2 duration-300">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">
+                    <div key={idx} className="flex items-center gap-3 px-3 py-2 bg-white border border-slate-200 rounded-lg shadow-sm group animate-in fade-in slide-in-from-left-2 duration-300">
+                      <div className="w-6 h-6 rounded-md bg-slate-900 text-white flex items-center justify-center font-black text-[10px] shrink-0">
                         {idx + 1}
                       </div>
                       <div className="flex-1">
                         <select
-                          className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 transition-all"
+                          className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-xs font-semibold text-slate-700 outline-none focus:border-blue-400 transition-all"
                           value={roleId}
                           onChange={(e) => updateLinearStep(idx, e.target.value)}
                         >
@@ -372,9 +360,9 @@ const WorkflowPage = () => {
                       {linearSteps.length > 1 && (
                         <button
                           onClick={() => handleRemoveLinearStep(idx)}
-                          className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-400 hover:text-red-500 hover:bg-red-100 transition-all opacity-0 group-hover:opacity-100"
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:text-red-500 hover:bg-red-100 transition-all opacity-0 group-hover:opacity-100"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={13} />
                         </button>
                       )}
                     </div>
@@ -447,13 +435,13 @@ const WorkflowPage = () => {
               )}
             </div>
 
-            <div className="mt-4 flex justify-center">
+            <div className="mt-3 flex justify-center">
               <Button
                 onClick={designMode === 'linear' ? handleAddLinearStep : handleAddFlow}
                 variant="outline"
-                className="rounded-full px-8 h-10 font-black uppercase text-[10px] tracking-widest border border-slate-200 text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center gap-2"
+                className="rounded-full px-6 h-7 font-black uppercase text-[9px] tracking-widest border border-slate-200 text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center gap-1.5"
               >
-                <Plus size={16} /> {designMode === 'linear' ? 'Add Approval Role' : 'Add Transition Flow'}
+                <Plus size={12} /> {designMode === 'linear' ? 'Add Approval Role' : 'Add Transition Flow'}
               </Button>
             </div>
           </div>

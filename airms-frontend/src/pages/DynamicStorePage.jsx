@@ -125,7 +125,7 @@ const DynamicStorePage = () => {
   if (loading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner size="xl" /></div>;
 
   return (
-    <div className="max-w-[1600px] mx-auto py-6 px-4 lg:px-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+    <div className="max-w-[1600px] mx-auto py-2 px-4 lg:px-6 space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-1000">
       {/* Dynamic Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex items-center gap-4">

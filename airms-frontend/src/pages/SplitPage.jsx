@@ -30,19 +30,20 @@ const SplitPage = () => {
   });
 
   useEffect(() => {
-    if (!inventoryId) {
-      toast.error('Missing Source Asset Reference');
-      navigate('/inventory/manage');
-      return;
-    }
-    
     const fetchItem = async () => {
+      if (!inventoryId) {
+        toast.error('Missing Source Asset Reference');
+        navigate('/inventory/manage');
+        setLoading(false);
+        return;
+      }
+
       try {
         const data = await inventoryService.getInventoryById(inventoryId);
         setItem(data);
         // Pre-fill destination with current node
         setSplitData(prev => ({ ...prev, org_node_id: data.org_node_id }));
-        
+
         if (data.quantity <= 1 && !isMaterialize) {
           toast.error('Source Asset lacks sufficient quantity to execute a split parallel.');
           navigate('/inventory/manage');
@@ -54,6 +55,7 @@ const SplitPage = () => {
         setLoading(false);
       }
     };
+
     fetchItem();
   }, [inventoryId, navigate, isMaterialize]);
 
@@ -85,7 +87,7 @@ const SplitPage = () => {
   const maxQty = item ? item.quantity - 1 : 0;
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-12 py-10 px-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+    <div className="max-w-[1400px] mx-auto space-y-5 py-2 px-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
       
       {/* Header Pipeline */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b-2 border-slate-50 pb-10">

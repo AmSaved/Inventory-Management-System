@@ -54,4 +54,9 @@ router.post('/:id/cancel',
     dischargeController.cancel
 );
 
+router.post('/:id/acknowledge',
+    checkAnyPermission(['discharge:read', 'discharge:create', 'stock:discharge']),
+    dischargeController.acknowledge
+);
+
 module.exports = router;

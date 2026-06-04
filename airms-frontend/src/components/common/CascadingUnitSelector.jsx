@@ -316,7 +316,7 @@ const CascadingUnitSelector = ({
               >
                 <option value="">-- Choose --</option>
                 {level.nodes.map(node => (
-                  <option key={node.id} value={node.id}>{node.name} {node.can_store_inventory ? ' (Storage)' : ''}</option>
+                  <option key={node.id} value={node.id}>{node.name}</option>
                 ))}
               </select>
             </div>

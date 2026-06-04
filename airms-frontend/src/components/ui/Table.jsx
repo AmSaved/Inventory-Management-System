@@ -2,8 +2,8 @@ import React from 'react';
 
 const Table = ({ children, className = '', overflowVisible = false }) => {
   return (
-    <div className={overflowVisible ? '' : 'overflow-x-auto'}>
-      <table className={`min-w-full divide-y divide-gray-200 ${className}`}>
+    <div className={`bg-white rounded-xl border border-slate-100 shadow-sm ${overflowVisible ? '' : 'overflow-x-auto'}`}>
+      <table className={`w-full text-left divide-y divide-slate-100 ${className}`}>
         {children}
       </table>
     </div>
@@ -12,7 +12,7 @@ const Table = ({ children, className = '', overflowVisible = false }) => {
 
 export const TableHead = ({ children, className = '' }) => {
   return (
-    <thead className={`bg-gray-50 ${className}`}>
+    <thead className={`bg-green-600 text-white ${className}`}>
       <tr>{children}</tr>
     </thead>
   );
@@ -22,7 +22,7 @@ export const TableHeader = ({ children, className = '' }) => {
   return (
     <th
       scope="col"
-      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${className}`}
+      className={`p-4 text-sm font-bold ${className}`}
     >
       {children}
     </th>
@@ -30,13 +30,13 @@ export const TableHeader = ({ children, className = '' }) => {
 };
 
 export const TableBody = ({ children }) => {
-  return <tbody className="bg-white divide-y divide-gray-200">{children}</tbody>;
+  return <tbody className="bg-white divide-y divide-slate-100">{children}</tbody>;
 };
 
 export const TableRow = ({ children, className = '', onClick }) => {
   return (
     <tr
-      className={`hover:bg-gray-50 ${onClick ? 'cursor-pointer' : ''} ${className}`}
+      className={`hover:bg-slate-50/50 transition-colors ${onClick ? 'cursor-pointer' : ''} ${className}`}
       onClick={onClick}
     >
       {children}
@@ -46,7 +46,7 @@ export const TableRow = ({ children, className = '', onClick }) => {
 
 export const TableCell = ({ children, className = '' }) => {
   return (
-    <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${className}`}>
+    <td className={`p-4 text-sm text-slate-600 ${className}`}>
       {children}
     </td>
   );

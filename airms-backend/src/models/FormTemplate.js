@@ -52,6 +52,14 @@ const FormTemplate = sequelize.define('FormTemplate', {
             model: 'users',
             key: 'id'
         }
+    },
+    org_node_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'organization_nodes',
+            key: 'id'
+        }
     }
 }, {
     tableName: 'form_templates',

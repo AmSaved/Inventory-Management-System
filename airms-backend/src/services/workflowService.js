@@ -121,30 +121,28 @@ class WorkflowService {
 
         const permissions = providedPermissions || await require('../middleware/permissions').getEffectivePermissions(user);
         
-        // ─── PRIORITY 1: GLOBAL OVERRIDES ───
-        const isGlobalAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
-        if (isGlobalAdmin) return true;
+        // Determine the exact column matching the resource type to avoid cross-resource ID clashes (4-Eyes Principle)
+        let resourceCol = 'request_id';
+        if (resource.discharge_number !== undefined || resource.discharge_type !== undefined || resource.constructor.name === 'DischargeForm' || resource.resource_origin === 'discharge' || step.workflow?.resource_type === 'discharge' || step.workflow?.resource_type === 'inventory_discharge') {
+            resourceCol = 'discharge_form_id';
+        } else if (resource.store_number !== undefined || resource.store_type !== undefined || resource.constructor.name === 'StoreForm' || resource.resource_origin === 'store' || step.workflow?.resource_type === 'store' || step.workflow?.resource_type === 'inventory_store') {
+            resourceCol = 'store_form_id';
+        } else if (resource.transfer_number !== undefined || resource.transfer_type !== undefined || resource.constructor.name === 'Transfer' || resource.resource_origin === 'transfer' || step.workflow?.resource_type === 'transfer' || step.workflow?.resource_type === 'inventory_transfer') {
+            resourceCol = 'transfer_id';
+        } else if (resource.return_number !== undefined || resource.return_type !== undefined || resource.constructor.name === 'Return' || resource.resource_origin === 'return' || step.workflow?.resource_type === 'return' || step.workflow?.resource_type === 'inventory_return') {
+            resourceCol = 'return_id';
+        }
 
         // ─── PRIORITY 2: ALREADY ACTED CHECK (4-Eyes Principle) ───
         let hasAlreadyActed = false;
         if (Array.isArray(userApprovals)) {
             hasAlreadyActed = userApprovals.some(app => 
-                (app.request_id && Number(app.request_id) === Number(resource.id)) ||
-                (app.discharge_form_id && Number(app.discharge_form_id) === Number(resource.id)) ||
-                (app.store_form_id && Number(app.store_form_id) === Number(resource.id)) ||
-                (app.transfer_id && Number(app.transfer_id) === Number(resource.id)) ||
-                (app.return_id && Number(app.return_id) === Number(resource.id))
+                app[resourceCol] && Number(app[resourceCol]) === Number(resource.id)
             );
         } else {
             const approvalRecord = await Approval.findOne({
                 where: {
-                    [Op.or]: [
-                        { request_id: resource.id },
-                        { discharge_form_id: resource.id },
-                        { store_form_id: resource.id },
-                        { transfer_id: resource.id },
-                        { return_id: resource.id }
-                    ],
+                    [resourceCol]: resource.id,
                     approver_id: user.id
                 }
             });
@@ -156,52 +154,50 @@ class WorkflowService {
         }
 
         // ─── PRIORITY 3: TARGET USER / RECEIVER SCOPING FOR TRANSFERS ───
+        // If the current user is the designated recipient of this request or transfer,
+        // they are ALWAYS authorized to approve/action their own step — regardless of
+        // what role name is assigned to the workflow step. Workflow steps are assigned
+        // to the INITIATOR's approval chain; the recipient must not be blocked just
+        // because their role doesn't match the step's required role.
         const isTargetUser = (resource.target_user_id && Number(resource.target_user_id) === Number(user.id)) || 
                              (resource.to_user_id && Number(resource.to_user_id) === Number(user.id));
         
         if (isTargetUser) {
-            let stepRoleName = '';
-            if (step.requiredRole) {
-                stepRoleName = (step.requiredRole.name || '').toLowerCase();
-            } else if (step.required_role_id) {
-                try {
-                    const RoleModel = require('../models').Role;
-                    const stepRole = await RoleModel.findByPk(step.required_role_id);
-                    if (stepRole) stepRoleName = (stepRole.name || '').toLowerCase();
-                } catch (e) {
-                    logger.error('[WorkflowService] Failed to load role for receiver step check:', e);
-                }
-            }
-
-            // The target user is only authorized to approve if the step is specifically designated for the "user" / recipient.
-            if (stepRoleName === 'user' || step.required_permission === 'transfer:accept') {
-                return true;
-            }
+            return true;
         }
 
-        // ─── PRIORITY 4: AUTHORIZATION VALIDATION (Permission/Role + Branch) ───
-        const userRoleId = Number(user.role?.id || user.role_id);
-        const isAssignedRole = step.required_role_id && userRoleId === Number(step.required_role_id);
-        
-        let hasApprovePower = false;
-        if (step.required_role_id) {
-            // Strictly enforce the assigned role
-            hasApprovePower = isAssignedRole;
-        } else {
-            // Otherwise, fall back to permission checks
-            const resourceTag = (step.workflow?.resource_type || 'request').replace('inventory_', '');
-            hasApprovePower = permissions.some(p => 
-                p === step.required_permission || 
-                p === `${resourceTag}:approve` || 
-                p === `${resourceTag}:execute` ||
-                p === 'request:approve' || 
-                p === 'transfer:approve' ||
-                p === 'inventory:manage'
-            );
+        // ─── PRIORITY 4: AUTHORIZATION VALIDATION (Strict Role + Admin Bypass) ───
+        const userRoleIds = new Set();
+        if (user.role_id) userRoleIds.add(Number(user.role_id));
+        if (user.role?.id) userRoleIds.add(Number(user.role.id));
+
+        // Load secondary roles from UserRole table
+        try {
+            const UserRoleModel = require('../models').UserRole;
+            if (UserRoleModel) {
+                const assignedUserRoles = await UserRoleModel.findAll({
+                    where: { user_id: user.id },
+                    attributes: ['role_id'],
+                    raw: true
+                });
+                assignedUserRoles.forEach(ur => userRoleIds.add(Number(ur.role_id)));
+            }
+        } catch (e) {
+            logger.error('[WorkflowService] Failed to load secondary roles in userCanApproveStep:', e);
         }
+
+        const isAssignedRole = step.required_role_id && userRoleIds.has(Number(step.required_role_id));
+        const isSuperAdminOrGlobal = (user.role?.level >= 100) || permissions.includes('system:manage') || permissions.includes('hierarchy:all:view');
+
+        // Only assigned roles or Super Admin / System Manager / Global Viewer can approve
+        const hasApprovePower = isAssignedRole || isSuperAdminOrGlobal;
 
         if (hasApprovePower) {
             try {
+                if (isSuperAdminOrGlobal) {
+                    return true;
+                }
+
                 // Hierarchical Enforcement: User must be in the branch hierarchy of the resource.
                 // We resolve the user's allowed nodes strictly by their assigned branch structure,
                 // completely ignoring system-wide global visibility overrides (so Super Admins
@@ -244,15 +240,95 @@ class WorkflowService {
                     }
                 }
                 
-                const nodeIds = [
-                    resource.from_node_id,
-                    resource.to_node_id,
-                    resource.org_node_id,
-                    resource.target_node_id
-                ].filter(id => id !== null && id !== undefined).map(Number);
-                
-                if (nodeIds.some(nodeId => allowedNodes.includes(nodeId))) {
-                    return true;
+                const isTransfer = (step.workflow?.resource_type === 'inventory_transfer' || step.workflow?.resource_type === 'transfer' || resource.request_type === 'transfer');
+                const isReturn = (step.workflow?.resource_type === 'inventory_return' || step.workflow?.resource_type === 'return' || resource.request_type === 'return' || resource.return_type !== undefined);
+                const isDischarge = (step.workflow?.resource_type === 'inventory_discharge' || step.workflow?.resource_type === 'discharge' || resource.constructor.name === 'DischargeForm' || resource.discharge_type !== undefined);
+
+                if (isReturn) {
+                    // ─── RETURN-SPECIFIC BRANCH CHECK ───
+                    // Two kinds of "return" resources reach this path:
+                    //
+                    // (A) Return table records (POST /returns) — have from_node_id & to_node_id.
+                    //     Approver can be at EITHER the FROM or TO node branch.
+                    //
+                    // (B) Request table records (POST /requests, request_type='return') from
+                    //     ReturnAssetPage — have ONLY org_node_id, no from/to node IDs.
+                    //     Fall back to the standard allowedNodes scope check.
+
+                    const fromNodeId = resource.from_node_id ? Number(resource.from_node_id) : null;
+                    const toNodeId   = resource.to_node_id   ? Number(resource.to_node_id)   : null;
+
+                    const userNodeId = user.org_node_id ? Number(user.org_node_id) : null;
+                    if (!userNodeId) return false;
+
+                    // ── Case B: Request-based return (org_node_id only) ──
+                    // ReturnAssetPage posts to /requests with request_type='return'.
+                    // Those records only have org_node_id (the requester's branch).
+                    // Treat org_node_id as the TARGET node — an approver is authorized
+                    // when their node IS the target node, or when the target node falls
+                    // within their allowed scope (i.e. they manage that branch).
+                    if (!fromNodeId && !toNodeId) {
+                        const orgNodeId = resource.org_node_id ? Number(resource.org_node_id) : null;
+                        if (!orgNodeId) return false;
+
+                        // Direct match: approver is AT the same node as the requester
+                        if (userNodeId === orgNodeId) return true;
+
+                        // Scope match: approver's authorized scope includes the target node
+                        // allowedNodes === null means global/super-admin access → always allowed
+                        if (allowedNodes === null) return true;
+                        if (Array.isArray(allowedNodes) && allowedNodes.includes(orgNodeId)) return true;
+
+                        return false;
+                    }
+
+                    // ── Case A: Return-table record (from_node_id / to_node_id present) ──
+                    // Fast exact-match checks
+                    if (fromNodeId && userNodeId === fromNodeId) return true;
+                    if (toNodeId   && userNodeId === toNodeId)   return true;
+
+                    // Get user's materialized path (one DB hit)
+                    let userPath = user.organizationNode?.path || null;
+                    if (!userPath) {
+                        const uNode = await OrganizationNode.findByPk(userNodeId, { attributes: ['path'] });
+                        userPath = uNode?.path || null;
+                    }
+                    if (!userPath) return false;
+
+                    // Check if user is inside the FROM node's branch hierarchy
+                    if (fromNodeId) {
+                        const fromNode = await OrganizationNode.findByPk(fromNodeId, { attributes: ['path'] });
+                        if (fromNode?.path && userPath.startsWith(fromNode.path)) return true;
+                    }
+
+                    // Check if user is inside the TO node's branch hierarchy
+                    if (toNodeId) {
+                        const toNode = await OrganizationNode.findByPk(toNodeId, { attributes: ['path'] });
+                        if (toNode?.path && userPath.startsWith(toNode.path)) return true;
+                    }
+
+                    return false;
+
+                } else {
+                    // ─── TRANSFER, DISCHARGE & ALL OTHER RESOURCES: existing allowedNodes check ───
+                    let nodeIds = [];
+                    if (isTransfer || isDischarge) {
+                        nodeIds = [
+                            resource.from_node_id,
+                            resource.org_node_id
+                        ].filter(id => id !== null && id !== undefined).map(Number);
+                    } else {
+                        nodeIds = [
+                            resource.from_node_id,
+                            resource.to_node_id,
+                            resource.org_node_id,
+                            resource.target_node_id
+                        ].filter(id => id !== null && id !== undefined).map(Number);
+                    }
+
+                    if (nodeIds.some(nodeId => allowedNodes.includes(nodeId))) {
+                        return true;
+                    }
                 }
             } catch (error) {
                 logger.error('[AuthTrace] Branch check error:', error);
@@ -327,7 +403,10 @@ class WorkflowService {
             }
 
             const currentStep = await WorkflowStep.findByPk(resource.current_step_id, {
-                include: [{ model: Role, as: 'requiredRole' }]
+                include: [
+                    { model: Role, as: 'requiredRole' },
+                    { model: Workflow, as: 'workflow' }
+                ]
             });
 
             if (!currentStep) {
@@ -460,10 +539,9 @@ class WorkflowService {
                     nextStatus = 'pending_acknowledgment';
                     nextWorkflowStatus = 'Pending Recipient Acknowledgment';
                 } else if (resourceType === 'inventory_return' || resourceType === 'return') {
-                    const returnService = require('./returnService');
-                    await returnService.approveInventoryReturn(resource.id, resource.company_id, approver.id);
-                    nextStatus = 'completed';
-                    nextWorkflowStatus = 'Returned & Restocked';
+                    // Pause for physical acknowledgment by the recipient at destination branch
+                    nextStatus = 'pending_acknowledgment';
+                    nextWorkflowStatus = 'Pending Receipt Acknowledgment';
                 }
             }
 
@@ -563,24 +641,13 @@ class WorkflowService {
                 transaction: options.transaction
             });
 
-            if (route && route.targetStep) {
-                const targetStep = route.targetStep;
-                const nextRoleName = targetStep.requiredRole ? targetStep.requiredRole.name : 'Authorized Personnel';
-                const nextWorkflowStatus = targetStep.statusLabel ? targetStep.statusLabel.name : `Returned to ${nextRoleName}`;
-
-                await resource.update({
-                    status: 'pending',
-                    workflow_status: nextWorkflowStatus,
-                    current_step_id: targetStep.id
-                }, { transaction: options.transaction });
-            } else {
-                // Global rejection if no specific reject route
-                await resource.update({
-                    status: 'rejected',
-                    workflow_status: 'Rejected',
-                    current_step_id: null
-                }, { transaction: options.transaction });
-            }
+            // The user explicitly requested that all rejections automatically transition the request's status to 'rejected'
+            // and terminate the workflow, rather than rolling back to a previous reviewer in a pending state.
+            await resource.update({
+                status: 'rejected',
+                workflow_status: 'Rejected',
+                current_step_id: null
+            }, { transaction: options.transaction });
 
             await ActivityLog.create({
                 company_id: rejecter.company_id,
@@ -607,17 +674,22 @@ class WorkflowService {
         
         const permissionHelper = require('../middleware/permissions');
         const permissions = providedPermissions || await permissionHelper.getEffectivePermissions(user);
-        const userRoleId = Number(user.role?.id || user.role_id);
-        const roleLevel = user.role?.level || 0;
+        const userRoleIds = new Set();
+        if (user.role_id) userRoleIds.add(Number(user.role_id));
+        if (user.role?.id) userRoleIds.add(Number(user.role.id));
 
-        // DYNAMIC AUTH: Check for ANY relevant approval power
-        const hasAnyApprovalPower = permissions.some(p => 
-            p.includes(':approve') || p.includes(':execute') || 
-            p === 'system:manage' || p === 'workflow:process'
-        );
-
-        if (!hasAnyApprovalPower) {
-            return [];
+        try {
+            const UserRoleModel = require('../models').UserRole;
+            if (UserRoleModel) {
+                const assignedUserRoles = await UserRoleModel.findAll({
+                    where: { user_id: user.id },
+                    attributes: ['role_id'],
+                    raw: true
+                });
+                assignedUserRoles.forEach(ur => userRoleIds.add(Number(ur.role_id)));
+            }
+        } catch (e) {
+            logger.error('[WorkflowService] Failed to load secondary roles in getAuthorizedStepIds:', e);
         }
 
         // 2. Fetch all steps for this company
@@ -630,17 +702,14 @@ class WorkflowService {
             attributes: ['id', 'required_role_id', 'required_permission']
         });
 
-        const isGlobalAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
-
         // 3. Filter steps using the OR logic for Role and Permission
         const authorizedSteps = candidateSteps.filter(step => {
-            if (isGlobalAdmin) return true;
 
             const stepRoleId = step.required_role_id ? Number(step.required_role_id) : null;
             
             if (stepRoleId) {
                 // If a specific role is required, the user must match that role
-                return stepRoleId === userRoleId;
+                return userRoleIds.has(stepRoleId);
             }
 
             if (step.required_permission) {

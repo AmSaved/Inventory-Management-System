@@ -114,7 +114,9 @@ class ReturnService {
             });
 
             if (!returnRecord) throw new Error('Return record not found');
-            if (returnRecord.status !== 'pending') throw new Error('Return is not in a pending state');
+            if (returnRecord.status !== 'pending' && returnRecord.status !== 'pending_acknowledgment') {
+                throw new Error('Return is not in a pending or pending_acknowledgment state');
+            }
 
             // Move each item
             for (const item of returnRecord.items) {
@@ -165,6 +167,7 @@ class ReturnService {
 
             // Update status
             returnRecord.status = 'completed';
+            returnRecord.workflow_status = 'Completed';
             returnRecord.received_by = approverId;
             returnRecord.received_at = new Date();
             await returnRecord.save({ transaction: t });
@@ -192,6 +195,8 @@ class ReturnService {
         if (!returnRecord) throw new Error('Return record not found');
 
         returnRecord.status = 'rejected';
+        returnRecord.workflow_status = 'Rejected';
+        returnRecord.current_step_id = null;
         returnRecord.notes = (returnRecord.notes || '') + `\nRejected by ${rejecterId}: ${reason}`;
         await returnRecord.save();
 
@@ -208,32 +213,45 @@ class ReturnService {
     }
 
     /**
-     * Get recent discharge history to help the user select items to return
+     * Get recent discharge history to help the user select items to return.
+     * Includes both 'completed' and 'acknowledged' forms since discharges
+     * transition to 'acknowledged' once the recipient confirms receipt.
      */
     async getDischargeHistoryForReturn(nodeId, companyId) {
-        const { DischargeForm, DischargeItem, Product } = require('../models');
+        const { DischargeForm, DischargeItem, Product, OrganizationNode } = require('../models');
 
-        // Find forms that have AT LEAST ONE item for this branch, 
-        // then only include those specific items to prevent branch-leaks.
+        // Match forms targeting this branch either at the form level (to_node_id on
+        // the form) OR at the item level (to_node_id on individual items).
+        // Status includes both 'completed' and 'acknowledged' because a discharge moves
+        // to 'acknowledged' after the receiving branch confirms it.
         return await DischargeForm.findAll({
-            where: { 
-                company_id: companyId, 
-                status: 'completed'
+            where: {
+                company_id: companyId,
+                status: { [Op.in]: ['completed', 'acknowledged'] },
+                [Op.or]: [
+                    { to_node_id: nodeId },        // Form-level branch assignment
+                    { to_node_id: null }            // Form has no branch override — rely on item-level filter below
+                ]
             },
-            include: [{
-                model: DischargeItem,
-                as: 'items',
-                required: true, // This ensures only forms with items for this branch are returned
-                where: { 
-                    [Op.or]: [
-                        { to_node_id: nodeId },
-                        { to_node_id: null } // Fallback for legacy items without a specific node override
-                    ]
-                },
-                include: [{ model: Product, as: 'product' }]
-            }],
+            include: [
+                { model: OrganizationNode, as: 'fromNode', attributes: ['id', 'name'] },
+                {
+                    model: DischargeItem,
+                    as: 'items',
+                    required: true,
+                    // For item-level filtering: keep items that belong to this branch
+                    // OR items with no per-item override (they inherit the form's to_node_id).
+                    where: {
+                        [Op.or]: [
+                            { to_node_id: nodeId },
+                            { to_node_id: null }
+                        ]
+                    },
+                    include: [{ model: Product, as: 'product' }]
+                }
+            ],
             order: [['created_at', 'DESC']],
-            limit: 10
+            limit: 50
         });
     }
 }

@@ -1,4 +1,4 @@
-const { Assignment, User, Product, OrganizationNode, DischargeItem, Return, Issue, ActivityLog, sequelize } = require('../models');
+const { Assignment, User, Product, OrganizationNode, DischargeItem, Return, Issue, ActivityLog, Inventory, sequelize } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const hierarchyService = require('../services/hierarchyService');
@@ -19,7 +19,8 @@ const assignmentController = {
                 },
                 include: [
                     { model: Product, as: 'product' },
-                    { model: OrganizationNode, as: 'organizationNode', attributes: ['name'] }
+                    { model: OrganizationNode, as: 'organizationNode', attributes: ['name'] },
+                    { model: Inventory, as: 'inventory', attributes: ['custom_fields'] }
                 ],
                 order: [['assigned_at', 'DESC']]
             });
@@ -97,7 +98,8 @@ const assignmentController = {
                     { model: User, as: 'user', attributes: ['id', 'employee_id', 'first_name', 'last_name', 'email'] },
                     { model: Product, as: 'product' },
                     { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code'] },
-                    { model: DischargeItem, as: 'dischargeItem', include: ['dischargeForm'] }
+                    { model: DischargeItem, as: 'dischargeItem', include: ['dischargeForm'] },
+                    { model: Inventory, as: 'inventory', attributes: ['custom_fields'] }
                 ],
                 limit: parseInt(limit),
                 offset: parseInt(offset),

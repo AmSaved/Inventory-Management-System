@@ -118,11 +118,16 @@ const workflowController = {
             }
 
             if (edges && edges.length > 0) {
-                await Promise.all(edges.map(edge => WorkflowRoute.create({
+                // Filter out edges whose source/target wasn't mapped to a DB step
+                const validEdges = edges.filter(e =>
+                    (e.source == null || stepIdMap[e.source]) &&
+                    (e.target == null || stepIdMap[e.target])
+                );
+                await Promise.all(validEdges.map(edge => WorkflowRoute.create({
                     workflow_id: workflow.id,
                     source_step_id: stepIdMap[edge.source] || null,
                     target_step_id: stepIdMap[edge.target] || null,
-                    action_trigger: edge.sourceHandle || 'approve' // E.g., 'approve_handle', 'reject_handle'
+                    action_trigger: edge.sourceHandle || 'approve'
                 })));
             }
 
@@ -201,6 +206,20 @@ const workflowController = {
             // Update basic details
             await workflow.update({ name });
 
+            // ─── EVADE FOREIGN KEY CONSTRAINTS ───
+            // Temporarily set current_step_id = null on all resources referencing this workflow
+            // (regardless of status, since completed or rejected records could also point to deleted step IDs)
+            // before deleting the steps, avoiding foreign key constraint violations.
+            const resetWhere = { workflow_id: id, company_id };
+            const models = require('../models');
+            await Promise.all([
+                models.Request.update({ current_step_id: null }, { where: resetWhere }),
+                models.DischargeForm.update({ current_step_id: null }, { where: resetWhere }),
+                models.Transfer.update({ current_step_id: null }, { where: resetWhere }),
+                models.Return.update({ current_step_id: null }, { where: resetWhere }),
+                models.StoreForm ? models.StoreForm.update({ current_step_id: null }, { where: resetWhere }) : Promise.resolve()
+            ]);
+
             // Clear existing logic to rebuild
             await WorkflowRoute.destroy({ where: { workflow_id: id } });
             await WorkflowStep.destroy({ where: { workflow_id: id } });
@@ -221,7 +240,12 @@ const workflowController = {
                 }
 
                 if (edges && edges.length > 0) {
-                    await Promise.all(edges.map(edge => WorkflowRoute.create({
+                    // Filter out edges referencing nodes not present in stepIdMap
+                    const validEdges = edges.filter(e =>
+                        (e.source == null || stepIdMap[e.source]) &&
+                        (e.target == null || stepIdMap[e.target])
+                    );
+                    await Promise.all(validEdges.map(edge => WorkflowRoute.create({
                         workflow_id: id,
                         source_step_id: stepIdMap[edge.source] || null,
                         target_step_id: stepIdMap[edge.target] || null,
@@ -269,11 +293,20 @@ const workflowController = {
             // When a workflow is edited, old steps are deleted and new ones are created.
             // Any pending resources still pointing to the old (now-deleted) step IDs
             // become orphaned. We must re-point them to the new first step.
-            const newFirstStep = await WorkflowStep.findOne({
-                where: { workflow_id: id },
-                order: [['step_order', 'ASC']],
-                include: [{ model: Role, as: 'requiredRole' }]
-            });
+            const [allNewSteps, allNewRoutes] = await Promise.all([
+                WorkflowStep.findAll({ where: { workflow_id: id }, include: [{ model: Role, as: 'requiredRole' }] }),
+                WorkflowRoute.findAll({ where: { workflow_id: id } })
+            ]);
+
+            let newFirstStep = null;
+            const entryRoute = allNewRoutes.find(r => r.source_step_id === null);
+            if (entryRoute && entryRoute.target_step_id) {
+                newFirstStep = allNewSteps.find(s => s.id === entryRoute.target_step_id);
+            }
+            if (!newFirstStep && allNewSteps.length > 0) {
+                const sorted = [...allNewSteps].sort((a, b) => a.step_order - b.step_order);
+                newFirstStep = sorted[0];
+            }
 
             if (newFirstStep) {
                 const newRoleName = newFirstStep.requiredRole ? newFirstStep.requiredRole.name : 'Authorized Personnel';
@@ -332,6 +365,18 @@ const workflowController = {
             const company_id = req.user.company_id;
             const workflow = await Workflow.findOne({ where: { id, company_id } });
             if (!workflow) return res.status(404).json({ success: false, message: 'Workflow not found' });
+
+            // Set current_step_id and workflow_id to null on all resources using this workflow first
+            // to prevent foreign key constraint violations on deleting steps or the workflow itself
+            const resetWhere = { workflow_id: id, company_id };
+            const models = require('../models');
+            await Promise.all([
+                models.Request.update({ current_step_id: null, workflow_id: null }, { where: resetWhere }),
+                models.DischargeForm.update({ current_step_id: null, workflow_id: null }, { where: resetWhere }),
+                models.Transfer.update({ current_step_id: null, workflow_id: null }, { where: resetWhere }),
+                models.Return.update({ current_step_id: null, workflow_id: null }, { where: resetWhere }),
+                models.StoreForm ? models.StoreForm.update({ current_step_id: null, workflow_id: null }, { where: resetWhere }) : Promise.resolve()
+            ]);
 
             await workflow.destroy();
             res.json({ success: true, message: 'Workflow deleted' });

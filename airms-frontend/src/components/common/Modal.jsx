@@ -2,7 +2,20 @@ import React, { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import Button from '../ui/Button';
 
-const Modal = ({ isOpen, onClose, title, children, size = 'md', showFooter = true, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel' }) => {
+const Modal = ({
+  isOpen,
+  onClose,
+  title,
+  titleExtra,
+  children,
+  size = 'md',
+  maxWidth,
+  showFooter = true,
+  onConfirm,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  overflowVisible = false
+}) => {
   const sizes = {
     sm: 'max-w-md',
     md: 'max-w-lg',
@@ -10,6 +23,8 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md', showFooter = tru
     xl: 'max-w-4xl',
     full: 'max-w-full mx-4',
   };
+
+  const panelWidth = maxWidth || sizes[size];
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -37,11 +52,18 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md', showFooter = tru
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className={`w-full ${sizes[size]} transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all`}>
+              <Dialog.Panel className={`w-full ${panelWidth} transform ${overflowVisible ? 'overflow-visible' : 'overflow-hidden'} rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all`}>
                 {title && (
-                  <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900 mb-4">
-                    {title}
-                  </Dialog.Title>
+                  <div className="flex items-center justify-between mb-4">
+                    <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
+                      {title}
+                    </Dialog.Title>
+                    {titleExtra && (
+                      <div className="flex items-center">
+                        {titleExtra}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <div className="mt-2">{children}</div>

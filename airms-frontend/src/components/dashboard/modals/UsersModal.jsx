@@ -87,10 +87,14 @@ const UsersModal = ({ onClose }) => {
                           <MapPin size={14} className="text-indigo-400" />
                           <span className="font-medium text-slate-600">{user.organizationNode?.name || 'No Branch Assigned'}</span>
                        </div>
-                       <div className="flex items-center gap-2 text-sm">
-                          <Shield size={14} className="text-rose-400" />
-                          <span className="font-medium text-slate-600">{user.role?.name || 'No Role'}</span>
-                       </div>
+                        <div className="flex items-center gap-2 text-sm">
+                           <Shield size={14} className="text-rose-400" />
+                           <span className="font-medium text-slate-600">
+                             {user.roles && user.roles.length > 0 
+                               ? user.roles.map(r => r.name).join(', ') 
+                               : (user.role?.name || 'No Role')}
+                           </span>
+                        </div>
                        <div className="flex items-start gap-2 pt-2 mt-2 border-t border-slate-50">
                           <Box size={14} className="text-amber-500 mt-1 shrink-0" />
                           <div className="flex-1">

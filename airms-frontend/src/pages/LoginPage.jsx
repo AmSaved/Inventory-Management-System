@@ -83,7 +83,7 @@ const LoginPage = () => {
         <Button
           type="submit"
           loading={loading}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 rounded-lg shadow-sm hover:shadow transition-all"
+          className="w-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white font-bold h-11 rounded-lg shadow-sm hover:shadow transition-all"
         >
           Login
         </Button>

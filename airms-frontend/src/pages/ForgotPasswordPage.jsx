@@ -71,7 +71,11 @@ const ForgotPasswordPage = () => {
           {...register('email')}
         />
 
-        <Button type="submit" loading={loading} className="w-full">
+        <Button
+          type="submit"
+          loading={loading}
+          className="w-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white font-bold h-11 rounded-lg shadow-sm hover:shadow transition-all"
+        >
           Send reset link
         </Button>
 

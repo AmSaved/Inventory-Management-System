@@ -141,6 +141,45 @@ class HierarchyService {
     }
 
     /**
+     * Expand a list of allowed node IDs to also include any archived nodes
+     * that were merged INTO one of those allowed nodes.
+     *
+     * This lets users who belong to a merged/consolidated branch still see
+     * historical transfers, returns, and discharges that referenced the old
+     * (now-archived) source branches before they were merged.
+     *
+     * @param {number[]|null} allowedNodeIds  - result of getAllowedNodes()
+     * @param {number}        companyId
+     * @returns {number[]|null}  Expanded ID list, or null (= global access)
+     */
+    async expandWithMergedSources(allowedNodeIds, companyId) {
+        if (allowedNodeIds === null) return null; // global access – no expansion needed
+
+        // Find all archived nodes for this company that have metadata.merged_into
+        const archivedNodes = await OrganizationNode.findAll({
+            where: {
+                company_id: companyId,
+                status: 'archived',
+                metadata: { [Op.ne]: null }
+            },
+            attributes: ['id', 'metadata'],
+            raw: true
+        });
+
+        // Keep only those whose merged_into target is in our allowed list
+        const extraIds = archivedNodes
+            .filter(n => {
+                const meta = (typeof n.metadata === 'string') ? (() => { try { return JSON.parse(n.metadata); } catch { return {}; } })() : (n.metadata || {});
+                return meta.merged_into && allowedNodeIds.includes(Number(meta.merged_into));
+            })
+            .map(n => Number(n.id));
+
+        if (extraIds.length === 0) return allowedNodeIds;
+
+        return [...new Set([...allowedNodeIds, ...extraIds])];
+    }
+
+    /**
      * Get roots of a company hierarchy.
      */
     async getRoots(companyId) {

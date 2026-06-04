@@ -20,9 +20,9 @@ const Pagination = ({ pagination, onPageChange }) => {
           variant="ghost"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          className="h-10 px-4 rounded-xl bg-white border border-slate-100 text-slate-600 disabled:opacity-30 shadow-sm"
+          className="h-11 w-11 p-0 rounded-xl bg-white border border-slate-200 text-slate-700 disabled:opacity-30 shadow-sm flex items-center justify-center hover:bg-slate-100 transition-colors"
         >
-          <ChevronLeft size={16} className="mr-1" /> Previous
+          <ChevronLeft size={20} strokeWidth={2.5} />
         </Button>
         
         <div className="flex items-center gap-1 mx-2">
@@ -54,9 +54,9 @@ const Pagination = ({ pagination, onPageChange }) => {
           variant="ghost"
           disabled={page >= pages}
           onClick={() => onPageChange(page + 1)}
-          className="h-10 px-4 rounded-xl bg-white border border-slate-100 text-slate-600 disabled:opacity-30 shadow-sm"
+          className="h-11 w-11 p-0 rounded-xl bg-white border border-slate-200 text-slate-700 disabled:opacity-30 shadow-sm flex items-center justify-center hover:bg-slate-100 transition-colors"
         >
-          Next <ChevronRight size={16} className="ml-1" />
+          <ChevronRight size={20} strokeWidth={2.5} />
         </Button>
       </div>
     </div>

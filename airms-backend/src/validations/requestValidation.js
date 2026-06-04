@@ -16,8 +16,14 @@ const createRequestValidation = [
     body('expected_delivery_date')
         .optional()
         .isISO8601().withMessage('Invalid date format')
-        .custom(value => new Date(value) > new Date())
-        .withMessage('Expected delivery date must be in the future'),
+        .custom(value => {
+            const inputDate = new Date(value);
+            inputDate.setHours(0, 0, 0, 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return inputDate >= today;
+        })
+        .withMessage('Expected delivery date must be today or in the future'),
     
     body('is_emergency')
         .optional()
@@ -64,7 +70,15 @@ const updateRequestValidation = [
     
     body('expected_delivery_date')
         .optional()
-        .isISO8601().withMessage('Invalid date format'),
+        .isISO8601().withMessage('Invalid date format')
+        .custom(value => {
+            const inputDate = new Date(value);
+            inputDate.setHours(0, 0, 0, 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return inputDate >= today;
+        })
+        .withMessage('Expected delivery date must be today or in the future'),
     
     body('is_emergency')
         .optional()

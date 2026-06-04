@@ -88,22 +88,22 @@ const PermissionManagement = () => {
       { }
 
 
-      { }
-      <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-[30px] border border-slate-100 shadow-sm">
-        <div className="flex-1 relative group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+      {/* SEARCH AND FILTER BAR */}
+      <div className="flex flex-col sm:flex-row gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm max-w-xl">
+        <div className="flex-1 relative group min-w-[200px]">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-green-600 transition-colors" size={15} />
           <input
             type="text"
             placeholder="Search function strings or descriptions..."
-            className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            className="w-full pl-9 pr-3 h-10 bg-slate-50 border-none rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-green-500 outline-none transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-3 px-4 bg-slate-50 rounded-2xl border border-slate-100">
-          <Filter size={16} className="text-slate-400" />
+        <div className="flex items-center gap-2 px-3 h-10 bg-slate-50 rounded-xl border border-slate-100">
+          <Filter size={14} className="text-slate-400" />
           <select
-            className="bg-transparent border-none py-4 text-xs font-black uppercase tracking-widest text-slate-600 outline-none cursor-pointer"
+            className="bg-transparent border-none py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 outline-none cursor-pointer"
             value={filterResource}
             onChange={(e) => setFilterResource(e.target.value)}
           >
@@ -115,14 +115,13 @@ const PermissionManagement = () => {
       </div>
 
       {/* Permissions Table */}
-      <div className="bg-white rounded-[40px] shadow-xl border border-slate-100 overflow-hidden">
-        <Table>
-          <TableHead className="bg-slate-50/50">
-            <TableHeader className="pl-8">Permissions</TableHeader>
-            <TableHeader>Group</TableHeader>
-            <TableHeader>Definition / Action</TableHeader>
-            <TableHeader className="text-right pr-8">Actions</TableHeader>
-          </TableHead>
+      <Table>
+        <TableHead>
+          <TableHeader className="pl-8">Permissions</TableHeader>
+          <TableHeader>Group</TableHeader>
+          <TableHeader>Definition / Action</TableHeader>
+          <TableHeader className="text-right pr-8">Actions</TableHeader>
+        </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
@@ -134,10 +133,10 @@ const PermissionManagement = () => {
               </TableRow>
             ) : (
               filteredPermissions.map((perm) => (
-                <TableRow key={perm.id} className="hover:bg-slate-50/30 transition-colors group">
+                <TableRow key={perm.id} className="hover:bg-slate-50/50 transition-colors group">
                   <TableCell className="pl-8">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                      <div className="p-2 bg-green-50 rounded-lg text-green-600">
                         <ShieldCheck size={16} />
                       </div>
                       <code className="text-xs font-black text-slate-900 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-100 leading-none">
@@ -160,13 +159,13 @@ const PermissionManagement = () => {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => handleOpenModal(perm)}
-                        className="p-3 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                        className="p-2.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all"
                       >
                         <Edit3 size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(perm.id)}
-                        className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                        className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -177,7 +176,6 @@ const PermissionManagement = () => {
             )}
           </TableBody>
         </Table>
-      </div>
 
       {/* Add/Edit Modal */}
       <Modal

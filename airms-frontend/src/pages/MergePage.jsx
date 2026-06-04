@@ -84,7 +84,7 @@ const MergePage = () => {
   const totalVolume = items.reduce((sum, i) => sum + parseInt(i.quantity, 10), 0);
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-12 py-10 px-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+    <div className="max-w-[1400px] mx-auto space-y-5 py-2 px-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
       
       {/* Header Pipeline */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b-2 border-slate-50 pb-10">
@@ -145,9 +145,6 @@ const MergePage = () => {
                <div className="relative z-10 space-y-10">
                   <div>
                     <h3 className="text-3xl font-black text-white tracking-tight italic uppercase">{targetItem.product?.name}</h3>
-                    <div className="font-mono text-[11px] font-bold text-amber-400 tracking-widest mt-2 bg-amber-900/50 w-fit px-3 py-1 rounded-md border border-amber-700/50">
-                      SKU: {targetItem.product?.sku}
-                    </div>
                   </div>
 
                   <div className="space-y-6 bg-white/5 border border-white/10 p-6 rounded-[30px] backdrop-blur-md">
@@ -192,7 +189,6 @@ const MergePage = () => {
                            <div className="w-14 h-14 bg-slate-50 rounded-[20px] flex items-center justify-center border-2 border-slate-100 group-hover:border-red-200 group-hover:bg-red-50 transition-all">
                               <ArchiveX className="text-slate-400 group-hover:text-red-500 transition-colors" size={24} />
                            </div>
-                           <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">ID #{source.id}</div>
                         </div>
 
                         <div>
@@ -202,7 +198,6 @@ const MergePage = () => {
                            </div>
                            <div className="grid grid-cols-2 gap-x-8 gap-y-2 mt-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                                <div className="flex items-center gap-2"><span>Serial:</span> <span className="text-slate-900 font-mono tracking-tight">{source.serial_number || 'N/A'}</span></div>
-                               <div className="flex items-center gap-2"><span>Batch:</span> <span className="text-slate-900 font-mono tracking-tight">{source.batch_number || 'N/A'}</span></div>
                                <div className="flex items-center gap-2"><span>Condition:</span> <span className="text-slate-900">{source.condition || 'N/A'}</span></div>
                                <div className="flex items-center gap-2"><span>Node Loc:</span> <span className="text-slate-900">{source.organizationNode?.name || 'N/A'}</span></div>
                            </div>

@@ -2,8 +2,8 @@ import api from './api';
 
 const roleService = {
   
-  getAllRoles: async () => {
-    const response = await api.get('/roles');
+  getAllRoles: async (params = {}) => {
+    const response = await api.get('/roles', { params });
     return response.data;
   },
 

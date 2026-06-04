@@ -9,6 +9,8 @@ const Input = React.forwardRef(
       error,
       icon,
       className = '',
+      labelClassName = '',
+      wrapperClassName = 'mb-4',
       ...props
     },
     ref
@@ -18,9 +20,9 @@ const Input = React.forwardRef(
     const inputType = isPassword ? (showPassword ? 'text' : 'password') : type;
 
     return (
-      <div className="mb-4 group">
+      <div className={`${wrapperClassName} group`}>
         {label && (
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className={`block text-sm font-medium text-gray-700 mb-1 ${labelClassName}`}>
             {label}
           </label>
         )}

@@ -6,6 +6,77 @@ const hierarchyService = require('./hierarchyService');
 
 class ApprovalService {
     /**
+     * Resolves node associations of merged/archived branches to their new target branch names.
+     */
+    async resolveMergedNodeNames(items) {
+        if (!items || items.length === 0) return items;
+        
+        const { OrganizationNode } = require('../models');
+        const allNodes = await OrganizationNode.findAll({ raw: true });
+        const nodeMap = {};
+        allNodes.forEach(n => {
+            nodeMap[n.id] = n;
+        });
+
+        const getEffectiveNode = (node) => {
+            if (!node) return node;
+            let current = node;
+            let depth = 0;
+            while (current && current.status === 'archived' && current.metadata?.merged_into && depth < 5) {
+                const targetId = current.metadata.merged_into;
+                const targetNode = nodeMap[targetId];
+                if (targetNode) {
+                    current = targetNode;
+                } else {
+                    break;
+                }
+                depth++;
+            }
+            return current;
+        };
+
+        for (const item of items) {
+            // Check organizationNode
+            if (item.organizationNode) {
+                const resolved = getEffectiveNode(item.organizationNode);
+                if (resolved) {
+                    item.organizationNode = {
+                        ...item.organizationNode,
+                        id: resolved.id,
+                        name: resolved.name,
+                        code: resolved.code
+                    };
+                }
+            }
+            // Check fromNode
+            if (item.fromNode) {
+                const resolved = getEffectiveNode(item.fromNode);
+                if (resolved) {
+                    item.fromNode = {
+                        ...item.fromNode,
+                        id: resolved.id,
+                        name: resolved.name,
+                        code: resolved.code
+                    };
+                }
+            }
+            // Check toNode
+            if (item.toNode) {
+                const resolved = getEffectiveNode(item.toNode);
+                if (resolved) {
+                    item.toNode = {
+                        ...item.toNode,
+                        id: resolved.id,
+                        name: resolved.name,
+                        code: resolved.code
+                    };
+                }
+            }
+        }
+        return items;
+    }
+
+    /**
      * Process a generic workflow action (Approve/Reject).
      * Replacing hardcoded roles (Chairman/Storage) with dynamic Processing Design.
      */
@@ -121,14 +192,15 @@ class ApprovalService {
                 return plain;
             }));
 
-            // 4. Combine all approval streams into a Unified Command Queue
-            return [
+            const unifiedList = [
                 ...standardResults,
                 ...discharges,
                 ...transfers,
                 ...returns,
                 ...inventoryReturns
             ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            return await this.resolveMergedNodeNames(unifiedList);
             
         } catch (error) {
             logger.error('Universal fetch error: Dashboard Sync Failed', error);
@@ -259,31 +331,47 @@ class ApprovalService {
 
             // Dynamically tag which ones the user can actually action right now
             const results = await Promise.all(allResults.map(async (item) => {
-                const userRoleId = Number(user.role?.id || user.role_id);
-                const stepRoleId = item.currentStep?.required_role_id ? Number(item.currentStep.required_role_id) : null;
+                const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
+                const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
                 
-                // Priority 1: Strict Role Match (Always allow action)
-                if (stepRoleId && userRoleId === stepRoleId) {
-                    item.can_action = true;
-                } else {
-                    // Priority 2: Permission/Hierarchy check
-                    const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
-                    const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
+                if (item.status?.startsWith('pending') && isAuthorized) {
+                    item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
                     
-                    if (item.status?.startsWith('pending') && isAuthorized) {
-                        item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
-                    } else {
+                    // Branch-level source node enforcement: Approve/Reject buttons display ONLY at source node
+                    const sourceNodeId = item.from_node_id || item.org_node_id;
+                    if (sourceNodeId && user.org_node_id && Number(user.org_node_id) !== Number(sourceNodeId)) {
                         item.can_action = false;
                     }
+                } else {
+                    item.can_action = false;
                 }
 
                 if (item.can_action) {
                     item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id, allRoutes, allSteps);
                 }
+
+                // Tag can_acknowledge for the TARGET BRANCH:
+                if (item.status === 'completed' && item.to_node_id) {
+                    const isRecipient = item.to_user_id && Number(item.to_user_id) === Number(user.id);
+                    const isSuperAdmin = user.role && user.role.level >= 100;
+                    const hasNodeAuthority = item.to_node_id && (allowedNodes === null || allowedNodes.includes(Number(item.to_node_id)));
+                    const isAtSourceBranch = user.org_node_id && Number(user.org_node_id) === Number(item.from_node_id);
+                    
+                    let canAck = (isRecipient || isSuperAdmin || hasNodeAuthority) && !isAtSourceBranch;
+                    // Branch-level target node enforcement: Acknowledge Receipt button displays ONLY at target node
+                    const targetNodeId = item.to_node_id || item.target_node_id;
+                    if (targetNodeId && user.org_node_id && Number(user.org_node_id) !== Number(targetNodeId)) {
+                        canAck = false;
+                    }
+                    item.can_acknowledge = canAck;
+                } else {
+                    item.can_acknowledge = false;
+                }
+
                 return item;
             }));
 
-            return results;
+            return await this.resolveMergedNodeNames(results);
         } catch (error) {
             logger.error('Get discharge approvals error:', error);
             throw error;
@@ -396,6 +484,7 @@ class ApprovalService {
                     },
                     include: [
                         { model: User, as: 'requester', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
+                        { model: User, as: 'targetUser', attributes: ['id', 'first_name', 'last_name', 'employee_id'] },
                         { model: OrganizationNode, as: 'organizationNode', attributes: ['id', 'name', 'code'] },
                         { 
                             model: WorkflowStep, 
@@ -426,7 +515,7 @@ class ApprovalService {
                 })
             ];
 
-            return await Promise.all(allResults.map(async (item) => {
+            const mappedList = await Promise.all(allResults.map(async (item) => {
                 const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
                 const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
 
@@ -435,12 +524,40 @@ class ApprovalService {
                 } else {
                     // Optimized check with pre-calculated values
                     item.can_action = await workflowService.userCanApproveStep(user, item, item.currentStep, permissions, allowedNodes, userApprovals);
+
+                    // Branch-level source node enforcement: Approve/Reject buttons display ONLY at source node
+                    const sourceNodeId = item.from_node_id || item.org_node_id;
+                    if (sourceNodeId && user.org_node_id && Number(user.org_node_id) !== Number(sourceNodeId)) {
+                        item.can_action = false;
+                    }
+
                     if (item.can_action) {
                         item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id, allRoutes, allSteps);
                     }
                 }
+
+                // Acknowledgment Check for transfer/requests in transit
+                if (item.status === 'pending_acknowledgment') {
+                    const targetId = item.to_user_id || item.target_user_id;
+                    const isRecipient = targetId && Number(targetId) === Number(user.id);
+                    const isSuperAdmin = user.role && user.role.level >= 100;
+                    const hasNodeAuthority = item.to_node_id && (allowedNodes === null || allowedNodes.includes(Number(item.to_node_id)));
+                    let canAck = isRecipient || isSuperAdmin || hasNodeAuthority;
+
+                    // Branch-level target node enforcement: Acknowledge Receipt button displays ONLY at target node
+                    const targetNodeId = item.to_node_id || item.target_node_id;
+                    if (targetNodeId && user.org_node_id && Number(user.org_node_id) !== Number(targetNodeId)) {
+                        canAck = false;
+                    }
+                    item.can_acknowledge = canAck;
+                } else {
+                    item.can_acknowledge = false;
+                }
+
                 return item;
             }));
+
+            return await this.resolveMergedNodeNames(mappedList);
         } catch (error) {
             logger.error('Get transfer approvals error:', error);
             throw error;
@@ -496,8 +613,15 @@ class ApprovalService {
             };
 
             if (!includeAll) {
-                returnWhere.status = 'pending';
-                returnWhere.current_step_id = { [Op.in]: authorizedStepIds };
+                // Fetch returns that either need workflow approval (pending) OR
+                // need physical acknowledgment (pending_acknowledgment) so the
+                // Acknowledge Receipt button can surface in the Approval Ledger.
+                returnWhere[Op.or] = [
+                    // Approval step: must be pending AND assigned to an authorized step
+                    { status: 'pending', current_step_id: { [Op.in]: authorizedStepIds } },
+                    // Acknowledgment step: awaiting physical receipt confirmation
+                    { status: 'pending_acknowledgment' }
+                ];
                 requestWhere.status = 'pending';
                 requestWhere.current_step_id = { [Op.in]: authorizedStepIds };
 
@@ -566,7 +690,7 @@ class ApprovalService {
                 })
             ];
 
-            return await Promise.all(allResults.map(async (item) => {
+            const mappedList = await Promise.all(allResults.map(async (item) => {
                 const currentStepId = item.current_step_id ? Number(item.current_step_id) : null;
                 const isAuthorized = authorizedStepIds.map(Number).includes(currentStepId);
 
@@ -579,8 +703,20 @@ class ApprovalService {
                         item.is_final_step = await workflowService.isFinalStep(item, item.current_step_id, allRoutes, allSteps);
                     }
                 }
+
+                // Acknowledgment Check for returns/requests in transit
+                if (item.status === 'pending_acknowledgment') {
+                    const targetNodeId = item.to_node_id || item.org_node_id;
+                    const hasNodeAuthority = targetNodeId && (allowedNodes === null || allowedNodes.includes(Number(targetNodeId)));
+                    item.can_acknowledge = !!hasNodeAuthority;
+                } else {
+                    item.can_acknowledge = false;
+                }
+
                 return item;
             }));
+
+            return await this.resolveMergedNodeNames(mappedList);
         } catch (error) {
             logger.error('Get return approvals error:', error);
             throw error;

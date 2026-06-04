@@ -49,7 +49,11 @@ const ProfilePage = () => {
               </div>
               <div>
                 <h3 className="text-xl font-semibold">{user?.first_name} {user?.last_name}</h3>
-                <p className="text-gray-500 capitalize">{user?.role?.name}</p>
+                <p className="text-gray-500 capitalize">
+                  {user?.roles && user.roles.length > 0 
+                    ? user.roles.map(r => r.name).join(', ') 
+                    : user?.role?.name}
+                </p>
               </div>
             </div>
 

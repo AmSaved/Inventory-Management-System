@@ -198,22 +198,24 @@ const ProductManagement = () => {
   };
 
   return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-      <div className="flex justify-end pb-8 border-b border-slate-100">
+    <div className="space-y-1 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+      <div className="flex justify-end pb-2 border-b border-slate-100">
           <div className="flex items-center gap-4">
-             <button 
-                onClick={() => setView(view === 'catalog' ? 'manager' : 'catalog')} 
-                className="bg-white border-2 border-slate-200 text-slate-800 h-14 px-8 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:border-slate-800 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center"
-             >
-                {view === 'catalog' ? <><Settings2 size={16} className="mr-2" /> Design Blueprints</> : <><ArrowLeft size={16} className="mr-2" /> Back to Catalog</>}
-             </button>
+             {view === 'catalog' && (
+                <button 
+                   onClick={() => setView('manager')} 
+                   className="bg-white border-2 border-slate-200 text-slate-800 h-14 px-8 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:border-slate-800 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center"
+                >
+                   <Settings2 size={16} className="mr-2" /> Form Builder
+                </button>
+             )}
 
              {view === 'manager' && (
                 <button 
                     onClick={() => handleEditTemplate()} 
                     className="bg-emerald-600 text-white h-14 px-8 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-950 transition-all shadow-lg flex items-center justify-center"
                 >
-                    <PlusCircle size={16} className="mr-2" /> Create New Blueprint
+                    <PlusCircle size={16} className="mr-2" /> New Form
                 </button>
              )}
           </div>
@@ -401,111 +403,157 @@ const ProductManagement = () => {
                 {/* SCHEMA BUILDER */}
                 <div className="lg:col-span-2">
                     {editingTemplate ? (
-                        <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
-                             <div className="p-10 bg-slate-950 text-white flex items-center justify-between">
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+                             {/* Header */}
+                             <div className="py-4 px-6 bg-slate-950 text-white flex items-center justify-between">
                                 <div className="flex items-center gap-6">
-                                    <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center">
-                                        <ClipboardList size={24} />
+                                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
+                                        <ClipboardList size={20} />
                                     </div>
                                     <div>
-                                        <h4 className="text-xl font-black uppercase tracking-tighter italic">Architecture Designer</h4>
-                                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mt-1">Configuring {editingTemplate.name || 'New Blueprint'}</p>
+                                        <h4 className="text-base font-black uppercase tracking-tighter italic">Form Designer</h4>
+                                        <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mt-0.5">Configuring {editingTemplate.name || 'New Form'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">
                                     {editingTemplate.id && (
                                         <button 
                                             onClick={() => generateCSVTemplate(editingTemplate)}
-                                            className="px-6 h-12 bg-white/10 rounded-xl hover:bg-white/20 transition-all flex items-center gap-3 text-[10px] font-black uppercase tracking-widest"
+                                            className="px-4 h-9 bg-white/10 rounded-lg hover:bg-white/20 transition-all flex items-center gap-2 text-[9px] font-black uppercase tracking-widest"
                                         >
-                                            <Download size={16} /> Bulk Template
+                                            <Download size={14} /> Bulk Template
                                         </button>
                                     )}
-                                    <button onClick={() => setEditingTemplate(null)} className="p-3 bg-white/10 rounded-xl hover:bg-white/20 transition-all"><X size={20} /></button>
+                                    <button onClick={() => setEditingTemplate(null)} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-all"><X size={16} /></button>
                                 </div>
                              </div>
 
-                             <div className="p-12 space-y-10">
-                                <div className="grid grid-cols-2 gap-8">
-                                    <Input label="Blueprint Name" value={editingTemplate.name} onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})} className="h-16 bg-slate-50 border-none rounded-2xl font-black px-6" />
-                                    <Input label="Visual Icon (Emoji)" value={editingTemplate.icon} onChange={e => setEditingTemplate({...editingTemplate, icon: e.target.value})} className="h-16 bg-slate-50 border-none rounded-2xl font-black px-6" />
+                             {/* Form Body */}
+                             <div className="p-4 space-y-3">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Form Name</label>
+                                        <input 
+                                            type="text" 
+                                            value={editingTemplate.name} 
+                                            onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})} 
+                                            placeholder="Form Name"
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-500 transition-all bg-white"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Description</label>
+                                        <input 
+                                            type="text" 
+                                            value={editingTemplate.description} 
+                                            onChange={e => setEditingTemplate({...editingTemplate, description: e.target.value})} 
+                                            placeholder="Form Description"
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-500 transition-all bg-white"
+                                        />
+                                    </div>
                                 </div>
-                                <Input label="Description" value={editingTemplate.description} onChange={e => setEditingTemplate({...editingTemplate, description: e.target.value})} className="h-16 bg-slate-50 border-none rounded-2xl font-black px-6" />
 
-                                <div className="pt-6 space-y-6">
-                                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                                        <h5 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] italic">Structural Attributes</h5>
-                                        <button onClick={addField} className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-transform"><Plus size={14} /> Add New Attribute</button>
+                                {/* Attributes Table */}
+                                <div className="pt-2 space-y-2">
+                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                        <h5 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.2em] italic">Form Attributes</h5>
+                                        <button onClick={addField} className="text-[9px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-transform"><Plus size={12} /> Add New Attribute</button>
                                     </div>
 
-                                    <div className="space-y-6">
-                                         {editingTemplate.schema.map((field, idx) => {
-                                             let displayType = field.type;
-                                             if (field.type === 'number' && field.unit === 'KG') displayType = 'kg';
-                                             else if (field.type === 'number' && field.unit === 'L') displayType = 'litre';
-                                             else if (field.type === 'number' && field.unit === 'M') displayType = 'metre';
-                                             else if (field.type === 'number' && field.unit === '%') displayType = 'percent';
-                                             else if (field.type === 'number' && field.unit === '$') displayType = 'currency';
+                                    <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm">
+                                        <table className="w-full text-left border-collapse bg-white">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-100">
+                                                    <th className="px-4 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Label</th>
+                                                    <th className="px-4 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
+                                                    <th className="px-4 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-28">Required</th>
+                                                    <th className="px-4 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-16">Del</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {editingTemplate.schema.map((field, idx) => {
+                                                    let displayType = field.type;
+                                                    if (field.type === 'number' && field.unit === 'KG') displayType = 'kg';
+                                                    else if (field.type === 'number' && field.unit === 'L') displayType = 'litre';
+                                                    else if (field.type === 'number' && field.unit === 'M') displayType = 'metre';
+                                                    else if (field.type === 'number' && field.unit === '%') displayType = 'percent';
+                                                    else if (field.type === 'number' && field.unit === '$') displayType = 'currency';
 
-                                             return (
-                                                 <div key={field.key} className="p-10 bg-slate-50/50 rounded-[2.5rem] border-2 border-slate-50 space-y-6 group hover:border-emerald-200 transition-all">
-                                                     <div className="flex flex-wrap lg:flex-nowrap items-center gap-8">
-                                                        <div className="flex-[2] min-w-[200px]">
-                                                            <Input label="Attribute Label" value={field.label} onChange={e => updateField(idx, { label: e.target.value })} className="h-14 bg-white border-none rounded-2xl font-bold" />
-                                                        </div>
-                                                        <div className="flex-1 min-w-[180px]">
-                                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Data Architecture</label>
-                                                            <select 
-                                                                className="w-full h-14 bg-white border-none rounded-2xl px-4 text-[11px] font-black uppercase tracking-widest cursor-pointer outline-none shadow-sm" 
-                                                                value={displayType} 
-                                                                onChange={e => updateField(idx, { type: e.target.value })}
-                                                            >
-                                                                <optgroup label="Standard Types">
-                                                                    <option value="text">General Text</option>
-                                                                    <option value="number">Plain Number</option>
-                                                                    <option value="date">Calendar Date</option>
-                                                                    <option value="select">Dropdown Choice</option>
-                                                                    <option value="textarea">Multi-line Text</option>
-                                                                    <option value="checkbox">Toggle Switch</option>
-                                                                </optgroup>
-                                                                <optgroup label="Measured Units">
-                                                                    <option value="kg">Weight (KG)</option>
-                                                                    <option value="litre">Volume (Litre)</option>
-                                                                    <option value="metre">Length (Metre)</option>
-                                                                    <option value="percent">Ratio (%)</option>
-                                                                    <option value="currency">Value ($)</option>
-                                                                </optgroup>
-                                                            </select>
-                                                        </div>
-                                                        <div className="flex-1 min-w-[150px]">
-                                                            <Input label="Section Group" value={field.section} onChange={e => updateField(idx, { section: e.target.value })} className="h-14 bg-white border-none rounded-2xl font-bold" />
-                                                        </div>
-                                                        <div className="pt-6">
-                                                            <button onClick={() => removeField(idx)} className="p-4 bg-white text-rose-400 rounded-2xl hover:bg-rose-500 hover:text-white transition-all shadow-sm opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
-                                                        </div>
-                                                     </div>
-
-                                                     {field.type === 'select' && (
-                                                         <div className="pt-6 border-t border-slate-200/50 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                            <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-2 mb-2 block">Dropdown Choices (comma separated)</label>
-                                                            <input 
-                                                                type="text"
-                                                                value={field.options ? field.options.join(', ') : ''}
-                                                                onChange={e => updateField(idx, { options: e.target.value.split(',').map(s => s.trim()) })}
-                                                                placeholder="e.g. Brand New, Used, Damaged"
-                                                                className="w-full h-14 bg-white border-none rounded-2xl px-6 text-xs font-bold text-slate-600 outline-none shadow-sm"
-                                                            />
-                                                         </div>
-                                                     )}
-                                                 </div>
-                                             );
-                                         })}
-                                     </div>
+                                                    return (
+                                                        <tr key={field.key} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                                            <td className="px-4 py-1.5">
+                                                                <input 
+                                                                    type="text" 
+                                                                    value={field.label === 'Asset Name' || field.label === 'Serial Number / ID' || field.label === 'New Attribute' ? '' : field.label}
+                                                                    onChange={e => updateField(idx, { label: e.target.value })}
+                                                                    placeholder={field.label}
+                                                                    className="w-full h-8 border border-slate-200 rounded-lg px-3 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-500 transition-all bg-white"
+                                                                />
+                                                                {field.type === 'select' && (
+                                                                    <input 
+                                                                        type="text"
+                                                                        value={field.options ? field.options.join(', ') : ''}
+                                                                        onChange={e => updateField(idx, { options: e.target.value.split(',').map(s => s.trim()) })}
+                                                                        placeholder="Options (comma-separated)"
+                                                                        className="w-full h-7 mt-1 border border-emerald-200 rounded-lg px-3 text-[11px] font-semibold text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/10"
+                                                                    />
+                                                                )}
+                                                            </td>
+                                                            <td className="px-4 py-1.5">
+                                                                <select 
+                                                                    className="w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-semibold text-slate-700 cursor-pointer outline-none focus:border-emerald-500 transition-all bg-white" 
+                                                                    value={displayType} 
+                                                                    onChange={e => updateField(idx, { type: e.target.value })}
+                                                                >
+                                                                    <optgroup label="Standard">
+                                                                        <option value="text">Text</option>
+                                                                        <option value="number">Number</option>
+                                                                        <option value="date">Date</option>
+                                                                        <option value="select">Dropdown</option>
+                                                                        <option value="textarea">Multiline</option>
+                                                                        <option value="checkbox">Checkbox</option>
+                                                                    </optgroup>
+                                                                    <optgroup label="Units">
+                                                                        <option value="kg">KG</option>
+                                                                        <option value="litre">Litre</option>
+                                                                        <option value="metre">Metre</option>
+                                                                        <option value="percent">%</option>
+                                                                        <option value="currency">$</option>
+                                                                    </optgroup>
+                                                                </select>
+                                                            </td>
+                                                            <td className="px-4 py-1.5 text-center">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => updateField(idx, { required: !field.required })}
+                                                                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+                                                                    aria-pressed={!!field.required}
+                                                                >
+                                                                    <span className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${field.required ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                                                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${field.required ? 'translate-x-5.5' : 'translate-x-1'}`} />
+                                                                    </span>
+                                                                    {field.required ? 'On' : 'Off'}
+                                                                </button>
+                                                            </td>
+                                                            <td className="px-4 py-1.5 text-center">
+                                                                <button 
+                                                                    onClick={() => removeField(idx)} 
+                                                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                                                                >
+                                                                    <Trash2 size={14} />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
 
-                                <div className="pt-10 flex justify-end gap-6 border-t border-slate-100">
-                                    <Button variant="ghost" onClick={() => setEditingTemplate(null)} className="px-10 h-16 rounded-2xl font-black uppercase text-xs tracking-widest text-slate-400">Cancel</Button>
-                                    <Button onClick={handleSaveTemplate} className="bg-emerald-600 text-white px-12 h-16 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl shadow-emerald-500/20">Commit Architecture</Button>
+                                <div className="pt-3 flex justify-end gap-3 border-t border-slate-100">
+                                    <Button variant="ghost" onClick={() => setEditingTemplate(null)} className="px-6 h-10 rounded-xl font-bold uppercase text-xs tracking-widest text-slate-400">Cancel</Button>
+                                    <Button onClick={handleSaveTemplate} className="bg-emerald-600 text-white px-8 h-10 rounded-xl font-bold uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/10">Save Form</Button>
                                 </div>
                              </div>
                         </div>

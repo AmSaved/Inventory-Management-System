@@ -34,9 +34,11 @@ const transferController = {
             const permissions = req.userPermissions || await getEffectivePermissions(req.user);
             const isSuperAdmin = (req.user.role && req.user.role.level >= 100) || permissions.includes('system:manage');
             
-            const allowedNodes = req.getAuthorizedNodes 
+            const baseAllowedNodes = req.getAuthorizedNodes 
                 ? await req.getAuthorizedNodes() 
                 : await hierarchyService.getAllowedNodes(req.user, permissions);
+            // Expand to include archived nodes merged into our allowed branches
+            const allowedNodes = await hierarchyService.expandWithMergedSources(baseAllowedNodes, company_id);
 
             // Construct AND conditions to avoid Op.or overwrites
             const andConditions = [{ company_id }];
@@ -152,16 +154,27 @@ const transferController = {
                         permissions, 
                         allowedNodes
                     );
+
+                    // Branch-level source node enforcement: Approve/Reject buttons display ONLY at source node
+                    const sourceNodeId = plain.from_node_id || plain.org_node_id;
+                    if (sourceNodeId && req.user.org_node_id && Number(req.user.org_node_id) !== Number(sourceNodeId)) {
+                        plain.can_action = false;
+                    }
                 }
 
-                // can_acknowledge: recipient sees Acknowledge button when transfer is pending physical handover
+                // can_acknowledge: recipient, super admin, or anyone with authority over destination node sees Acknowledge button when transfer is pending physical handover
                 if (plain.status === 'pending_acknowledgment') {
                     const isRecipient = plain.to_user_id && Number(plain.to_user_id) === Number(req.user.id);
-                    // Also allow node-level managers in the destination node
-                    const isDestinationManager = plain.to_node_id && allowedNodes !== null 
-                        ? allowedNodes.includes(Number(plain.to_node_id))
-                        : allowedNodes === null;
-                    plain.can_acknowledge = isRecipient || isDestinationManager;
+                    const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+                    const hasNodeAuthority = plain.to_node_id && (allowedNodes === null || allowedNodes.includes(Number(plain.to_node_id)));
+                    let canAck = isRecipient || isSuperAdmin || hasNodeAuthority;
+
+                    // Branch-level target node enforcement: Acknowledge Receipt button displays ONLY at target node
+                    const targetNodeId = plain.to_node_id || plain.target_node_id;
+                    if (targetNodeId && req.user.org_node_id && Number(req.user.org_node_id) !== Number(targetNodeId)) {
+                        canAck = false;
+                    }
+                    plain.can_acknowledge = canAck;
                 } else {
                     plain.can_acknowledge = false;
                 }
@@ -404,9 +417,11 @@ const transferController = {
 
             if (!transfer) return res.status(404).json({ success: false, message: 'Not found' });
             
-            // Scoping check for role reach
+            // Scoping check — also follow merged_into chain so users on the
+            // consolidated branch can view records from old source branches
             const permissions = await getEffectivePermissions(req.user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            const baseAllowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            const allowedNodes = await hierarchyService.expandWithMergedSources(baseAllowedNodes, company_id);
             
             const isAuthorized = allowedNodes === null || 
                                  (transfer.from_node_id && allowedNodes.includes(Number(transfer.from_node_id))) || 
@@ -472,18 +487,19 @@ const transferController = {
                 return res.status(400).json({ success: false, message: 'Transfer is not awaiting acknowledgment' });
             }
 
-            // Security: only the designated recipient or a node manager in the destination node can acknowledge
-            const permissions = req.userPermissions || await getEffectivePermissions(req.user);
-            const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            // Security: recipient, super admin, or anyone with authority over destination node can acknowledge
             const isRecipient = transfer.to_user_id && Number(transfer.to_user_id) === Number(req.user.id);
-            const isDestinationManager = transfer.to_node_id && (
-                allowedNodes === null || allowedNodes.includes(Number(transfer.to_node_id))
-            );
-            const isSuperAdmin = permissions.includes('system:manage') || permissions.includes('workflow:process');
+            const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+            
+            const permissions = req.userPermissions || await getEffectivePermissions(req.user);
+            const allowedNodes = req.getAuthorizedNodes 
+                ? await req.getAuthorizedNodes() 
+                : await hierarchyService.getAllowedNodes(req.user, permissions);
+            const hasNodeAuthority = transfer.to_node_id && (allowedNodes === null || allowedNodes.includes(Number(transfer.to_node_id)));
 
-            if (!isRecipient && !isDestinationManager && !isSuperAdmin) {
+            if (!isRecipient && !isSuperAdmin && !hasNodeAuthority) {
                 await t.rollback();
-                return res.status(403).json({ success: false, message: 'Only the designated recipient or destination manager can acknowledge this transfer.' });
+                return res.status(403).json({ success: false, message: 'Only authorized personnel for the receiving branch can acknowledge this transfer.' });
             }
 
             // Execute the actual inventory movement now

@@ -15,12 +15,14 @@ const productController = {
             const company_id = req.user.company_id;
             const where = { company_id };
             
-            // Scope blueprints to the top-level organization (root node)
+            // Scope products to the top-level organization (root node)
             if (req.user.org_node_id) {
                 const breadcrumb = await hierarchyService.getBreadcrumb(req.user.org_node_id);
                 if (breadcrumb && breadcrumb.length > 0) {
                     const rootNodeId = breadcrumb[0].id;
-                    where.org_node_id = { [Op.or]: [rootNodeId, null] }; // include null for legacy global products
+                    where.org_node_id = rootNodeId;
+                } else {
+                    where.org_node_id = -1; // Force empty result if root node is not found
                 }
             }
             

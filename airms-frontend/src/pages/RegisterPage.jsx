@@ -179,7 +179,7 @@ const RegisterPage = () => {
           <Button 
             type="submit" 
             loading={loading} 
-            className="w-full bg-slate-900 h-16 rounded-[25px] font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:bg-blue-600 transition-all flex items-center justify-center gap-4 group"
+            className="w-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 h-16 rounded-[25px] font-black text-xs uppercase tracking-[0.2em] shadow-xl transition-all flex items-center justify-center gap-4 group text-white"
           >
             Create Infinite Identity <UserPlus className="group-hover:scale-110 transition-transform" />
           </Button>

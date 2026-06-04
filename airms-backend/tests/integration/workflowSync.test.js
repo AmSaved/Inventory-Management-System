@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Workflow, WorkflowStep, WorkflowRoute, Role, Request, Company, User, OrganizationNode, OrganizationType, ActivityLog, sequelize } = require('../../src/models');
+const { Workflow, WorkflowStep, WorkflowRoute, Role, Request, RequestItem, Approval, Company, User, OrganizationNode, OrganizationType, ActivityLog, sequelize } = require('../../src/models');
 const { generateToken } = require('../../src/utils/helpers');
 const request = require('supertest');
 const app = require('../../src/app');
@@ -52,21 +52,29 @@ describe('Workflow Sync Integration Tests', () => {
     });
 
     afterAll(async () => {
-        // Cleanup in correct dependency order
+        // Cleanup in correct FK dependency order
         // 1. Delete ActivityLog records
         await ActivityLog.destroy({ where: { company_id: company.id } });
 
-        // 2. Delete Request
+        // 2. Delete Request children before Request
+        const companyRequests = await Request.findAll({ where: { company_id: company.id }, attributes: ['id'] });
+        const companyRequestIds = companyRequests.map(r => r.id);
+        if (companyRequestIds.length > 0) {
+            await Approval.destroy({ where: { request_id: companyRequestIds } });
+            await RequestItem.destroy({ where: { request_id: companyRequestIds } });
+        }
+
+        // 3. Delete Request
         await Request.destroy({ where: { company_id: company.id } });
 
-        // 3. Delete Workflow, steps, routes
+        // 4. Delete Workflow, steps, routes
         if (workflow) {
             await WorkflowRoute.destroy({ where: { workflow_id: workflow.id } });
             await WorkflowStep.destroy({ where: { workflow_id: workflow.id } });
             await workflow.destroy();
         }
 
-        // 4. Delete Users
+        // 5. Delete Users
         if (adminUser) {
             await User.destroy({ where: { id: adminUser.id } });
         }
@@ -74,7 +82,7 @@ describe('Workflow Sync Integration Tests', () => {
             await User.destroy({ where: { id: user.id } });
         }
 
-        // 5. Delete Roles
+        // 6. Delete Roles
         if (adminRole) {
             await Role.destroy({ where: { id: adminRole.id } });
         }

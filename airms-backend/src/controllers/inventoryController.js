@@ -19,7 +19,8 @@ const inventoryController = {
                 serial_number,
                 batch_number,
                 status,
-                category
+                category,
+                exact_node  // When 'true', skip hierarchical expansion — only search the exact node
             } = req.query;
             
             const company_id = req.user.company_id;
@@ -34,20 +35,25 @@ const inventoryController = {
                     return res.status(403).json({ success: false, message: 'Access denied: Target node is outside your visibility scope' });
                 }
                 
-                // HIERARCHICAL SEARCH: Find all descendant nodes using the materialized path
-                const targetNode = await OrganizationNode.findByPk(targetNodeId);
-                if (targetNode && targetNode.path) {
-                    const descendantNodes = await OrganizationNode.findAll({
-                        where: {
-                            company_id,
-                            path: { [Op.like]: `${targetNode.path}%` }
-                        },
-                        attributes: ['id']
-                    });
-                    const nodeIds = descendantNodes.map(n => n.id);
-                    where.org_node_id = { [Op.in]: nodeIds };
-                } else {
+                if (exact_node === 'true') {
+                    // EXACT NODE SEARCH: Only search the specific branch (used for discharge item selection)
                     where.org_node_id = targetNodeId;
+                } else {
+                    // HIERARCHICAL SEARCH: Find all descendant nodes using the materialized path
+                    const targetNode = await OrganizationNode.findByPk(targetNodeId);
+                    if (targetNode && targetNode.path) {
+                        const descendantNodes = await OrganizationNode.findAll({
+                            where: {
+                                company_id,
+                                path: { [Op.like]: `${targetNode.path}%` }
+                            },
+                            attributes: ['id']
+                        });
+                        const nodeIds = descendantNodes.map(n => n.id);
+                        where.org_node_id = { [Op.in]: nodeIds };
+                    } else {
+                        where.org_node_id = targetNodeId;
+                    }
                 }
             } else if (allowedNodes !== null) {
                 // Only filter by allowed nodes if NOT a global admin (null means global)
@@ -64,7 +70,95 @@ const inventoryController = {
             }
             if (serial_number) where.serial_number = serial_number;
             if (batch_number) where.batch_number = batch_number;
-            if (status) where.status = status;
+            if (status) {
+                where.status = status;
+                // When filtering for 'available', also enforce quantity > 0 and exclude gone items
+                if (status === 'available') {
+                    where.quantity = { [Op.gt]: 0 };
+                    where.status = { [Op.notIn]: ['discharged', 'decommissioned'] };
+
+                    // Dynamically exclude items currently reserved in pending transactions
+                    const { DischargeForm, DischargeItem, Transfer, TransferItem, Request, RequestItem } = require('../models');
+
+                    // 1. Serials from pending discharges
+                    const pendingDischarges = await DischargeForm.findAll({
+                        where: {
+                            company_id,
+                            status: { [Op.notIn]: ['completed', 'acknowledged', 'rejected', 'cancelled'] }
+                        },
+                        include: [{
+                            model: DischargeItem,
+                            as: 'items',
+                            attributes: ['serial_numbers']
+                        }],
+                        attributes: ['id']
+                    });
+                    const reservedDischargeSerials = pendingDischarges.flatMap(d => 
+                        (d.items || []).flatMap(it => it.serial_numbers || [])
+                    );
+
+                    // 2. Serials from pending transfers
+                    const pendingTransfers = await Transfer.findAll({
+                        where: {
+                            company_id,
+                            status: { [Op.notIn]: ['completed', 'rejected', 'cancelled'] }
+                        },
+                        include: [{
+                            model: TransferItem,
+                            as: 'items',
+                            attributes: ['serial_numbers']
+                        }],
+                        attributes: ['id']
+                    });
+                    
+                    const reservedTransferSerials = pendingTransfers.flatMap(t => {
+                        return (t.items || []).flatMap(it => {
+                            let sns = it.serial_numbers;
+                            if (!sns) return [];
+                            if (typeof sns === 'string') {
+                                try {
+                                    sns = JSON.parse(sns);
+                                } catch (e) {
+                                    sns = [];
+                                }
+                            }
+                            return Array.isArray(sns) ? sns : [];
+                        });
+                    });
+
+                    // Combine and filter out empty entries
+                    const allReservedSerials = [...new Set([...reservedDischargeSerials, ...reservedTransferSerials])].filter(Boolean);
+
+                    if (allReservedSerials.length > 0) {
+                        where.serial_number = {
+                            ...(where.serial_number ? { [Op.and]: [where.serial_number, { [Op.notIn]: allReservedSerials }] } : { [Op.notIn]: allReservedSerials })
+                        };
+                    }
+
+                    // 3. Exclude inventory IDs from pending standard requests
+                    const pendingRequests = await Request.findAll({
+                        where: {
+                            company_id,
+                            status: { [Op.notIn]: ['fulfilled', 'completed', 'rejected', 'cancelled'] }
+                        },
+                        include: [{
+                            model: RequestItem,
+                            as: 'items',
+                            attributes: ['inventory_id']
+                        }],
+                        attributes: ['id']
+                    });
+                    const reservedInventoryIds = pendingRequests.flatMap(r => 
+                        (r.items || []).map(it => it.inventory_id)
+                    ).filter(Boolean);
+
+                    if (reservedInventoryIds.length > 0) {
+                        where.id = {
+                            ...(where.id ? { [Op.and]: [where.id, { [Op.notIn]: reservedInventoryIds }] } : { [Op.notIn]: reservedInventoryIds })
+                        };
+                    }
+                }
+            }
             
             // Ensure we only return items with quantity > 0 by default, 
             // unless specifically searching for a serial number or batch
@@ -79,7 +173,7 @@ const inventoryController = {
                 attributes: [
                     'id', 'product_id', 'org_node_id', 'quantity', 'status', 
                     'serial_number', 'batch_number', 'location_details', 'updated_at',
-                    'custom_fields'
+                    'custom_fields', 'assigned_to', 'condition'
                 ],
                 include: [
                     {
@@ -100,6 +194,11 @@ const inventoryController = {
                         model: OrganizationNode,
                         as: 'organizationNode',
                         attributes: ['id', 'name', 'code']
+                    },
+                    {
+                        model: User,
+                        as: 'assignedUser',
+                        attributes: ['id', 'first_name', 'last_name', 'employee_id']
                     }
                 ],
                 limit: parseInt(limit),

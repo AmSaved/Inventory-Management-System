@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getAssetName } from '../utils/assetName';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import Card, { CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -66,7 +67,7 @@ const AssetsPage = () => {
     try {
       await api.post('/requests', {
         request_type: 'return',
-        purpose: `Instant Portfolio Return: ${selectedAsset?.product?.name}`,
+        purpose: `Instant Portfolio Return: ${getAssetName(selectedAsset)}`,
         priority: 'medium',
         items: [{
           product_id: selectedAsset.product_id,
@@ -94,7 +95,7 @@ const AssetsPage = () => {
     try {
       await api.post('/requests', {
         request_type: 'transfer',
-        purpose: `Instant Portfolio Transfer: ${transferAsset?.product?.name}. Justification: ${transferReason}`,
+        purpose: `Instant Portfolio Transfer: ${getAssetName(transferAsset)}. Justification: ${transferReason}`,
         priority: 'medium',
         items: [{
           product_id: transferAsset.product_id,
@@ -121,7 +122,7 @@ const AssetsPage = () => {
     try {
       await api.post('/requests', {
         request_type: 'issue',
-        purpose: `Incident Report: ${reportAsset?.product?.name}`,
+        purpose: `Incident Report: ${getAssetName(reportAsset)}`,
         priority: 'high',
         items: [{
           product_id: reportAsset.product_id,
@@ -153,7 +154,7 @@ const AssetsPage = () => {
 
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">My Asset Portfolio</h1>
@@ -195,7 +196,7 @@ const AssetsPage = () => {
         <CardContent className="flex gap-4">
           <div className="w-full max-w-md">
             <Input
-              placeholder="Search by ID or Name..."
+              placeholder="Search by Name..."
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               onKeyDown={(e) => {
@@ -220,17 +221,15 @@ const AssetsPage = () => {
       </Card>
 
       {/* Assets Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table overflowVisible={activeMenu !== null || transferAsset !== null || returnModalOpen || reportAsset !== null}>
-            <TableHead className="bg-gray-50/50">
-              <TableHeader className="pl-6 uppercase text-[10px] tracking-tighter">Asset Information</TableHeader>
-              <TableHeader className="uppercase text-[10px] tracking-tighter">Identity</TableHeader>
-              <TableHeader className="uppercase text-[10px] tracking-tighter">Condition</TableHeader>
-              <TableHeader className="uppercase text-[10px] tracking-tighter">Ownership</TableHeader>
-              <TableHeader className="uppercase text-[10px] tracking-tighter">Custody Period</TableHeader>
-              <TableHeader className="pr-6 uppercase text-[10px] tracking-tighter text-right">Actions</TableHeader>
-            </TableHead>
+      <Table overflowVisible={activeMenu !== null || transferAsset !== null || returnModalOpen || reportAsset !== null}>
+        <TableHead>
+          <TableHeader className="pl-6">Asset Information</TableHeader>
+          <TableHeader>Identity</TableHeader>
+          <TableHeader>Condition</TableHeader>
+          <TableHeader>Ownership</TableHeader>
+          <TableHeader>Custody Period</TableHeader>
+          <TableHeader className="pr-6 text-right">Actions</TableHeader>
+        </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
@@ -249,8 +248,10 @@ const AssetsPage = () => {
                         {asset.product?.name?.charAt(0)}
                       </div>
                       <div>
-                        <p className="font-bold text-gray-900">{asset.product?.name}</p>
-                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-widest">SKU: {asset.product?.sku || 'GENERIC'}</p>
+                        <p className="font-bold text-gray-900">{getAssetName(asset)}</p>
+                        {getAssetName(asset) !== asset.product?.name && asset.product?.name && (
+                          <p className="text-[10px] text-gray-400 font-medium">{asset.product.name}</p>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -273,7 +274,6 @@ const AssetsPage = () => {
                   <TableCell>
                     <div className="flex flex-col">
                        <p className="text-xs font-bold text-gray-800">{asset.organizationNode?.name || 'Central Office'}</p>
-                       <p className="text-[10px] text-gray-400">{asset.organizationNode?.code || 'ROOT'}</p>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -358,9 +358,6 @@ const AssetsPage = () => {
             </TableBody>
           </Table>
 
-        </CardContent>
-      </Card>
-
       {/* Return Modal */}
       <Modal
         isOpen={returnModalOpen}
@@ -373,7 +370,10 @@ const AssetsPage = () => {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Asset</label>
-            <p className="text-gray-900 font-medium">{selectedAsset?.product?.name}</p>
+            <p className="text-gray-900 font-medium">{getAssetName(selectedAsset)}</p>
+            {getAssetName(selectedAsset) !== selectedAsset?.product?.name && selectedAsset?.product?.name && (
+              <p className="text-xs text-gray-500">{selectedAsset.product.name}</p>
+            )}
             <p className="text-sm text-gray-500">Serial: {selectedAsset?.serial_number || 'N/A'}</p>
           </div>
           <div>
@@ -416,9 +416,12 @@ const AssetsPage = () => {
                  <Package size={24} />
               </div>
               <div>
-                 <div className="text-[10px] font-black text-primary-400 uppercase tracking-widest">Target Resource</div>
-                 <div className="font-bold text-gray-900">{transferAsset?.product?.name}</div>
-                 <div className="text-[10px] font-mono text-gray-500">SN: {transferAsset?.serial_number}</div>
+                  <div className="text-[10px] font-black text-primary-400 uppercase tracking-widest">Target Resource</div>
+                  <div className="font-bold text-gray-900">{getAssetName(transferAsset)}</div>
+                  {getAssetName(transferAsset) !== transferAsset?.product?.name && transferAsset?.product?.name && (
+                    <div className="text-[10px] text-gray-400 font-medium">{transferAsset.product.name}</div>
+                  )}
+                  <div className="text-[10px] font-mono text-gray-500">SN: {transferAsset?.serial_number}</div>
               </div>
             </div>
 
@@ -467,9 +470,12 @@ const AssetsPage = () => {
                  <AlertTriangle size={24} />
               </div>
               <div>
-                 <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest">Incident Reference</div>
-                 <div className="font-bold text-gray-900">{reportAsset?.product?.name}</div>
-                 <div className="text-[10px] font-mono text-gray-500">SN: {reportAsset?.serial_number}</div>
+                  <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest">Incident Reference</div>
+                  <div className="font-bold text-gray-900">{getAssetName(reportAsset)}</div>
+                  {getAssetName(reportAsset) !== reportAsset?.product?.name && reportAsset?.product?.name && (
+                    <div className="text-[10px] text-gray-400 font-medium">{reportAsset.product.name}</div>
+                  )}
+                  <div className="text-[10px] font-mono text-gray-500">SN: {reportAsset?.serial_number}</div>
               </div>
             </div>
 

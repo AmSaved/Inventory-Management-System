@@ -22,73 +22,183 @@ import {
   Layers, Activity, TrendingUp, Shield, ArrowRight, CheckCircle2,
   MoreVertical, Eye, Search, Filter, RotateCcw, MessageSquare,
   User as UserIcon, Package, Zap, Fingerprint, Activity as ActivityIcon,
-  ChevronRight, LayoutGrid, Bell, History, XCircle, AlertOctagon
+  ChevronRight, LayoutGrid, Bell, History, XCircle, AlertOctagon,
+  Plus, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
-/**
- * ─── DYNAMIC COMMAND MODULES ───────────────────────────────────────────────────
- */
-
-/**
- * ─── DYNAMIC COMMAND MODULES (MEMOIZED) ─────────────────────────────────────────
- */
 
 const KPITile = memo(({ label, value, icon, gradient, onClick, subLabel }) => (
   <motion.div 
-    whileHover={{ y: -8, scale: 1.02 }}
+    whileHover={{ y: -4, scale: 1.01 }}
     onClick={onClick}
-    className={`relative group bg-white rounded-[2.5rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-50 transition-all duration-500 ${onClick ? 'cursor-pointer hover:shadow-[0_40px_80px_rgba(0,0,0,0.1)]' : ''} overflow-hidden`}
+    className={`relative group bg-white rounded-2xl p-5 shadow-sm border border-slate-100 transition-all duration-300 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-slate-200' : ''} overflow-hidden`}
   >
-    <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-[0.05] transition-opacity duration-500 rounded-full -mr-16 -mt-16`}></div>
-    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg shadow-blue-500/10 mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500`}>
-      {React.cloneElement(icon, { size: 24 })}
+    <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-[0.04] transition-opacity duration-300 rounded-full -mr-12 -mt-12`}></div>
+    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-md mb-3 group-hover:scale-105 transition-all duration-300`}>
+      {React.cloneElement(icon, { size: 18 })}
     </div>
-    <div className="text-4xl font-bold text-slate-900 mb-1">{value}</div>
-    <div className="text-xs font-semibold text-slate-500">{label}</div>
-    {subLabel && <div className="text-xs font-black text-blue-600 mt-1 opacity-80">{subLabel}</div>}
+    <div className="text-2xl font-bold text-slate-900 mb-0.5">{value}</div>
+    <div className="text-xs font-medium text-slate-500">{label}</div>
+    {subLabel && <div className="text-[10px] font-bold text-blue-600 mt-0.5 opacity-80">{subLabel}</div>}
   </motion.div>
 ));
 
 
-const AssetInsight = memo(({ inventory = [] }) => (
-  <div className="space-y-8">
-    <div className="flex items-center gap-4 px-2">
-       <div className="w-2 h-8 bg-blue-600 rounded-full" />
-       <div>
-          <h3 className="text-xl font-bold text-slate-900">Resource Analytics</h3>
-          <p className="text-xs font-medium text-slate-500 mt-1">Institutional Inventory Distribution</p>
-       </div>
-    </div>
-    <div className="grid grid-cols-1 gap-4">
-      {inventory.slice(0, 5).map(item => (
-        <div key={item.name} className="bg-white/60 backdrop-blur-md rounded-3xl p-6 border border-slate-100 hover:shadow-xl hover:shadow-slate-200/40 transition-all group overflow-hidden relative">
-          <div className="relative z-10 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-slate-50 group-hover:bg-blue-600 transition-all duration-500 rounded-2xl flex items-center justify-center">
-                <Box size={20} className="text-slate-400 group-hover:text-white" />
-              </div>
-              <div>
-                <div className="font-semibold text-slate-900 text-sm">{item.name}</div>
-                <div className="text-[10px] font-medium text-blue-500 mt-1 opacity-70">{item.code || 'ASSET-NODE'}</div>
-              </div>
-            </div>
-            <div className="text-right">
-               <div className="text-2xl font-bold text-slate-900">{item.stock_count || 0}</div>
-                <div className="text-xs text-slate-500 font-black uppercase tracking-widest mt-1">Units</div>
-            </div>
-          </div>
-          <div className="mt-4 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-             <div 
-               className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-1000" 
-               style={{ width: `${Math.min(((item.stock_count || 0) / 200) * 100, 100)}%` }}
-             />
+const COLORS = [
+  '#2563eb', // Blue 600
+  '#059669', // Emerald 600
+  '#d97706', // Amber 600
+  '#dc2626', // Red 600
+  '#7c3aed', // Violet 600
+  '#0891b2', // Cyan 600
+  '#db2777', // Pink 600
+  '#4f46e5'  // Indigo 600
+];
+
+const AssetInsight = memo(({ inventory = [] }) => {
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  // Calculate total count
+  const totalCount = useMemo(() => {
+    return inventory.reduce((sum, item) => sum + (item.stock_count || 0), 0);
+  }, [inventory]);
+
+  // Map inventory data to Recharts format
+  const chartData = useMemo(() => {
+    return inventory
+      .filter(item => (item.stock_count || 0) > 0)
+      .map(item => ({
+        name: item.name,
+        value: item.stock_count || 0,
+        code: item.code || 'ASSET-NODE'
+      }));
+  }, [inventory]);
+
+  if (inventory.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 px-1">
+           <div className="w-1.5 h-6 bg-blue-600 rounded-full" />
+           <div>
+              <h3 className="text-lg font-bold text-slate-900">Resource Analytics</h3>
+              <p className="text-[11px] font-medium text-slate-500">Institutional Inventory Distribution</p>
+           </div>
+        </div>
+        <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm text-center text-slate-400 text-xs font-medium">
+          No inventory distribution telemetry available.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Title */}
+      <div className="flex items-center gap-3 px-1">
+         <div className="w-1.5 h-6 bg-blue-600 rounded-full" />
+         <div>
+            <h3 className="text-lg font-bold text-slate-900">Resource Analytics</h3>
+            <p className="text-[11px] font-medium text-slate-500">Institutional Inventory Distribution</p>
+         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col sm:flex-row items-center gap-6">
+        {/* Donut Chart Circle Container */}
+        <div className="relative w-36 h-36 flex-shrink-0 mx-auto sm:mx-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                innerRadius={45}
+                outerRadius={65}
+                paddingAngle={3}
+                dataKey="value"
+                onMouseEnter={(_, index) => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(-1)}
+              >
+                {chartData.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={COLORS[index % COLORS.length]} 
+                    opacity={activeIndex === -1 || activeIndex === index ? 1 : 0.6}
+                    className="transition-all duration-300 outline-none"
+                  />
+                ))}
+              </Pie>
+              <Tooltip 
+                cursor={false}
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-slate-950 text-white px-2.5 py-1.5 rounded-xl text-[10px] font-bold shadow-xl border border-slate-800">
+                        <div className="uppercase tracking-wider">{data.name}</div>
+                        <div className="text-blue-400 mt-0.5">{data.value} Units ({((data.value / totalCount) * 100).toFixed(1)}%)</div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+
+          {/* Central KPI Label */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+              {totalCount}
+            </span>
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
+              Total Units
+            </span>
           </div>
         </div>
-      ))}
+
+        {/* Legend / Breakdown List */}
+        <div className="flex-1 w-full space-y-1.5">
+          {chartData.map((item, index) => {
+            const percentage = ((item.value / totalCount) * 100).toFixed(1);
+            const isHovered = activeIndex === index;
+            return (
+              <div 
+                key={item.name}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(-1)}
+                className={`flex items-center justify-between p-1.5 rounded-xl border transition-all duration-200 cursor-pointer ${
+                  isHovered ? 'bg-slate-50 border-slate-200 shadow-xs scale-[1.01]' : 'bg-transparent border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div 
+                    className="w-2 h-2 rounded-full shrink-0" 
+                    style={{ backgroundColor: COLORS[index % COLORS.length] }} 
+                  />
+                  <div className="overflow-hidden">
+                    <div className="font-bold text-slate-900 text-xs truncate uppercase tracking-tight">
+                      {item.name}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right shrink-0 ml-2">
+                  <div className="text-xs font-black text-slate-900">
+                    {item.value} <span className="text-[9px] font-medium text-slate-400">Units</span>
+                  </div>
+                  <div className="text-[9px] font-black text-blue-600 mt-0.5">
+                    {percentage}%
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
-  </div>
-));
+  );
+});
 
 /**
  * ─── UNIVERSAL COMMAND ENGINE ──────────────────────────────────────────────────
@@ -107,22 +217,139 @@ const DashboardPage = () => {
   });
   const tabParam = searchParams.get('tab');
 
-  // Staff-specific states
-  const [activeMenu, setActiveMenu] = useState(null);
-  const [transferAsset, setTransferAsset] = useState(null);
-  const [returnAsset, setReturnAsset] = useState(null);
-  const [reportAsset, setReportAsset] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  
-  // Protocol Form States
-  const [users, setUsers] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [transferTarget, setTransferTarget] = useState('');
-  const [transferReason, setTransferReason] = useState('');
-  const [userSearchQuery, setUserSearchQuery] = useState('');
-  const [returnCondition, setReturnCondition] = useState('good');
-  const [reportDetails, setReportDetails] = useState('');
 
+  // Edit & Cancel States for my requests
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingRequest, setEditingRequest] = useState(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancellingRequest, setCancellingRequest] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  const normalizeSpecifications = (specifications) => {
+    if (typeof specifications === 'string') {
+      try {
+        return JSON.parse(specifications);
+      } catch (err) {
+        return {};
+      }
+    }
+    return typeof specifications === 'object' && specifications !== null ? specifications : {};
+  };
+
+  const editCategories = [...new Set(catalogProducts.map(p => p.category?.trim()).filter(Boolean))].sort();
+
+  const getEditSubCategories = (category) => {
+    if (!category) return [];
+    return [...new Set(
+      catalogProducts
+        .filter(p => p.category?.trim().toUpperCase() === category.toUpperCase())
+        .map(p => p.sub_category?.trim())
+        .filter(Boolean)
+    )].sort();
+  };
+
+  const handleEditClick = (request) => {
+    const type = request.request_type?.toLowerCase() || '';
+    if (type === 'transfer') {
+      navigate(`/requests/transfer?edit=true&id=${request.id}`);
+    } else if (type === 'return') {
+      navigate(`/requests/return?edit=true&id=${request.id}`);
+    } else if (type === 'issue' || type === 'report') {
+      navigate(`/requests/report?edit=true&id=${request.id}`);
+    } else {
+      navigate(`/requests/new?edit=true&id=${request.id}`);
+    }
+  };
+
+  const handleEditFieldChange = (field, value) => {
+    setEditingRequest(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleEditItemChange = (index, field, value) => {
+    setEditingRequest(prev => {
+      const updatedItems = [...prev.items];
+      updatedItems[index] = { ...updatedItems[index], [field]: value };
+      if (field === 'category') {
+        updatedItems[index].sub_category = '';
+      }
+      return { ...prev, items: updatedItems };
+    });
+  };
+
+  const handleAddEditItem = () => {
+    setEditingRequest(prev => ({
+      ...prev,
+      items: [...prev.items, { category: '', sub_category: '', quantity: 1, specifications: '' }]
+    }));
+  };
+
+  const handleRemoveEditItem = (index) => {
+    setEditingRequest(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleUpdateSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingRequest) return;
+    if (editingRequest.items.some(item => !item.category)) {
+      return toast.error('Please select a category for all items');
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        purpose: editingRequest.purpose,
+        priority: editingRequest.priority,
+        expected_delivery_date: editingRequest.expectedDate || null,
+        items: editingRequest.items.map(item => ({
+          quantity_requested: item.quantity,
+          specifications: {
+            category: item.category,
+            sub_category: item.sub_category || null,
+            notes: item.specifications
+          }
+        }))
+      };
+
+      await requestService.updateRequest(editingRequest.id, payload);
+      toast.success('Request updated successfully');
+      setEditModalOpen(false);
+      setEditingRequest(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update request');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelClick = (request) => {
+    setCancellingRequest(request);
+    setCancelReason('');
+    setCancelModalOpen(true);
+  };
+
+  const handleCancelSubmit = async () => {
+    if (!cancellingRequest) return;
+    setSubmitting(true);
+    try {
+      await requestService.cancelRequest(cancellingRequest.id, cancelReason);
+      toast.success('Request cancelled successfully');
+      setCancelModalOpen(false);
+      setCancellingRequest(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to cancel request');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  
   const capabilities = useMemo(() => ({
     canApprove: hasPermission('request:approve'),
     canManageOrg: hasPermission('organization:manage') || hasPermission('dashboard:executive'),
@@ -142,18 +369,6 @@ const DashboardPage = () => {
     else setLoading(false);
   }, [user, tabParam, selectedUnit]);
 
-  useEffect(() => {
-    if (transferAsset) {
-      const delayDebounceFn = setTimeout(() => {
-        setLoadingUsers(true);
-        api.get('/users', { params: { limit: 20, search: userSearchQuery } })
-          .then(res => setUsers(Array.isArray(res.data?.data) ? res.data.data : []))
-          .finally(() => setLoadingUsers(false));
-      }, 300);
-
-      return () => clearTimeout(delayDebounceFn);
-    }
-  }, [transferAsset, userSearchQuery]);
 
   // 1. URL Syncing: Sync selectedUnit state with 'unit' query parameter
   useEffect(() => {
@@ -192,64 +407,6 @@ const DashboardPage = () => {
     }
   };
 
-  // ── CORE PROTOCOLS ──
-  const executeTransfer = async () => {
-    if (!transferTarget || !transferReason) return toast.error('PROTOCOL INCOMPLETE: Target & Reason Required');
-    setSubmitting(true);
-    try {
-      await api.post('/requests', {
-        request_type: 'transfer',
-        purpose: `Instant Handover: ${transferAsset?.product?.name}`,
-        priority: 'medium',
-        items: [{ product_id: transferAsset.product_id, quantity_requested: 1, notes: `Target UID: ${transferTarget}` }],
-        org_node_id: transferAsset.org_node_id,
-        target_user_id: transferTarget,
-        notes: JSON.stringify({ assignment_id: transferAsset.id, justification: transferReason })
-      });
-      toast.success('Handover Protocol Initiated');
-      setTransferAsset(null);
-      fetchData();
-    } catch (err) { toast.error('Protocol Interrupted'); }
-    finally { setSubmitting(false); }
-  };
-
-  const executeReturn = async () => {
-    setSubmitting(true);
-    try {
-      await api.post('/requests', {
-        request_type: 'return',
-        purpose: `Institutional Return: ${returnAsset?.product?.name}`,
-        items: [{ product_id: returnAsset.product_id, quantity_requested: 1, notes: `State: ${returnCondition}` }],
-        org_node_id: returnAsset.org_node_id,
-        notes: JSON.stringify({ assignment_id: returnAsset.id, condition: returnCondition })
-      });
-      toast.success('Decommissioning Logged');
-      setReturnAsset(null);
-      fetchData();
-    } catch (err) { toast.error('Return Failed'); }
-    finally { setSubmitting(false); }
-  };
-
-  const executeReport = async () => {
-    if (!reportDetails) return toast.error('PROTOCOL INCOMPLETE: Details Required');
-    setSubmitting(true);
-    try {
-      await api.post('/requests', {
-        request_type: 'issue',
-        purpose: `Incident Report: ${reportAsset?.product?.name}`,
-        priority: 'high',
-        items: [{ product_id: reportAsset.product_id, quantity_requested: 1, notes: reportDetails }],
-        org_node_id: reportAsset.org_node_id,
-        notes: JSON.stringify({ assignment_id: reportAsset.id })
-      });
-      toast.success('Incident Protocol Logged');
-      setReportAsset(null);
-      setReportDetails('');
-      fetchData();
-    } catch (err) { toast.error('Report Failure'); }
-    finally { setSubmitting(false); }
-  };
-
   const handleFulfill = async (id, currentStatus) => {
     const loadingToast = toast.loading('Acknowledging Receipt...');
     try {
@@ -266,7 +423,7 @@ const DashboardPage = () => {
   const getRequestDetails = (req) => {
     const type = req.request_type?.toLowerCase() || '';
     const status = req.status?.toLowerCase() || 'pending';
-    const targetName = req.target_user ? `${req.target_user.first_name} ${req.target_user.last_name}`.trim() : 'Personnel';
+    const targetName = req.target_user ? `${req.target_user.first_name} ${req.target_user.last_name}`.trim() : 'Users';
     
     let subtitle = '';
     let badgeText = status.toUpperCase();
@@ -367,10 +524,9 @@ const DashboardPage = () => {
   // ── TAB RENDERING ──
   if (tabParam) {
     if (tabParam === 'structure') return <OrganizationManagement />;
-    const tabTitles = { users: 'Personnel Registry', roles: 'Authority Matrix', products: 'Product Catalog' };
     return (
-      <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <div className="bg-white/40 backdrop-blur-xl rounded-[3.5rem] p-4 ring-1 ring-white shadow-[0_32px_64px_rgba(0,0,0,0.04)]">
+      <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
+        <div className="bg-white/30 backdrop-blur-md rounded-[2rem] p-1.5 ring-1 ring-slate-100 shadow-sm">
           {tabParam === 'users' && <UserManagement orgNodeId={selectedUnit} onBack={() => setSearchParams({})} />}
           {tabParam === 'roles' && <RoleManagement onBack={() => setSearchParams({})} />}
           {tabParam === 'products' && <ProductManagement />}
@@ -387,28 +543,33 @@ const DashboardPage = () => {
   const myRequests = actualStats.my_requests || [];
 
   return (
-    <div className="min-h-screen bg-white relative overflow-hidden pb-24">
+    <div className="relative overflow-hidden pb-12">
       {/* Background patterns removed for clean integrated look */}
 
-      <div className="relative z-10 max-w-[1700px] mx-auto space-y-4 pb-12 px-4 lg:px-8">
-        {(!capabilities.isStaff && !capabilities.isRoot) && (
-          <div className="flex justify-end">
-            <div className="bg-white p-1 rounded-xl border border-slate-100 shadow-sm">
+      <div className="relative z-10 max-w-[1700px] mx-auto space-y-4 px-2 lg:px-4">
+        {/* Dashboard Title & Unit Selector Header Wrapper */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Real-time inventory telemetry & analytics</p>
+          </div>
+          {(!capabilities.isStaff && !capabilities.isRoot) && (
+            <div className="bg-slate-900 p-0.5 rounded-xl border border-slate-800 shadow-sm">
               <CascadingUnitSelector 
                 value={selectedUnit} 
                 onChange={setSelectedUnit} 
                 variant="dropdown"
-                className="min-w-[280px] h-12" 
+                className="min-w-[240px] h-10" 
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {loading ? (
-          <div className="p-32 text-center flex justify-center"><LoadingSpinner /></div>
+          <div className="p-16 text-center flex justify-center"><LoadingSpinner /></div>
         ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 space-y-6">
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-5">
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                {capabilities.isRoot ? (
                  <>
                    <KPITile 
@@ -425,7 +586,7 @@ const DashboardPage = () => {
                      icon={<Building2 />} 
                      gradient="from-emerald-500 to-teal-700" 
                      onClick={() => navigate('/dashboard?tab=structure')}
-                     subLabel="Active Multi-Tenants"
+                     
                    />
                    <KPITile 
                      label="Global Catalog" 
@@ -433,26 +594,26 @@ const DashboardPage = () => {
                      icon={<LayoutGrid />} 
                      gradient="from-amber-500 to-orange-700" 
                      onClick={() => navigate('/admin/products')}
-                     subLabel="Universal Assets"
+                     subLabel="Universal Inventories"
                    />
                    
                    {/* Operational Overlays removed for pure Systems Information View */}
 
                    <KPITile 
-                     label="Governance" 
+                    //  label="Governance" 
                      value={metrics.total_roles || 0} 
                      icon={<Shield />} 
                      gradient="from-slate-700 to-slate-800" 
                      onClick={() => navigate('/admin/roles')}
-                     subLabel="Security Roles"
+                     subLabel="Total Roles"
                    />
                    <KPITile 
-                     label="System Users" 
+                     label="Total Systen Users" 
                      value={metrics.total_users || 0} 
                      icon={<Users />} 
                      gradient="from-slate-800 to-slate-950" 
                      onClick={() => navigate('/admin/users')}
-                     subLabel="Total Registry"
+                    //  subLabel="Total Registry"
                    />
                  </>
                ) : (
@@ -463,7 +624,7 @@ const DashboardPage = () => {
                     
                     {capabilities.canViewUsers && (
                       <KPITile 
-                        label="Personnel" 
+                        label="Users" 
                         value={metrics.total_users || 0} 
                         icon={<Users />} 
                         gradient="from-emerald-600 to-teal-700" 
@@ -473,11 +634,12 @@ const DashboardPage = () => {
                     )}
 
                     <KPITile 
-                      label="Total Assets" 
+                      label="Total Inventories" 
                       value={capabilities.isStaff ? myAssignments.length : (metrics.total_stock || 0)} 
                       icon={<Box />} 
                       gradient="from-slate-800 to-slate-950" 
                       subLabel={capabilities.isStaff ? "Under Personal Custody" : ""}
+                      onClick={() => navigate('/inventory')}
                     />
 
                     {capabilities.canViewTransfers && (
@@ -524,7 +686,7 @@ const DashboardPage = () => {
 
                     {capabilities.canViewDischarges && (
                       <KPITile 
-                        label="Asset Discharges" 
+                        label="Inventory Discharges" 
                         value={metrics.total_discharges || 0} 
                         icon={<PackageMinus />} 
                         gradient="from-orange-500 to-amber-700" 
@@ -533,16 +695,6 @@ const DashboardPage = () => {
                       />
                     )}
 
-                    {capabilities.canViewIssues && (
-                      <KPITile 
-                        label="Reports" 
-                        value={metrics.total_reports || 0} 
-                        icon={<AlertTriangle />} 
-                        gradient="from-rose-500 to-pink-700" 
-                        onClick={() => navigate('/issues')}
-                        subLabel=""
-                      />
-                    )}
 
                     {pendingApprovals.length > 0 && (
                       <KPITile 
@@ -557,34 +709,34 @@ const DashboardPage = () => {
                )}
            </div>
 
-           <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
-               <div className="xl:col-span-2 space-y-16">
+           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+               <div className="xl:col-span-2 space-y-4">
 
                  {capabilities.isRoot ? (
-                    <div className="space-y-8">
+                    <div className="space-y-4">
                        {/* GLOBAL SYSTEM ACTIVITY LEDGER FOR SUPER ADMINS */}
-                       <div className="flex items-center gap-4 px-2">
-                          <div className="w-2 h-8 bg-indigo-600 rounded-full" />
+                       <div className="flex items-center gap-3 px-1">
+                          <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
                           <div>
-                             <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight italic">System Audit Log</h3>
-                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Real-time Global Platform Activity</p>
+                             <h3 className="text-lg font-bold text-slate-900 italic">System Audit Log</h3>
+                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Real-time Global Platform Activity</p>
                           </div>
                        </div>
-                       <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden p-6 space-y-4">
+                       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden p-4 space-y-3">
                           {(actualStats.recent_activity || []).length > 0 ? (
                              (actualStats.recent_activity || []).map(log => (
-                                <div key={log.id} className="flex items-start gap-4 p-4 hover:bg-slate-50/50 rounded-2xl transition-colors">
-                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                <div key={log.id} className="flex items-start gap-3 p-3 hover:bg-slate-50/50 rounded-xl transition-colors">
+                                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                                       log.action === 'CREATE' ? 'bg-emerald-50 text-emerald-600' :
                                       log.action === 'UPDATE' ? 'bg-blue-50 text-blue-600' :
                                       log.action === 'DELETE' ? 'bg-rose-50 text-rose-600' :
                                       'bg-slate-100 text-slate-600'
                                    }`}>
-                                      <ActivityIcon size={18} />
+                                      <ActivityIcon size={15} />
                                    </div>
                                    <div className="flex-1">
                                       <div className="flex justify-between items-start">
-                                         <span className="font-bold text-sm text-slate-900">{log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}</span>
+                                         <span className="font-bold text-xs text-slate-900">{log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}</span>
                                          <span className="text-[10px] font-black text-slate-400 uppercase">{new Date(log.created_at).toLocaleString()}</span>
                                       </div>
                                       <div className="text-xs font-medium text-slate-500 mt-1">
@@ -600,194 +752,253 @@ const DashboardPage = () => {
                     </div>
                  ) : (
                     <>
+                      {/* Activity Ledger moved to dedicated /my-activity page */}
+                     </>
+                  )}
+               </div>
 
-
-                       {/* ACTIVITY LEDGER FOR OPERATIONAL STAFF */}
-                       <div className="space-y-8">
-                          <div className="flex items-center gap-4 px-2">
-                             <div className="w-2 h-8 bg-slate-950 rounded-full" />
-                             <div>
-                                <h3 className="text-xl font-bold text-slate-900">My Activity</h3>
-                                <p className="text-xs font-medium text-slate-500 mt-1">History of your requests and transfers</p>
-                             </div>
-                          </div>
-                          <div className="space-y-4">
-                             {myRequests.slice(0, 5).map(req => (
-                                <div key={req.id} className="bg-white/40 backdrop-blur-md rounded-3xl p-6 border border-white/50 flex items-center justify-between group hover:bg-white transition-all duration-500">
-                                   <div className="flex items-center gap-6">
-                                      <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all"><ActivityIcon size={20} /></div>
-                                      <div>
-                                         <div className="font-black text-slate-900 text-sm uppercase italic">{req.items?.[0]?.product?.name || 'PROTOCOL'}</div>
-                                         <div className="text-[9px] font-black text-slate-400 uppercase mt-1">
-                                            {(() => {
-                                              const details = getRequestDetails(req);
-                                              return details.subtitle;
-                                            })()} • {req.request_number}
-                                         </div>
-                                      </div>
-                                   </div>
-                                   <div className="flex items-center gap-6">
-                                       {(() => {
-                                         const details = getRequestDetails(req);
-                                         return (
-                                           <Badge variant={details.badgeVariant} className="text-[8px] font-black px-4 py-1.5 rounded-xl">
-                                             {details.badgeText}
-                                           </Badge>
-                                         );
-                                       })()}
-                                       {(req.status === 'approved' || req.status === 'pending_acknowledgment') && (
-                                         <button 
-                                           onClick={() => handleFulfill(req.id, req.status)} 
-                                           className="bg-blue-600 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-colors"
-                                         >
-                                           {req.status === 'pending_acknowledgment' ? 'Acknowledge Receipt' : 'Fulfill'}
-                                         </button>
-                                       )}
-                                    </div>
-                                </div>
-                             ))}
-                          </div>
-                       </div>
-                    </>
-                 )}
-              </div>
-
-              <div className="space-y-16">
-                 {(!capabilities.isRoot && capabilities.canViewInventory) && <AssetInsight inventory={nodeDistribution} />}
-              </div>
+               <div className="space-y-4">
+                  {(!capabilities.isRoot && capabilities.canViewInventory) && <AssetInsight inventory={nodeDistribution} />}
+               </div>
             </div>
 
-            {/* GLOBAL ASSET DISPLAY AT THE BOTTOM */}
-            {myAssignments.length > 0 && (
-              <div className="space-y-8 pt-8">
-                 <div className="flex items-center justify-between px-2">
-                    <div className="flex items-center gap-4">
-                       <div className="w-2 h-8 bg-blue-600 rounded-full" />
-                       <div>
-                         <h3 className="text-xl font-bold text-slate-900">My Equipment</h3>
-                         <p className="text-xs font-medium text-slate-500 mt-1">Physical assets currently in your custody</p>
-                       </div>
-                    </div>
-                 </div>
-                 <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
-                    <table className="w-full text-left border-collapse">
-                       <thead>
-                          <tr className="bg-slate-50/50 border-b border-slate-100">
-                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">Asset Detail</th>
-                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">Serial / SKU</th>
-                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">State</th>
-                             <th className="px-8 py-4 text-xs font-semibold text-slate-500">Custody Date</th>
-                             <th className="px-8 py-4 text-xs font-semibold text-slate-500 text-right">Actions</th>
-                          </tr>
-                       </thead>
-                       <tbody className="divide-y divide-slate-50">
-                          {myAssignments.map(asset => (
-                             <tr key={asset.id} className="group hover:bg-blue-50/30 transition-colors">
-                                <td className="px-8 py-6">
-                                   <div className="flex items-center gap-4">
-                                      <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-slate-950 group-hover:text-blue-400 transition-all"><Package size={22} /></div>
-                                      <div>
-                                         <div className="font-black text-slate-900 text-sm italic uppercase">{asset.product?.name}</div>
-                                         <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">{asset.product?.brand || 'ASSET'}</div>
-                                      </div>
-                                   </div>
-                                </td>
-                                <td className="px-8 py-6">
-                                   <div className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{asset.serial_number}</div>
-                                   <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{asset.product?.sku}</div>
-                                </td>
-                                <td className="px-8 py-6">
-                                   <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                                      asset.condition === 'new' ? 'bg-emerald-50 text-emerald-600' : 
-                                      asset.condition === 'good' ? 'bg-blue-50 text-blue-600' : 
-                                      'bg-amber-50 text-amber-600'
-                                   }`}>
-                                      {asset.condition || 'STANDARD'}
-                                   </span>
-                                </td>
-                                <td className="px-8 py-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                   {new Date(asset.assigned_at).toLocaleDateString()}
-                                </td>
-                                <td className="px-8 py-6 text-right">
-                                   <div className="flex justify-end gap-3">
-                                      <button 
-                                        onClick={() => setTransferAsset(asset)}
-                                        title="Initiate Transfer"
-                                        className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl hover:bg-slate-950 hover:text-blue-400 transition-all"
-                                      >
-                                         <ArrowLeftRight size={16} />
-                                      </button>
-                                      <button 
-                                        onClick={() => setReturnAsset(asset)}
-                                        title="Return to Store"
-                                        className="w-10 h-10 flex items-center justify-center bg-teal-50 text-teal-600 rounded-xl hover:bg-slate-950 hover:text-teal-400 transition-all"
-                                      >
-                                         <RotateCcw size={16} />
-                                      </button>
-                                      <button 
-                                        onClick={() => setReportAsset(asset)}
-                                        title="Report Issue"
-                                        className="w-10 h-10 flex items-center justify-center bg-rose-50 text-rose-600 rounded-xl hover:bg-slate-950 hover:text-rose-400 transition-all"
-                                      >
-                                         <AlertTriangle size={16} />
-                                      </button>
-                                   </div>
-                                </td>
-                             </tr>
-                          ))}
-                       </tbody>
-                    </table>
-                 </div>
-              </div>
-            )}
 
           </div>
         )}
       </div>
 
-      {/* MODALS */}
-      <Modal isOpen={!!transferAsset} onClose={() => setTransferAsset(null)} title="HANDOVER PROTOCOL" onConfirm={executeTransfer} confirmText="COMMIT TRANSFER">
-         <div className="space-y-8 p-2">
-            <div className="bg-slate-50 p-8 rounded-[2.5rem] flex items-center gap-8"><div className="w-20 h-20 bg-slate-950 rounded-[28px] flex items-center justify-center text-blue-400"><Package size={32} /></div><div><h4 className="text-2xl font-black text-slate-900 uppercase italic">{transferAsset?.product?.name}</h4><div className="text-[9px] font-black text-slate-400 mt-2">SN: {transferAsset?.serial_number}</div></div></div>
-            <div className="space-y-4">
-               <div className="relative">
-                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text" 
-                    placeholder="Search Personnel by Name or ID..."
-                    className="w-full h-16 bg-slate-100 border-2 border-transparent focus:border-blue-500 rounded-3xl pl-16 pr-8 font-bold text-sm transition-all outline-none"
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                  />
-               </div>
-               <select 
-                 className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl px-8 font-black text-xs uppercase focus:border-blue-500 outline-none transition-all" 
-                 value={transferTarget} 
-                 onChange={e => setTransferTarget(e.target.value)}
-               >
-                 <option value="">{loadingUsers ? 'Searching Personnel...' : '-- Select Target Personnel --'}</option>
-                 {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name} ({u.employee_id})</option>)}
-               </select>
-               {users.length === 0 && !loadingUsers && userSearchQuery && (
-                  <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest ml-4 italic">No matching personnel found in registry</p>
-               )}
+      {/* Edit Request Modal */}
+      <Modal
+        isOpen={editModalOpen}
+        onClose={() => {
+          if (!submitting) {
+            setEditModalOpen(false);
+            setEditingRequest(null);
+          }
+        }}
+        title="Edit Request"
+      >
+        {editingRequest && (
+          <form onSubmit={handleUpdateSubmit} className="space-y-6 p-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            {/* Purpose */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-gray-500">Purpose / Reason <span className="text-red-400">*</span></label>
+              <input
+                value={editingRequest.purpose}
+                onChange={(e) => handleEditFieldChange('purpose', e.target.value)}
+                placeholder="Why do you need it?"
+                required
+                className="w-full h-11 px-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl font-bold text-sm outline-none transition-all"
+              />
             </div>
-            <textarea className="w-full h-32 bg-slate-50 border-none rounded-3xl p-8 font-bold text-sm" placeholder="Reason..." value={transferReason} onChange={e => setTransferReason(e.target.value)} />
-         </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Priority */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500">Requisition Priority</label>
+                <select
+                  className="w-full h-11 bg-slate-50 border-none rounded-2xl px-4 font-bold text-slate-700 outline-none hover:bg-slate-100 transition-all cursor-pointer text-sm"
+                  value={editingRequest.priority}
+                  onChange={(e) => handleEditFieldChange('priority', e.target.value)}
+                >
+                  <option value="low">Standard Priority</option>
+                  <option value="medium">Medium Priority</option>
+                  <option value="high">Urgent Requirement</option>
+                </select>
+              </div>
+
+              {/* Expected Date */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500">Expected Delivery Date</label>
+                <input
+                  type="date"
+                  value={editingRequest.expectedDate}
+                  onChange={(e) => handleEditFieldChange('expectedDate', e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full h-11 px-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl font-bold text-sm outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Requested Items */}
+            <div className="space-y-4 pt-2">
+              <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                <h3 className="text-sm font-bold text-gray-800">Requested Items</h3>
+                <button
+                  type="button"
+                  onClick={handleAddEditItem}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-750 flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200 transition-all shadow-sm"
+                >
+                  <Plus size={14} className="inline mr-1" /> Add Item
+                </button>
+              </div>
+
+              <div className="space-y-4 max-h-[250px] overflow-y-auto pr-1">
+                {editingRequest.items.map((item, index) => (
+                  <div key={index} className="space-y-4 p-4 bg-gray-50 rounded-2xl border border-gray-150 relative group">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-gray-400">Item #{index + 1}</span>
+                      {editingRequest.items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEditItem(index)}
+                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+
+                    {loadingCatalog ? (
+                      <div className="flex justify-center py-2"><LoadingSpinner /></div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Category Select */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-500">Category <span className="text-red-400">*</span></label>
+                            <select
+                              className="w-full h-10 bg-white border border-gray-200 rounded-xl px-3 font-semibold text-gray-700 outline-none hover:border-blue-200 transition-all cursor-pointer text-xs"
+                              value={item.category}
+                              onChange={(e) => handleEditItemChange(index, 'category', e.target.value)}
+                              required
+                            >
+                              <option value="">Choose Category...</option>
+                              {editCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                          </div>
+
+                          {/* Sub-Category Select */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-500">Sub-Category</label>
+                            <select
+                              className="w-full h-10 bg-white border border-gray-200 rounded-xl px-3 font-semibold text-gray-700 outline-none hover:border-blue-200 transition-all cursor-pointer text-xs disabled:opacity-40"
+                              value={item.sub_category}
+                              disabled={!item.category}
+                              onChange={(e) => handleEditItemChange(index, 'sub_category', e.target.value)}
+                            >
+                              <option value="">Any Sub-Category...</option>
+                              {getEditSubCategories(item.category).map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Quantity */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-500">Quantity</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => handleEditItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
+                              required
+                              className="w-full h-10 border border-gray-200 bg-white rounded-xl font-bold text-center text-blue-600 text-sm shadow-sm outline-none"
+                            />
+                          </div>
+
+                          {/* Specifications */}
+                          <div className="md:col-span-2 space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-500">Specifications</label>
+                            <input
+                              value={item.specifications}
+                              onChange={(e) => handleEditItemChange(index, 'specifications', e.target.value)}
+                              placeholder="e.g. 16GB RAM, 512GB SSD..."
+                              className="w-full h-10 rounded-xl border border-gray-200 bg-white font-medium text-xs px-3 outline-none"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-4 border-t border-gray-150 pt-4">
+              <button
+                type="button"
+                className="flex-1 bg-slate-100 text-slate-500 hover:bg-slate-200 py-3 rounded-2xl font-medium text-sm transition-all"
+                disabled={submitting}
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditingRequest(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-semibold text-sm shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                disabled={submitting}
+              >
+                {submitting ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
-      <Modal isOpen={!!returnAsset} onClose={() => setReturnAsset(null)} title="DECOMMISSIONING" onConfirm={executeReturn} confirmText="FINALIZE RETURN">
-         <div className="space-y-8 p-2">
-            <div className="bg-teal-50 p-8 rounded-[2.5rem] flex flex-col items-center text-center"><RotateCcw size={48} className="text-teal-600 mb-4" /><h4 className="text-2xl font-black text-slate-900 uppercase italic">Return Entry</h4><p className="text-slate-400 text-xs font-medium max-w-xs mt-2">Relinquishing custody of {returnAsset?.product?.name}.</p></div>
-            <select className="w-full h-16 bg-slate-50 border-none rounded-3xl px-8 font-black text-xs uppercase" value={returnCondition} onChange={e => setReturnCondition(e.target.value)}><option value="good">OPTIMAL</option><option value="used">STANDARD</option><option value="damaged">CRITICAL</option></select>
-         </div>
-      </Modal>
+      {/* Cancel Request Confirmation Modal */}
+      <Modal
+        isOpen={cancelModalOpen}
+        onClose={() => {
+          if (!submitting) {
+            setCancelModalOpen(false);
+            setCancellingRequest(null);
+            setCancelReason('');
+          }
+        }}
+        title="Cancel Request"
+      >
+        <div className="space-y-6 p-2">
+          <div className="flex items-start gap-4 p-5 bg-rose-50 border border-rose-200 rounded-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-rose-950">Cancel Resource Request</p>
+              <p className="text-xs text-rose-700 mt-1 leading-relaxed">
+                Are you sure you want to cancel this request? This action will permanently abort the request and remove it from all approval workflows.
+              </p>
+            </div>
+          </div>
 
-      <Modal isOpen={!!reportAsset} onClose={() => setReportAsset(null)} title="INCIDENT REPORT" onConfirm={executeReport} confirmText="LOG INCIDENT">
-         <div className="space-y-8 p-2">
-            <div className="bg-rose-50 p-8 rounded-[2.5rem] flex flex-col items-center text-center"><AlertOctagon size={48} className="text-rose-600 mb-4" /><h4 className="text-2xl font-black text-slate-900 uppercase italic">Incident Protocol</h4></div>
-            <textarea className="w-full h-40 bg-rose-50/30 border-none rounded-3xl p-8 font-bold text-sm" placeholder="Telemetry details..." value={reportDetails} onChange={e => setReportDetails(e.target.value)} />
-         </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-gray-500 px-1">Reason for Cancellation (Optional)</label>
+            <textarea
+              rows={3}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner focus:outline-none focus:ring-2 focus:ring-rose-500 text-gray-700 text-sm animate-none"
+              placeholder="Provide a reason for cancelling this request..."
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-4">
+            <button
+              className="flex-1 bg-slate-100 text-slate-500 hover:bg-slate-200 py-3 rounded-2xl font-medium text-sm transition-all"
+              disabled={submitting}
+              onClick={() => {
+                setCancelModalOpen(false);
+                setCancellingRequest(null);
+                setCancelReason('');
+              }}
+            >
+              No, Keep Request
+            </button>
+            <button
+              className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-3 rounded-2xl font-semibold text-sm shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+              disabled={submitting}
+              onClick={handleCancelSubmit}
+            >
+              {submitting ? 'Processing...' : 'Yes, Cancel Request'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
