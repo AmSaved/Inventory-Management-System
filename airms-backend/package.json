@@ -31,7 +31,7 @@
     "backup": "node scripts/backupDatabase.js",
     "restore": "node scripts/restoreDatabase.js",
     "clean": "rimraf dist coverage logs/*.log",
-    "prepare": "husky install",
+    "prepare": "husky install .. || true",
     "docker:build": "docker build -t airms-backend .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
