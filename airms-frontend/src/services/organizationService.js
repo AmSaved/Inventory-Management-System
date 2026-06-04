@@ -48,6 +48,16 @@ const organizationService = {
     return response.data.data;
   },
 
+  getDeletePreview: async (id) => {
+    const response = await api.get(`/organization/nodes/${id}/delete-preview`);
+    return response.data.data;
+  },
+
+  toggleNodeStatus: async (id) => {
+    const response = await api.patch(`/organization/nodes/${id}/status`);
+    return response.data.data;
+  },
+
   deleteNode: async (id) => {
     const response = await api.delete(`/organization/nodes/${id}`);
     return response.data;

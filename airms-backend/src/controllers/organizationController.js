@@ -1,4 +1,26 @@
-const { OrganizationNode, OrganizationType, ActivityLog, Role, User } = require('../models');
+const {
+    OrganizationNode,
+    OrganizationType,
+    ActivityLog,
+    Role,
+    User,
+    FormTemplate,
+    UserNode,
+    UserRole,
+    UserPermission,
+    RolePermission,
+    Inventory,
+    Assignment,
+    Issue,
+    Request,
+    RequestItem,
+    Approval,
+    StoreForm,
+    DischargeForm,
+    Transfer,
+    Return,
+    Product
+} = require('../models');
 const { Op } = require('sequelize');
 const hierarchyService = require('../services/hierarchyService');
 const { validationResult } = require('express-validator');
@@ -269,7 +291,10 @@ const organizationController = {
     /**
      * Delete an organization node.
      */
-    async deleteNode(req, res, next) {
+    /**
+     * Get the dependencies count before deleting a node.
+     */
+    async getDeletePreview(req, res, next) {
         try {
             const { id } = req.params;
             const companyId = req.user.company_id;
@@ -277,39 +302,235 @@ const organizationController = {
             const node = await OrganizationNode.findOne({ where: { id, company_id: companyId } });
             if (!node) return res.status(404).json({ success: false, message: 'Node not found' });
 
+            // Scoping check for access
+            const permissions = req.userPermissions || await getEffectivePermissions(req.user);
+            const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            if (allowedNodes !== null && !allowedNodes.includes(Number(id))) {
+                return res.status(403).json({ success: false, message: 'Access denied: This node is outside your visibility scope' });
+            }
+
+            // Get descendants
+            const descendantIds = await hierarchyService.getDescendants(id);
+
+            // Count sub-nodes (excluding the target node itself)
+            const subNodesCount = Math.max(0, descendantIds.length - 1);
+
+            // Count inventories
+            const inventoryCount = await Inventory.count({
+                where: {
+                    org_node_id: { [Op.in]: descendantIds },
+                    company_id: companyId
+                }
+            });
+
+            // Count users
+            const usersCount = await User.count({
+                where: {
+                    org_node_id: { [Op.in]: descendantIds },
+                    company_id: companyId
+                }
+            });
+
+            // Count roles
+            const rolesCount = await Role.count({
+                where: {
+                    org_node_id: { [Op.in]: descendantIds },
+                    company_id: companyId
+                }
+            });
+
+            // Count form templates
+            const templatesCount = await FormTemplate.count({
+                where: {
+                    org_node_id: { [Op.in]: descendantIds },
+                    company_id: companyId
+                }
+            });
+
+            res.json({
+                success: true,
+                data: {
+                    nodeName: node.name,
+                    subNodesCount,
+                    inventoryCount,
+                    usersCount,
+                    rolesCount,
+                    templatesCount
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    /**
+     * Delete an organization node and all its sub-hierarchy resources recursively.
+     */
+    async deleteNode(req, res, next) {
+        const transaction = await OrganizationNode.sequelize.transaction();
+        try {
+            const { id } = req.params;
+            const companyId = req.user.company_id;
+
+            const node = await OrganizationNode.findOne({ 
+                where: { id, company_id: companyId },
+                transaction
+            });
+            if (!node) {
+                await transaction.rollback();
+                return res.status(404).json({ success: false, message: 'Node not found' });
+            }
+
             // Scoping check for destructive action
-            const allowedNodes = await hierarchyService.getAllowedNodes(req.user);
-            if (!allowedNodes.includes(Number(id))) {
+            const permissions = req.userPermissions || await getEffectivePermissions(req.user);
+            const allowedNodes = await hierarchyService.getAllowedNodes(req.user, permissions);
+            if (allowedNodes !== null && !allowedNodes.includes(Number(id))) {
+                await transaction.rollback();
                 return res.status(403).json({ success: false, message: 'Access denied: This node is outside your visibility scope' });
             }
 
             // Prevent deleting a root if not authorized
-            const permissions = await getEffectivePermissions(req.user);
             const canManageRoots = permissions.includes('organization:manage_roots') || permissions.includes('system:manage');
-
             if (!node.parent_id && !canManageRoots) {
+                await transaction.rollback();
                 return res.status(403).json({ success: false, message: 'Access denied: You do not have permission to remove root-level organizations' });
             }
 
-            // Check if node has children
-            const children = await OrganizationNode.count({ where: { parent_id: id } });
-            if (children > 0) {
-                return res.status(400).json({ success: false, message: 'Cannot delete node with children. Reassign children first.' });
+            // Get descendants (all nodes to be deleted)
+            const descendantIds = await hierarchyService.getDescendants(id);
+
+            // 1. Roles: Find roles under these nodes
+            const roles = await Role.findAll({ 
+                where: { org_node_id: { [Op.in]: descendantIds }, company_id: companyId },
+                attributes: ['id'],
+                transaction
+            });
+            const roleIds = roles.map(r => r.id);
+
+            if (roleIds.length > 0) {
+                await RolePermission.destroy({ where: { role_id: { [Op.in]: roleIds } }, transaction });
+                await UserRole.destroy({ where: { role_id: { [Op.in]: roleIds } }, transaction });
+                await User.update({ role_id: null }, { where: { role_id: { [Op.in]: roleIds } }, transaction });
+                await Role.destroy({ where: { id: { [Op.in]: roleIds }, company_id: companyId }, transaction });
             }
 
-            await node.destroy();
-            
+            // 2. Form Templates: Find templates under these nodes
+            const templates = await FormTemplate.findAll({
+                where: { org_node_id: { [Op.in]: descendantIds }, company_id: companyId },
+                attributes: ['id'],
+                transaction
+            });
+            const templateIds = templates.map(t => t.id);
+
+            if (templateIds.length > 0) {
+                await Product.update(
+                    { form_template_id: null },
+                    { where: { form_template_id: { [Op.in]: templateIds } }, transaction }
+                );
+                await Product.update(
+                    { blueprint_template_id: null },
+                    { where: { blueprint_template_id: { [Op.in]: templateIds } }, transaction }
+                );
+                await FormTemplate.destroy({ where: { id: { [Op.in]: templateIds }, company_id: companyId }, transaction });
+            }
+
+            // 3. Users: Find users under these nodes
+            const users = await User.findAll({
+                where: { org_node_id: { [Op.in]: descendantIds }, company_id: companyId },
+                attributes: ['id'],
+                transaction
+            });
+            const userIds = users.map(u => u.id);
+
+            if (userIds.length > 0) {
+                await UserNode.destroy({ where: { user_id: { [Op.in]: userIds } }, transaction });
+                await UserRole.destroy({ where: { user_id: { [Op.in]: userIds } }, transaction });
+                await UserPermission.destroy({ where: { user_id: { [Op.in]: userIds } }, transaction });
+
+                await Assignment.destroy({ where: { user_id: { [Op.in]: userIds } }, transaction });
+
+                await Issue.update({ user_id: null }, { where: { user_id: { [Op.in]: userIds } }, transaction });
+                await Issue.update({ reported_by: null }, { where: { reported_by: { [Op.in]: userIds } }, transaction });
+                await Issue.update({ assigned_to: null }, { where: { assigned_to: { [Op.in]: userIds } }, transaction });
+                await Issue.update({ resolved_by: null }, { where: { resolved_by: { [Op.in]: userIds } }, transaction });
+
+                await ActivityLog.update({ user_id: null }, { where: { user_id: { [Op.in]: userIds } }, transaction });
+
+                const requests = await Request.findAll({
+                    where: {
+                        [Op.or]: [
+                            { requester_id: { [Op.in]: userIds } },
+                            { target_user_id: { [Op.in]: userIds } }
+                        ]
+                    },
+                    attributes: ['id'],
+                    transaction
+                });
+                const requestIds = requests.map(r => r.id);
+
+                if (requestIds.length > 0) {
+                    await Approval.destroy({ where: { request_id: { [Op.in]: requestIds } }, transaction });
+                    await RequestItem.destroy({ where: { request_id: { [Op.in]: requestIds } }, transaction });
+                    await Request.destroy({ where: { id: { [Op.in]: requestIds } }, transaction });
+                }
+
+                await StoreForm.update({ created_by: null }, { where: { created_by: { [Op.in]: userIds } }, transaction });
+                await DischargeForm.update({ to_user_id: null }, { where: { to_user_id: { [Op.in]: userIds } }, transaction });
+                await DischargeForm.update({ created_by: null }, { where: { created_by: { [Op.in]: userIds } }, transaction });
+
+                await Transfer.update({ from_user_id: null }, { where: { from_user_id: { [Op.in]: userIds } }, transaction });
+                await Transfer.update({ to_user_id: null }, { where: { to_user_id: { [Op.in]: userIds } }, transaction });
+                await Transfer.update({ requested_by: null }, { where: { requested_by: { [Op.in]: userIds } }, transaction });
+
+                await Return.update({ user_id: null }, { where: { user_id: { [Op.in]: userIds } }, transaction });
+                await Return.update({ received_by: null }, { where: { received_by: { [Op.in]: userIds } }, transaction });
+
+                await OrganizationNode.update({ manager_id: null }, { where: { manager_id: { [Op.in]: userIds } }, transaction });
+
+                await User.destroy({ where: { id: { [Op.in]: userIds }, company_id: companyId }, transaction });
+            }
+
+            // 4. Inventories: Delete inventories under these nodes
+            await Inventory.destroy({
+                where: { org_node_id: { [Op.in]: descendantIds }, company_id: companyId },
+                transaction
+            });
+
+            // 5. UserNode: Delete any remaining UserNode records for these nodes
+            await UserNode.destroy({
+                where: { org_node_id: { [Op.in]: descendantIds } },
+                transaction
+            });
+
+            // 6. OrganizationNode: Delete descendant nodes sorted by path length DESC (deepest first)
+            const sortedNodes = await OrganizationNode.findAll({
+                where: { id: { [Op.in]: descendantIds }, company_id: companyId },
+                attributes: ['id', 'path'],
+                order: [['path', 'DESC']],
+                transaction
+            });
+            const sortedIds = sortedNodes.map(n => n.id);
+
+            for (const nodeId of sortedIds) {
+                await OrganizationNode.destroy({
+                    where: { id: nodeId, company_id: companyId },
+                    transaction
+                });
+            }
+
             await ActivityLog.create({
                 company_id: companyId,
                 user_id: req.user.id,
                 action: 'DELETE',
                 resource: 'organization_nodes',
                 resource_id: id,
-                details: { name: node.name }
-            });
+                details: { name: node.name, deletedDescendants: descendantIds }
+            }, { transaction });
 
-            res.json({ success: true, message: 'Node deleted successfully' });
+            await transaction.commit();
+            res.json({ success: true, message: 'Node and all sub-hierarchy contents deleted successfully' });
         } catch (error) {
+            await transaction.rollback();
             next(error);
         }
     },

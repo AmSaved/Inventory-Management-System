@@ -45,6 +45,9 @@ const OrganizationManagement = () => {
   const [editingNode, setEditingNode] = useState(null);
   const [modalParentNode, setModalParentNode] = useState(null);
   const [formData, setFormData] = useState({});
+  const [deletingNodeId, setDeletingNodeId] = useState(null);
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -189,14 +192,47 @@ const OrganizationManagement = () => {
     }
   };
 
-  const handleDeleteNode = async (id) => {
-    if (!window.confirm('Terminate this node? All sub-nodes must be clear.')) return;
+  const handleDeleteClick = async (id) => {
+    setDeletingNodeId(id);
+    setLoadingPreview(true);
+    setDeletePreview(null);
+    try {
+      const previewData = await organizationService.getDeletePreview(id);
+      setDeletePreview(previewData);
+    } catch (error) {
+      toast.error('Error fetching deletion preview data');
+      setDeletingNodeId(null);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleConfirmDelete = async (id) => {
+    const loadingToast = toast.loading('Decommissioning Node and all contents...');
     try {
       await organizationService.deleteNode(id);
-      toast.success('Node deleted');
+      toast.success('Node and sub-hierarchy contents successfully expunged', { id: loadingToast });
+      setDeletingNodeId(null);
+      setDeletePreview(null);
       fetchData();
     } catch (error) {
-      toast.error('Decommissioning Failure: Active Sub-Nodes Detected');
+      toast.error(error.response?.data?.message || 'Failed to delete node', { id: loadingToast });
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeletingNodeId(null);
+    setDeletePreview(null);
+  };
+
+  const handleToggleNodeStatus = async (id) => {
+    const loadingToast = toast.loading('Toggling Node Status...');
+    try {
+      await organizationService.toggleNodeStatus(id);
+      toast.success('Node status updated successfully', { id: loadingToast });
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to toggle node status', { id: loadingToast });
     }
   };
 
@@ -266,37 +302,108 @@ const OrganizationManagement = () => {
         <div className="grid grid-cols-1 gap-3">
           {loading ? (
             <div className="p-12 text-center flex justify-center"><LoadingSpinner /></div>
-          ) : currentNodes.map((node) => (
-            <div
-              key={node.id}
-              className="bg-white rounded-xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col md:flex-row items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-4 w-full md:w-auto">
-                <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center shrink-0 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors duration-300">
-                  <Building2 size={20} />
+          ) : currentNodes.map((node) => {
+            if (deletingNodeId === node.id) {
+              return (
+                <div
+                  key={node.id}
+                  className="bg-rose-50 border-2 border-rose-200 rounded-xl p-5 shadow-sm animate-in slide-in-from-top-4 duration-300 flex flex-col gap-4 w-full"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center shrink-0">
+                      <ShieldAlert size={22} />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <h4 className="text-sm font-bold text-rose-900 uppercase tracking-wide">Decommission Node: {node.name}</h4>
+                      {loadingPreview ? (
+                        <div className="flex items-center gap-2 text-rose-700 text-xs mt-1">
+                          <span className="animate-spin rounded-full h-3 w-3 border-2 border-rose-600 border-t-transparent mr-2"></span>
+                          <span>Scanning node contents and dependencies...</span>
+                        </div>
+                      ) : deletePreview ? (
+                        <div className="text-xs text-rose-800 space-y-2 mt-1">
+                          <p className="font-semibold leading-relaxed">
+                            Warning: Deleting this node will permanently delete all of its sub-hierarchy content:
+                          </p>
+                          <ul className="list-disc pl-5 space-y-1 font-medium">
+                            <li><strong>{deletePreview.subNodesCount}</strong> Descendant Sub-nodes (will be deleted)</li>
+                            <li><strong>{deletePreview.inventoryCount}</strong> Inventory items (will be deleted)</li>
+                            <li><strong>{deletePreview.usersCount}</strong> Users (will be deleted along with their assignments, requests, and roles)</li>
+                            <li><strong>{deletePreview.rolesCount}</strong> Roles scoped to these nodes (will be deleted)</li>
+                            <li><strong>{deletePreview.templatesCount}</strong> Form Templates scoped to these nodes (will be deleted)</li>
+                          </ul>
+                          <p className="font-bold text-rose-900 mt-2">
+                            This action is destructive and CANNOT be undone. Are you sure you want to proceed?
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-rose-700 font-medium">
+                          Failed to load dependency scanner. You can still cancel or try to proceed.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end mt-2">
+                    <button
+                      onClick={handleCancelDelete}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+                    >
+                      Cancel Deletion
+                    </button>
+                    <button
+                      onClick={() => handleConfirmDelete(node.id)}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all shadow-sm"
+                      disabled={loadingPreview}
+                    >
+                      Continue Deletion
+                    </button>
+                  </div>
                 </div>
-                <div className="flex-1 cursor-pointer group/name" onClick={() => navigate(`/dashboard?unit=${node.id}`)} title={`Switch to ${node.name} Dashboard`}>
-                  <div className="flex items-center gap-2.5">
-                    <h4 className="text-sm font-semibold text-slate-900 group-hover/name:text-blue-600 transition-colors">{node.name}</h4>
+              );
+            }
+
+            return (
+              <div
+                key={node.id}
+                className="bg-white rounded-xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col md:flex-row items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-4 w-full md:w-auto">
+                  {/* Status Toggle Button in Front of Every Node */}
+                  <button
+                    onClick={() => handleToggleNodeStatus(node.id)}
+                    className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer ${node.status === 'active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-305 hover:bg-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                    title="Click to toggle status"
+                  >
+                    {node.status === 'active' ? 'Active' : 'Inactive'}
+                  </button>
+
+                  <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center shrink-0 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors duration-300">
+                    <Building2 size={20} />
+                  </div>
+                  <div className="flex-1 cursor-pointer group/name" onClick={() => navigate(`/dashboard?unit=${node.id}`)} title={`Switch to ${node.name} Dashboard`}>
+                    <div className="flex items-center gap-2.5">
+                      <h4 className="text-sm font-semibold text-slate-900 group-hover/name:text-blue-600 transition-colors">{node.name}</h4>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                  <button
+                    onClick={() => handleDrillDown(node)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-slate-950 text-white rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-blue-600 transition-all shadow-sm group/btn"
+                  >
+                    <span>Drill Down</span> <ArrowRight size={12} className="group-hover/btn:translate-x-1 transition-transform" />
+                  </button>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => handleOpenNodeModal(node, null)} className="w-8 h-8 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all" title="Add Child Node"><Plus size={16} /></button>
+                    <button onClick={() => handleOpenNodeModal(null, node)} className="w-8 h-8 flex items-center justify-center bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-600 hover:text-white transition-all" title="Edit Node"><Edit3 size={16} /></button>
+                    <button onClick={() => handleDeleteClick(node.id)} className="w-8 h-8 flex items-center justify-center bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-600 hover:text-white transition-all" title="Delete Node"><Trash2 size={16} /></button>
                   </div>
                 </div>
               </div>
-
-              <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-                <button
-                  onClick={() => handleDrillDown(node)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-slate-950 text-white rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-blue-600 transition-all shadow-sm group/btn"
-                >
-                  <span>Drill Down</span> <ArrowRight size={12} className="group-hover/btn:translate-x-1 transition-transform" />
-                </button>
-                <div className="flex gap-1.5">
-                  <button onClick={() => handleOpenNodeModal(node, null)} className="w-8 h-8 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all" title="Add Child Node"><Plus size={16} /></button>
-                  <button onClick={() => handleOpenNodeModal(null, node)} className="w-8 h-8 flex items-center justify-center bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-600 hover:text-white transition-all" title="Edit Node"><Edit3 size={16} /></button>
-                  <button onClick={() => handleDeleteNode(node.id)} className="w-8 h-8 flex items-center justify-center bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-600 hover:text-white transition-all" title="Delete Node"><Trash2 size={16} /></button>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           {!loading && currentNodes.length === 0 && (
             <div className="p-20 bg-white rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center text-center">

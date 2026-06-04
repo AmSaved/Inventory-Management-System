@@ -22,6 +22,7 @@ router.post('/nodes', authMiddleware, checkPermission('organization:manage'), or
 router.get('/nodes/:id', authMiddleware, organizationController.getNodeById);
 router.put('/nodes/:id', authMiddleware, checkPermission('organization:manage'), organizationController.updateNode);
 router.patch('/nodes/:id/status', authMiddleware, checkPermission('organization:manage'), organizationController.toggleStatus);
+router.get('/nodes/:id/delete-preview', authMiddleware, checkPermission('organization:manage'), organizationController.getDeletePreview);
 router.delete('/nodes/:id', authMiddleware, checkPermission('organization:manage'), organizationController.deleteNode);
 
 module.exports = router;
