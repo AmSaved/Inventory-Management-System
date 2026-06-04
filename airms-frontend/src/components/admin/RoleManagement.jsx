@@ -143,6 +143,12 @@ const RoleManagement = ({ onBack }) => {
     setFormData({ ...formData, permission_ids: currentPerms });
   };
 
+  // Check if the dangerous system:manage permission is currently selected
+  const isSystemManageSelected = permissions && formData.permission_ids?.some(id => {
+    const perm = permissions.find(p => p.id === id);
+    return perm?.name === 'system:manage';
+  });
+
   const handleGroupToggle = (permsInGroup) => {
     const permIds = permsInGroup.map(p => p.id);
     const currentPerms = formData.permission_ids || [];
@@ -457,6 +463,21 @@ const RoleManagement = ({ onBack }) => {
               <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Permissions</h4>
             </div>
 
+            {/* ⚠️ system:manage danger warning */}
+            {isSystemManageSelected && (
+              <div className="flex items-start gap-3 bg-red-50 border border-red-300 rounded-xl p-4">
+                <AlertCircle className="text-red-500 mt-0.5 shrink-0" size={18} />
+                <div>
+                  <p className="text-sm font-bold text-red-700">⚠️ Dangerous Permission Selected: <code className="bg-red-100 px-1 rounded">system:manage</code></p>
+                  <p className="text-xs text-red-600 mt-1 leading-relaxed">
+                    This is the <strong>Master Key</strong> permission. It bypasses ALL security checks and grants global access to every feature in the system.
+                    It should <strong>only</strong> be assigned to a role with Authority Level <strong>100</strong> (Super Admin tier).
+                    Assigning it to any other role will be rejected by the server.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-6">
               {Object.entries(groupedPermissions).map(([catName, { config, perms }]) => (
                 <div key={catName} className="space-y-3">
@@ -499,20 +520,37 @@ const RoleManagement = ({ onBack }) => {
                   <div className="grid grid-cols-3 gap-3">
                     {perms.map(perm => {
                       const active = formData.permission_ids?.includes(perm.id);
+                      const isDangerous = perm.name === 'system:manage';
                       return (
                         <div
                           key={perm.id}
                           onClick={() => handlePermissionToggle(perm.id)}
                           className={`group p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between ${
-                            active ? 'bg-green-50 border-green-400 text-green-700' : 'bg-white border-slate-100 hover:border-green-200'
+                            isDangerous && active
+                              ? 'bg-red-50 border-red-400'
+                              : isDangerous
+                              ? 'bg-white border-red-200 hover:border-red-400'
+                              : active
+                              ? 'bg-green-50 border-green-400 text-green-700'
+                              : 'bg-white border-slate-100 hover:border-green-200'
                           }`}
                         >
                           <div className="flex-1 min-w-0 mr-2">
-                            <div className={`text-xs font-bold mb-0.5 truncate ${active ? 'text-green-700' : 'text-slate-800'}`}>{perm.name}</div>
+                            <div className={`text-xs font-bold mb-0.5 truncate ${
+                              isDangerous ? 'text-red-700' : active ? 'text-green-700' : 'text-slate-800'
+                            }`}>
+                              {isDangerous && '⚠️ '}{perm.name}
+                            </div>
                             <div className="text-[11px] text-slate-400 leading-snug line-clamp-2">{perm.description || 'System Access Token'}</div>
                           </div>
                           <div className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center transition-all ${
-                            active ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-300 group-hover:bg-green-100 group-hover:text-green-600'
+                            isDangerous && active
+                              ? 'bg-red-600 text-white'
+                              : isDangerous
+                              ? 'bg-red-50 text-red-300 group-hover:bg-red-100 group-hover:text-red-600'
+                              : active
+                              ? 'bg-green-600 text-white'
+                              : 'bg-slate-100 text-slate-300 group-hover:bg-green-100 group-hover:text-green-600'
                           }`}>
                             {active ? <CheckCircle2 size={12} /> : <Plus size={12} />}
                           </div>

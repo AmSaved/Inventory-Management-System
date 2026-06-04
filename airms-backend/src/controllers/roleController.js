@@ -179,9 +179,14 @@ const roleController = {
                     attributes: ['id', 'name']
                 });
                 const hasSystemManage = requestedPerms.some(p => p.name === 'system:manage');
-                if (hasSystemManage && (!req.user.role || req.user.role.level < 100)) {
-                    const systemManageId = requestedPerms.find(p => p.name === 'system:manage').id;
-                    validatedPermissionIds = validatedPermissionIds.filter(id => id !== systemManageId);
+
+                // system:manage can ONLY be assigned to roles with level >= 100 (super_admin tier).
+                // This rule applies to EVERYONE including the Super Admin themselves.
+                if (hasSystemManage && (level === undefined || level < 100)) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'The "system:manage" permission can only be assigned to roles with authority level 100 (Super Admin tier). Please set the role level to 100 first.'
+                    });
                 }
             }
 
@@ -276,9 +281,15 @@ const roleController = {
                         attributes: ['id', 'name']
                     });
                     const hasSystemManage = requestedPerms.some(p => p.name === 'system:manage');
-                    if (hasSystemManage && (!req.user.role || req.user.role.level < 100)) {
-                        const systemManageId = requestedPerms.find(p => p.name === 'system:manage').id;
-                        validatedPermissionIds = validatedPermissionIds.filter(id => id !== systemManageId);
+
+                    // system:manage can ONLY stay on roles that are level >= 100.
+                    // Check both the updated level (if changing) and the role's existing level.
+                    const effectiveLevel = updates.level !== undefined ? updates.level : role.level;
+                    if (hasSystemManage && effectiveLevel < 100) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'The "system:manage" permission can only be assigned to roles with authority level 100 (Super Admin tier). Please set the role level to 100 first.'
+                        });
                     }
                 }
 
