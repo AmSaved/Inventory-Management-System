@@ -172,8 +172,21 @@ const roleController = {
                 created_by_id: req.user.id
             });
 
-            if (permission_ids && permission_ids.length > 0) {
-                const rolePermissions = permission_ids.map(permId => ({
+            let validatedPermissionIds = permission_ids || [];
+            if (validatedPermissionIds.length > 0) {
+                const requestedPerms = await Permission.findAll({
+                    where: { id: { [Op.in]: validatedPermissionIds } },
+                    attributes: ['id', 'name']
+                });
+                const hasSystemManage = requestedPerms.some(p => p.name === 'system:manage');
+                if (hasSystemManage && (!req.user.role || req.user.role.level < 100)) {
+                    const systemManageId = requestedPerms.find(p => p.name === 'system:manage').id;
+                    validatedPermissionIds = validatedPermissionIds.filter(id => id !== systemManageId);
+                }
+            }
+
+            if (validatedPermissionIds.length > 0) {
+                const rolePermissions = validatedPermissionIds.map(permId => ({
                     role_id: role.id,
                     permission_id: permId
                 }));
@@ -256,9 +269,22 @@ const roleController = {
             await role.update(updates);
 
             if (updates.permission_ids) {
+                let validatedPermissionIds = updates.permission_ids || [];
+                if (validatedPermissionIds.length > 0) {
+                    const requestedPerms = await Permission.findAll({
+                        where: { id: { [Op.in]: validatedPermissionIds } },
+                        attributes: ['id', 'name']
+                    });
+                    const hasSystemManage = requestedPerms.some(p => p.name === 'system:manage');
+                    if (hasSystemManage && (!req.user.role || req.user.role.level < 100)) {
+                        const systemManageId = requestedPerms.find(p => p.name === 'system:manage').id;
+                        validatedPermissionIds = validatedPermissionIds.filter(id => id !== systemManageId);
+                    }
+                }
+
                 await RolePermission.destroy({ where: { role_id: id } });
-                if (updates.permission_ids.length > 0) {
-                    const rolePermissions = updates.permission_ids.map(permId => ({
+                if (validatedPermissionIds.length > 0) {
+                    const rolePermissions = validatedPermissionIds.map(permId => ({
                         role_id: id,
                         permission_id: permId
                     }));

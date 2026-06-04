@@ -6,7 +6,11 @@ const permissionController = {
     // Get all permissions
     async getAll(req, res, next) {
         try {
+            const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+            const whereClause = isSuperAdmin ? {} : { name: { [require('sequelize').Op.ne]: 'system:manage' } };
+
             const permissions = await Permission.findAll({
+                where: whereClause,
                 order: [
                     ['resource', 'ASC'],
                     ['action', 'ASC']
@@ -33,6 +37,14 @@ const permissionController = {
                 return res.status(404).json({
                     success: false,
                     message: 'Permission not found'
+                });
+            }
+
+            const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+            if (permission.name === 'system:manage' && !isSuperAdmin) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access Denied: Super Admin permission'
                 });
             }
 
@@ -175,9 +187,15 @@ const permissionController = {
     async getByResource(req, res, next) {
         try {
             const { resource } = req.params;
+            const isSuperAdmin = req.user.role && req.user.role.level >= 100;
+            
+            const where = { resource };
+            if (!isSuperAdmin) {
+                where.name = { [require('sequelize').Op.ne]: 'system:manage' };
+            }
             
             const permissions = await Permission.findAll({
-                where: { resource },
+                where,
                 order: [['action', 'ASC']]
             });
 
